@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { Participant } from "@/lib/types";
+
+interface Participant {
+  id: string;
+  eventId: string;
+  displayName: string;
+  isGm: boolean;
+}
 
 interface JoinEventFormProps {
   eventSlug: string;

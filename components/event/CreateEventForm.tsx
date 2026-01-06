@@ -4,7 +4,17 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { TimezoneSelector } from "@/components/timezone/TimezoneSelector";
 import { getBrowserTimezone } from "@/lib/utils/timezone";
-import type { CreateEventRequest, Event } from "@/lib/types";
+
+interface CreateEventPayload {
+  title: string;
+  description?: string;
+  timezone: string;
+  isRecurring: boolean;
+}
+
+interface EventResponse {
+  slug: string;
+}
 
 export function CreateEventForm() {
   const router = useRouter();
@@ -22,7 +32,7 @@ export function CreateEventForm() {
     setIsSubmitting(true);
 
     try {
-      const payload: CreateEventRequest = {
+      const payload: CreateEventPayload = {
         title: title.trim(),
         description: description.trim() || undefined,
         timezone,
@@ -40,7 +50,7 @@ export function CreateEventForm() {
         throw new Error(data.error || "Failed to create event");
       }
 
-      const event: Event = await response.json();
+      const event: EventResponse = await response.json();
       router.push(`/${event.slug}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

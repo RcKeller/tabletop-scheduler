@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql } from "@vercel/postgres";
-import type { EventRow } from "@/lib/types";
+import { prisma } from "@/lib/db/prisma";
 
 export async function GET(
   request: NextRequest,
@@ -9,27 +8,13 @@ export async function GET(
   try {
     const { slug } = await params;
 
-    const { rows } = await sql<EventRow>`
-      SELECT * FROM events WHERE slug = ${slug}
-    `;
+    const event = await prisma.event.findUnique({
+      where: { slug },
+    });
 
-    if (rows.length === 0) {
+    if (!event) {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
-
-    const row = rows[0];
-    const event = {
-      id: row.id,
-      slug: row.slug,
-      title: row.title,
-      description: row.description,
-      isRecurring: row.is_recurring,
-      recurrencePattern: row.recurrence_pattern,
-      startTime: row.start_time,
-      durationMinutes: row.duration_minutes,
-      timezone: row.timezone,
-      createdAt: row.created_at,
-    };
 
     return NextResponse.json(event);
   } catch (error) {

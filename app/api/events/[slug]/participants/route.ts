@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql } from "@vercel/postgres";
-import type { EventRow, ParticipantRow } from "@/lib/types";
+import { prisma } from "@/lib/db/prisma";
 
 export async function GET(
   request: NextRequest,
@@ -9,31 +8,19 @@ export async function GET(
   try {
     const { slug } = await params;
 
-    // Get event first
-    const { rows: eventRows } = await sql<EventRow>`
-      SELECT id FROM events WHERE slug = ${slug}
-    `;
+    const event = await prisma.event.findUnique({
+      where: { slug },
+      select: { id: true },
+    });
 
-    if (eventRows.length === 0) {
+    if (!event) {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
-    const eventId = eventRows[0].id;
-
-    // Get participants
-    const { rows } = await sql<ParticipantRow>`
-      SELECT * FROM participants
-      WHERE event_id = ${eventId}
-      ORDER BY created_at ASC
-    `;
-
-    const participants = rows.map((row) => ({
-      id: row.id,
-      eventId: row.event_id,
-      displayName: row.display_name,
-      isGm: row.is_gm,
-      createdAt: row.created_at,
-    }));
+    const participants = await prisma.participant.findMany({
+      where: { eventId: event.id },
+      orderBy: { createdAt: "asc" },
+    });
 
     return NextResponse.json(participants);
   } catch (error) {
@@ -60,52 +47,38 @@ export async function POST(
       );
     }
 
-    // Get event first
-    const { rows: eventRows } = await sql<EventRow>`
-      SELECT id FROM events WHERE slug = ${slug}
-    `;
+    const event = await prisma.event.findUnique({
+      where: { slug },
+      select: { id: true },
+    });
 
-    if (eventRows.length === 0) {
+    if (!event) {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
-    const eventId = eventRows[0].id;
     const displayName = body.displayName.trim();
-    const isGm = body.isGm || false;
 
-    // Check if name already taken
-    const { rows: existing } = await sql<ParticipantRow>`
-      SELECT * FROM participants
-      WHERE event_id = ${eventId} AND display_name = ${displayName}
-    `;
+    // Check if name already taken (upsert - return existing or create new)
+    const existing = await prisma.participant.findUnique({
+      where: {
+        eventId_displayName: {
+          eventId: event.id,
+          displayName,
+        },
+      },
+    });
 
-    if (existing.length > 0) {
-      // Return existing participant (rejoin)
-      const row = existing[0];
-      return NextResponse.json({
-        id: row.id,
-        eventId: row.event_id,
-        displayName: row.display_name,
-        isGm: row.is_gm,
-        createdAt: row.created_at,
-      });
+    if (existing) {
+      return NextResponse.json(existing);
     }
 
-    // Create new participant
-    const { rows } = await sql<ParticipantRow>`
-      INSERT INTO participants (event_id, display_name, is_gm)
-      VALUES (${eventId}, ${displayName}, ${isGm})
-      RETURNING *
-    `;
-
-    const row = rows[0];
-    const participant = {
-      id: row.id,
-      eventId: row.event_id,
-      displayName: row.display_name,
-      isGm: row.is_gm,
-      createdAt: row.created_at,
-    };
+    const participant = await prisma.participant.create({
+      data: {
+        eventId: event.id,
+        displayName,
+        isGm: body.isGm || false,
+      },
+    });
 
     return NextResponse.json(participant, { status: 201 });
   } catch (error) {

@@ -1,6 +1,5 @@
-import { sql } from "@vercel/postgres";
+import { prisma } from "@/lib/db/prisma";
 import { notFound } from "next/navigation";
-import type { EventRow } from "@/lib/types";
 import { EventPage } from "./EventPage";
 
 interface Props {
@@ -10,27 +9,20 @@ interface Props {
 export default async function Page({ params }: Props) {
   const { slug } = await params;
 
-  const { rows } = await sql<EventRow>`
-    SELECT * FROM events WHERE slug = ${slug}
-  `;
+  const event = await prisma.event.findUnique({
+    where: { slug },
+  });
 
-  if (rows.length === 0) {
+  if (!event) {
     notFound();
   }
 
-  const row = rows[0];
-  const event = {
-    id: row.id,
-    slug: row.slug,
-    title: row.title,
-    description: row.description,
-    isRecurring: row.is_recurring,
-    recurrencePattern: row.recurrence_pattern,
-    startTime: row.start_time,
-    durationMinutes: row.duration_minutes,
-    timezone: row.timezone,
-    createdAt: row.created_at,
+  // Serialize for client component
+  const serializedEvent = {
+    ...event,
+    startTime: event.startTime?.toISOString() ?? null,
+    createdAt: event.createdAt.toISOString(),
   };
 
-  return <EventPage event={event} />;
+  return <EventPage event={serializedEvent} />;
 }

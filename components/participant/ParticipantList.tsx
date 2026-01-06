@@ -1,6 +1,10 @@
 "use client";
 
-import type { Participant } from "@/lib/types";
+interface Participant {
+  id: string;
+  displayName: string;
+  isGm: boolean;
+}
 
 interface ParticipantListProps {
   participants: Participant[];

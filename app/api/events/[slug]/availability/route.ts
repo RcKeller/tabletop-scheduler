@@ -1,13 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql } from "@vercel/postgres";
+import { prisma } from "@/lib/db/prisma";
 import { calculateOverlap } from "@/lib/utils/overlap";
-import type {
-  EventRow,
-  ParticipantRow,
-  AvailabilityRow,
-  GeneralAvailabilityRow,
-  AvailabilityExceptionRow,
-} from "@/lib/types";
 
 export async function GET(
   request: NextRequest,
@@ -16,105 +9,72 @@ export async function GET(
   try {
     const { slug } = await params;
 
-    // Get event
-    const { rows: eventRows } = await sql<EventRow>`
-      SELECT id FROM events WHERE slug = ${slug}
-    `;
+    const event = await prisma.event.findUnique({
+      where: { slug },
+      select: { id: true },
+    });
 
-    if (eventRows.length === 0) {
+    if (!event) {
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
-    const eventId = eventRows[0].id;
+    const participants = await prisma.participant.findMany({
+      where: { eventId: event.id },
+      include: {
+        availability: true,
+        generalAvailability: true,
+        exceptions: true,
+      },
+    });
 
-    // Get all participants
-    const { rows: participantRows } = await sql<ParticipantRow>`
-      SELECT * FROM participants WHERE event_id = ${eventId}
-    `;
-
-    if (participantRows.length === 0) {
+    if (participants.length === 0) {
       return NextResponse.json({
         overlap: { perfectSlots: [], bestSlots: [] },
         participants: [],
+        participantNames: {},
       });
     }
 
-    // Fetch all availability data for each participant
-    const allAvailability: AvailabilityRow[] = [];
-    const allGeneral: GeneralAvailabilityRow[] = [];
-    const allExceptions: AvailabilityExceptionRow[] = [];
-
-    for (const p of participantRows) {
-      const [avail, general, exceptions] = await Promise.all([
-        sql<AvailabilityRow>`
-          SELECT * FROM availability WHERE participant_id = ${p.id}
-        `,
-        sql<GeneralAvailabilityRow>`
-          SELECT * FROM general_availability WHERE participant_id = ${p.id}
-        `,
-        sql<AvailabilityExceptionRow>`
-          SELECT * FROM availability_exceptions WHERE participant_id = ${p.id}
-        `,
-      ]);
-      allAvailability.push(...avail.rows);
-      allGeneral.push(...general.rows);
-      allExceptions.push(...exceptions.rows);
-    }
-
-    const availabilityResult = { rows: allAvailability };
-    const generalResult = { rows: allGeneral };
-    const exceptionsResult = { rows: allExceptions };
-
-    // Organize data by participant
-    const participantData = participantRows.map((p) => ({
+    // Format data for overlap calculation
+    const participantData = participants.map((p) => ({
       participantId: p.id,
-      displayName: p.display_name,
-      availability: availabilityResult.rows
-        .filter((a) => a.participant_id === p.id)
-        .map((a) => ({
-          date: a.date,
-          startTime: a.start_time,
-          endTime: a.end_time,
-        })),
-      generalAvailability: generalResult.rows
-        .filter((g) => g.participant_id === p.id)
-        .map((g) => ({
-          id: g.id,
-          participantId: g.participant_id,
-          dayOfWeek: g.day_of_week,
-          startTime: g.start_time,
-          endTime: g.end_time,
-        })),
-      exceptions: exceptionsResult.rows
-        .filter((e) => e.participant_id === p.id)
-        .map((e) => ({
-          id: e.id,
-          participantId: e.participant_id,
-          date: e.date,
-          startTime: e.start_time,
-          endTime: e.end_time,
-          reason: e.reason,
-        })),
+      displayName: p.displayName,
+      availability: p.availability.map((a) => ({
+        date: a.date.toISOString().split("T")[0],
+        startTime: a.startTime,
+        endTime: a.endTime,
+      })),
+      generalAvailability: p.generalAvailability.map((g) => ({
+        id: g.id,
+        participantId: g.participantId,
+        dayOfWeek: g.dayOfWeek,
+        startTime: g.startTime,
+        endTime: g.endTime,
+      })),
+      exceptions: p.exceptions.map((e) => ({
+        id: e.id,
+        participantId: e.participantId,
+        date: e.date.toISOString().split("T")[0],
+        startTime: e.startTime,
+        endTime: e.endTime,
+        reason: e.reason,
+      })),
     }));
 
-    // Calculate overlap
     const overlap = calculateOverlap(participantData);
 
-    // Build participant name map
     const participantNames: Record<string, string> = {};
-    for (const p of participantRows) {
-      participantNames[p.id] = p.display_name;
+    for (const p of participants) {
+      participantNames[p.id] = p.displayName;
     }
 
     return NextResponse.json({
       overlap,
-      participants: participantRows.map((p) => ({
+      participants: participants.map((p) => ({
         id: p.id,
-        displayName: p.display_name,
-        isGm: p.is_gm,
-        hasAvailability:
-          availabilityResult.rows.some((a) => a.participant_id === p.id) ||
-          generalResult.rows.some((g) => g.participant_id === p.id),
+        displayName: p.displayName,
+        isGm: p.isGm,
+        hasAvailability: p.availability.length > 0 || p.generalAvailability.length > 0,
       })),
       participantNames,
     });

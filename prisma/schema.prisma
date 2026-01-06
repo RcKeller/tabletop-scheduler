@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Event {
+  id                String        @id @default(uuid())
+  slug              String        @unique
+  title             String
+  description       String?
+  isRecurring       Boolean       @default(false)
+  recurrencePattern Json?
+  startTime         DateTime?
+  durationMinutes   Int?
+  timezone          String        @default("UTC")
+  createdAt         DateTime      @default(now())
+  participants      Participant[]
+
+  @@map("events")
+}
+
+model Participant {
+  id                   String                 @id @default(uuid())
+  eventId              String
+  event                Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  displayName          String
+  isGm                 Boolean                @default(false)
+  createdAt            DateTime               @default(now())
+  availability         Availability[]
+  generalAvailability  GeneralAvailability[]
+  exceptions           AvailabilityException[]
+
+  @@unique([eventId, displayName])
+  @@map("participants")
+}
+
+model Availability {
+  id            String      @id @default(uuid())
+  participantId String
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  date          DateTime    @db.Date
+  startTime     String
+  endTime       String
+
+  @@unique([participantId, date, startTime, endTime])
+  @@map("availability")
+}
+
+model GeneralAvailability {
+  id            String      @id @default(uuid())
+  participantId String
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  dayOfWeek     Int
+  startTime     String
+  endTime       String
+
+  @@unique([participantId, dayOfWeek, startTime, endTime])
+  @@map("general_availability")
+}
+
+model AvailabilityException {
+  id            String      @id @default(uuid())
+  participantId String
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  date          DateTime    @db.Date
+  startTime     String
+  endTime       String
+  reason        String?
+
+  @@unique([participantId, date, startTime, endTime])
+  @@map("availability_exceptions")
+}

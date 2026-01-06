@@ -1,10 +1,6 @@
-import { sql } from "@vercel/postgres";
+import { prisma } from "@/lib/db/prisma";
 import { nanoid } from "nanoid";
 
-/**
- * Generate a URL-safe slug from an event title.
- * Checks for collisions and appends a random suffix if needed.
- */
 export async function generateSlug(title: string): Promise<string> {
   const base = title
     .toLowerCase()
@@ -12,25 +8,17 @@ export async function generateSlug(title: string): Promise<string> {
     .replace(/^-+|-+$/g, "")
     .slice(0, 50);
 
-  // Handle edge case of empty slug
   if (!base) {
     return nanoid(8);
   }
 
-  // Check DB for collision
-  const { rows } = await sql`SELECT 1 FROM events WHERE slug = ${base}`;
+  const existing = await prisma.event.findUnique({
+    where: { slug: base },
+  });
 
-  if (rows.length > 0) {
-    // Collision - append random suffix
-    return `${base}-${nanoid(6)}`;
-  }
-
-  return base;
+  return existing ? `${base}-${nanoid(6)}` : base;
 }
 
-/**
- * Validate that a slug is URL-safe
- */
 export function isValidSlug(slug: string): boolean {
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) && slug.length <= 60;
 }

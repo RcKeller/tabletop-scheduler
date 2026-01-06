@@ -6,11 +6,24 @@ import { JoinEventForm } from "@/components/participant/JoinEventForm";
 import { ParticipantList } from "@/components/participant/ParticipantList";
 import { AvailabilitySection } from "@/components/availability/AvailabilitySection";
 import { OverlapPreview } from "@/components/overlap/OverlapPreview";
-import { getBrowserTimezone } from "@/lib/utils/timezone";
-import type { Event, Participant } from "@/lib/types";
+
+interface EventProps {
+  id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  timezone: string;
+}
+
+interface Participant {
+  id: string;
+  eventId: string;
+  displayName: string;
+  isGm: boolean;
+}
 
 interface EventPageProps {
-  event: Event;
+  event: EventProps;
 }
 
 export function EventPage({ event }: EventPageProps) {

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql } from "@vercel/postgres";
-import type { AvailabilityRow, GeneralAvailabilityRow, AvailabilityExceptionRow } from "@/lib/types";
+import { prisma } from "@/lib/db/prisma";
 
 export async function GET(
   request: NextRequest,
@@ -9,49 +8,30 @@ export async function GET(
   try {
     const { participantId } = await params;
 
-    // Get event-specific availability
-    const { rows: availabilityRows } = await sql<AvailabilityRow>`
-      SELECT * FROM availability
-      WHERE participant_id = ${participantId}
-      ORDER BY date, start_time
-    `;
-
-    // Get general availability patterns
-    const { rows: generalRows } = await sql<GeneralAvailabilityRow>`
-      SELECT * FROM general_availability
-      WHERE participant_id = ${participantId}
-      ORDER BY day_of_week, start_time
-    `;
-
-    // Get exceptions
-    const { rows: exceptionRows } = await sql<AvailabilityExceptionRow>`
-      SELECT * FROM availability_exceptions
-      WHERE participant_id = ${participantId}
-      ORDER BY date, start_time
-    `;
+    const [availability, generalAvailability, exceptions] = await Promise.all([
+      prisma.availability.findMany({
+        where: { participantId },
+        orderBy: [{ date: "asc" }, { startTime: "asc" }],
+      }),
+      prisma.generalAvailability.findMany({
+        where: { participantId },
+        orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
+      }),
+      prisma.availabilityException.findMany({
+        where: { participantId },
+        orderBy: [{ date: "asc" }, { startTime: "asc" }],
+      }),
+    ]);
 
     return NextResponse.json({
-      availability: availabilityRows.map((row) => ({
-        id: row.id,
-        participantId: row.participant_id,
-        date: row.date,
-        startTime: row.start_time,
-        endTime: row.end_time,
+      availability: availability.map((a) => ({
+        ...a,
+        date: a.date.toISOString().split("T")[0],
       })),
-      generalAvailability: generalRows.map((row) => ({
-        id: row.id,
-        participantId: row.participant_id,
-        dayOfWeek: row.day_of_week,
-        startTime: row.start_time,
-        endTime: row.end_time,
-      })),
-      exceptions: exceptionRows.map((row) => ({
-        id: row.id,
-        participantId: row.participant_id,
-        date: row.date,
-        startTime: row.start_time,
-        endTime: row.end_time,
-        reason: row.reason,
+      generalAvailability,
+      exceptions: exceptions.map((e) => ({
+        ...e,
+        date: e.date.toISOString().split("T")[0],
       })),
     });
   } catch (error) {
@@ -73,49 +53,56 @@ export async function PUT(
 
     // Handle event-specific availability
     if (body.availability !== undefined) {
-      // Delete existing availability for this participant
-      await sql`
-        DELETE FROM availability WHERE participant_id = ${participantId}
-      `;
+      await prisma.availability.deleteMany({
+        where: { participantId },
+      });
 
-      // Insert new availability
-      for (const slot of body.availability) {
-        await sql`
-          INSERT INTO availability (participant_id, date, start_time, end_time)
-          VALUES (${participantId}, ${slot.date}, ${slot.startTime}, ${slot.endTime})
-        `;
+      if (body.availability.length > 0) {
+        await prisma.availability.createMany({
+          data: body.availability.map((slot: { date: string; startTime: string; endTime: string }) => ({
+            participantId,
+            date: new Date(slot.date),
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+          })),
+        });
       }
     }
 
     // Handle general availability patterns
     if (body.generalAvailability !== undefined) {
-      // Delete existing general availability
-      await sql`
-        DELETE FROM general_availability WHERE participant_id = ${participantId}
-      `;
+      await prisma.generalAvailability.deleteMany({
+        where: { participantId },
+      });
 
-      // Insert new patterns
-      for (const pattern of body.generalAvailability) {
-        await sql`
-          INSERT INTO general_availability (participant_id, day_of_week, start_time, end_time)
-          VALUES (${participantId}, ${pattern.dayOfWeek}, ${pattern.startTime}, ${pattern.endTime})
-        `;
+      if (body.generalAvailability.length > 0) {
+        await prisma.generalAvailability.createMany({
+          data: body.generalAvailability.map((pattern: { dayOfWeek: number; startTime: string; endTime: string }) => ({
+            participantId,
+            dayOfWeek: pattern.dayOfWeek,
+            startTime: pattern.startTime,
+            endTime: pattern.endTime,
+          })),
+        });
       }
     }
 
     // Handle exceptions
     if (body.exceptions !== undefined) {
-      // Delete existing exceptions
-      await sql`
-        DELETE FROM availability_exceptions WHERE participant_id = ${participantId}
-      `;
+      await prisma.availabilityException.deleteMany({
+        where: { participantId },
+      });
 
-      // Insert new exceptions
-      for (const exception of body.exceptions) {
-        await sql`
-          INSERT INTO availability_exceptions (participant_id, date, start_time, end_time, reason)
-          VALUES (${participantId}, ${exception.date}, ${exception.startTime}, ${exception.endTime}, ${exception.reason || null})
-        `;
+      if (body.exceptions.length > 0) {
+        await prisma.availabilityException.createMany({
+          data: body.exceptions.map((exception: { date: string; startTime: string; endTime: string; reason?: string }) => ({
+            participantId,
+            date: new Date(exception.date),
+            startTime: exception.startTime,
+            endTime: exception.endTime,
+            reason: exception.reason || null,
+          })),
+        });
       }
     }
 

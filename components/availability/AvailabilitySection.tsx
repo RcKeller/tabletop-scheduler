@@ -4,7 +4,13 @@ import { useState, useEffect } from "react";
 import { AvailabilityGrid } from "./AvailabilityGrid";
 import { AvailabilityAI } from "./AvailabilityAI";
 import { GeneralAvailabilityEditor } from "./GeneralAvailabilityEditor";
-import type { Participant, TimeSlot, GeneralAvailability as GeneralAvailabilityType } from "@/lib/types";
+import type { TimeSlot, GeneralAvailability as GeneralAvailabilityType } from "@/lib/types";
+
+interface Participant {
+  id: string;
+  displayName: string;
+  isGm: boolean;
+}
 
 interface AvailabilitySectionProps {
   participant: Participant;
