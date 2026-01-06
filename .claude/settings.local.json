@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /Users/dev/tabletop-scheduler log --oneline -10)",
+      "Bash(git -C /Users/dev/tabletop-scheduler status)",
+      "Bash(npm run build:*)"
+    ]
+  }
+}
