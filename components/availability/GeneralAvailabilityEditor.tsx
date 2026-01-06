@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { GeneralAvailability } from "@/lib/types";
 
 interface GeneralAvailabilityEditorProps {
@@ -38,6 +38,30 @@ interface PatternEntry {
   endTime: string;
 }
 
+/**
+ * Calculate default evening hours based on timezone.
+ * Returns the last 5 hours of the day (e.g., 7pm-12am or 19:00-00:00)
+ */
+function getDefaultEveningHours(): { startTime: string; endTime: string } {
+  // Default to 7pm-12am (last 5 hours of day)
+  return { startTime: "19:00", endTime: "00:00" };
+}
+
+/**
+ * Generate default weekly patterns for weekday evenings
+ */
+function generateDefaultPatterns(): PatternEntry[] {
+  const { startTime, endTime } = getDefaultEveningHours();
+
+  // Default: Monday through Friday evenings
+  return [1, 2, 3, 4, 5].map((dayOfWeek, i) => ({
+    id: `default-${i}`,
+    dayOfWeek,
+    startTime,
+    endTime,
+  }));
+}
+
 export function GeneralAvailabilityEditor({
   patterns,
   timezone,
@@ -46,10 +70,14 @@ export function GeneralAvailabilityEditor({
 }: GeneralAvailabilityEditorProps) {
   const [entries, setEntries] = useState<PatternEntry[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
+  const [initialized, setInitialized] = useState(false);
 
-  // Initialize from patterns
+  // Initialize from patterns or generate defaults
   useEffect(() => {
+    if (initialized) return;
+
     if (patterns.length > 0) {
+      // Use existing patterns
       setEntries(
         patterns.map((p, i) => ({
           id: p.id || `entry-${i}`,
@@ -58,16 +86,33 @@ export function GeneralAvailabilityEditor({
           endTime: p.endTime,
         }))
       );
+      setHasChanges(false);
     } else {
-      // Default: weekday evenings
-      setEntries([
-        { id: "default-1", dayOfWeek: 1, startTime: "18:00", endTime: "22:00" },
-        { id: "default-2", dayOfWeek: 2, startTime: "18:00", endTime: "22:00" },
-        { id: "default-3", dayOfWeek: 3, startTime: "18:00", endTime: "22:00" },
-        { id: "default-4", dayOfWeek: 4, startTime: "18:00", endTime: "22:00" },
-        { id: "default-5", dayOfWeek: 5, startTime: "18:00", endTime: "22:00" },
-      ]);
-      setHasChanges(true);
+      // Generate default patterns (last 5 hours of day, M-F)
+      setEntries(generateDefaultPatterns());
+      setHasChanges(true); // Mark as needing save
+    }
+    setInitialized(true);
+  }, [patterns, initialized]);
+
+  // Reset initialization when patterns prop changes significantly
+  useEffect(() => {
+    if (patterns.length > 0 && initialized) {
+      const currentIds = new Set(entries.map(e => e.id));
+      const newIds = new Set(patterns.map(p => p.id));
+      const hasNewPatterns = patterns.some(p => !currentIds.has(p.id || ''));
+
+      if (hasNewPatterns) {
+        setEntries(
+          patterns.map((p, i) => ({
+            id: p.id || `entry-${i}`,
+            dayOfWeek: p.dayOfWeek,
+            startTime: p.startTime,
+            endTime: p.endTime,
+          }))
+        );
+        setHasChanges(false);
+      }
     }
   }, [patterns]);
 
@@ -106,11 +151,28 @@ export function GeneralAvailabilityEditor({
     setHasChanges(false);
   };
 
+  // Format time for display
+  const formatTimeRange = (start: string, end: string) => {
+    const formatTime = (t: string) => {
+      const [h, m] = t.split(":").map(Number);
+      const hour = h % 12 || 12;
+      const ampm = h < 12 ? "AM" : "PM";
+      return `${hour}:${m.toString().padStart(2, "0")} ${ampm}`;
+    };
+    return `${formatTime(start)} - ${formatTime(end)}`;
+  };
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-zinc-500 dark:text-zinc-400">
-        Set your recurring weekly availability. This helps others know when you&apos;re generally free.
+        Set your recurring weekly availability. This forms your base schedule that applies to all weeks.
       </p>
+
+      {entries.length === 0 && (
+        <div className="rounded-md bg-yellow-50 p-4 text-sm text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400">
+          No weekly schedule set. Add time slots below to indicate when you&apos;re generally available.
+        </div>
+      )}
 
       <div className="space-y-3">
         {entries.map((entry) => (

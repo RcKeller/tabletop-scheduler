@@ -288,6 +288,8 @@ export function EventPage({ event }: EventPageProps) {
                     weekStart={currentWeekStart}
                     earliestTime={event.earliestTime}
                     latestTime={event.latestTime}
+                    eventStartDate={event.startDate || undefined}
+                    eventEndDate={event.endDate || undefined}
                   />
                 </div>
               )}
