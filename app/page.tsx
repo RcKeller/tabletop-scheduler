@@ -1,4 +1,4 @@
-import { CreateEventForm } from "@/components/event/CreateEventForm";
+import { CreateCampaignForm } from "@/components/campaign/CreateCampaignForm";
 
 export default function Home() {
   return (
@@ -6,17 +6,17 @@ export default function Home() {
       <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto max-w-4xl px-4 py-4">
           <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
-            TTRPG Session Scheduler
+            When2Play
           </h1>
         </div>
       </header>
 
       <main className="flex-1">
         <div className="mx-auto max-w-4xl px-4 py-8">
-          <div className="mx-auto max-w-md">
+          <div className="mx-auto max-w-lg">
             <div className="mb-8 text-center">
               <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
-                Schedule Your Next Session
+                Schedule Your Next Campaign
               </h2>
               <p className="mt-2 text-zinc-600 dark:text-zinc-400">
                 Create a scheduling link to find the perfect time for your
@@ -25,7 +25,7 @@ export default function Home() {
             </div>
 
             <div className="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-              <CreateEventForm />
+              <CreateCampaignForm />
             </div>
 
             <div className="mt-8 space-y-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
@@ -33,7 +33,7 @@ export default function Home() {
                 <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-xs font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
                   1
                 </span>
-                <span>Create your session</span>
+                <span>Create your campaign</span>
               </div>
               <div className="flex items-center justify-center gap-2">
                 <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-xs font-medium text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
@@ -59,7 +59,7 @@ export default function Home() {
       </main>
 
       <footer className="border-t border-zinc-200 bg-white py-4 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
-        Made for tabletop gamers
+        When2Play - Made for tabletop gamers
       </footer>
     </div>
   );

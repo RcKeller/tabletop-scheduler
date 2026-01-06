@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { format, addDays, startOfWeek, parse } from "date-fns";
-import { formatInTimeZone } from "date-fns-tz";
 import type { TimeSlot } from "@/lib/types";
 
 interface AvailabilityGridProps {
@@ -10,19 +9,48 @@ interface AvailabilityGridProps {
   timezone: string;
   onSave: (slots: TimeSlot[]) => void;
   isSaving: boolean;
+  weekStart?: Date;
+  earliestTime?: string; // HH:MM format
+  latestTime?: string; // HH:MM format (same as earliest = 24hr)
 }
 
-// Generate time slots (30-min intervals from 6am to midnight)
-const TIME_SLOTS = Array.from({ length: 36 }, (_, i) => {
-  const hour = Math.floor(i / 2) + 6;
-  const minute = (i % 2) * 30;
-  return `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`;
-});
+// Generate time slots (30-min intervals for full day)
+function generateTimeSlots(earliest: string, latest: string): string[] {
+  const slots: string[] = [];
+  const is24Hour = earliest === latest;
 
-// Generate next 7 days
-function getWeekDates(): Date[] {
-  const today = startOfWeek(new Date(), { weekStartsOn: 0 });
-  return Array.from({ length: 7 }, (_, i) => addDays(today, i));
+  // Parse times to minutes from midnight
+  const parseTime = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  };
+
+  const startMins = parseTime(earliest);
+  let endMins = parseTime(latest);
+
+  // If 24 hour or latest is before earliest (crosses midnight), adjust
+  if (is24Hour) {
+    endMins = startMins + 24 * 60;
+  } else if (endMins <= startMins) {
+    endMins += 24 * 60; // Crosses midnight
+  }
+
+  for (let mins = startMins; mins < endMins; mins += 30) {
+    const normalizedMins = mins % (24 * 60);
+    const hour = Math.floor(normalizedMins / 60);
+    const minute = normalizedMins % 60;
+    slots.push(
+      `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`
+    );
+  }
+
+  return slots;
+}
+
+// Generate 7 days starting from a date
+function getWeekDates(start?: Date): Date[] {
+  const weekStart = start || startOfWeek(new Date(), { weekStartsOn: 0 });
+  return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 }
 
 export function AvailabilityGrid({
@@ -30,13 +58,46 @@ export function AvailabilityGrid({
   timezone,
   onSave,
   isSaving,
+  weekStart,
+  earliestTime = "00:00",
+  latestTime = "23:30",
 }: AvailabilityGridProps) {
   const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
   const [isDragging, setIsDragging] = useState(false);
   const [dragMode, setDragMode] = useState<"select" | "deselect">("select");
+  const [dragStart, setDragStart] = useState<{ row: number; col: number } | null>(null);
+  const [dragEnd, setDragEnd] = useState<{ row: number; col: number } | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
-  const weekDates = getWeekDates();
+
+  const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
+  const timeSlots = useMemo(
+    () => generateTimeSlots(earliestTime, latestTime),
+    [earliestTime, latestTime]
+  );
+
+  // Calculate pending slots from drag rectangle
+  const pendingSlots = useMemo(() => {
+    if (!isDragging || !dragStart || !dragEnd) return new Set<string>();
+
+    const pending = new Set<string>();
+    const minRow = Math.min(dragStart.row, dragEnd.row);
+    const maxRow = Math.max(dragStart.row, dragEnd.row);
+    const minCol = Math.min(dragStart.col, dragEnd.col);
+    const maxCol = Math.max(dragStart.col, dragEnd.col);
+
+    for (let row = minRow; row <= maxRow; row++) {
+      for (let col = minCol; col <= maxCol; col++) {
+        if (row < timeSlots.length && col < weekDates.length) {
+          const dateStr = format(weekDates[col], "yyyy-MM-dd");
+          const time = timeSlots[row];
+          pending.add(`${dateStr}-${time}`);
+        }
+      }
+    }
+
+    return pending;
+  }, [isDragging, dragStart, dragEnd, timeSlots, weekDates]);
 
   // Initialize selected slots from availability
   useEffect(() => {
@@ -57,38 +118,48 @@ export function AvailabilityGrid({
       }
     }
     setSelectedSlots(slots);
+    setHasChanges(false);
   }, [availability]);
 
-  const toggleSlot = useCallback((slotKey: string, forceMode?: "select" | "deselect") => {
-    setSelectedSlots((prev) => {
-      const next = new Set(prev);
-      const mode = forceMode || (next.has(slotKey) ? "deselect" : "select");
-      if (mode === "select") {
-        next.add(slotKey);
-      } else {
-        next.delete(slotKey);
+  const handlePointerDown = useCallback(
+    (row: number, col: number, slotKey: string) => {
+      setIsDragging(true);
+      const mode = selectedSlots.has(slotKey) ? "deselect" : "select";
+      setDragMode(mode);
+      setDragStart({ row, col });
+      setDragEnd({ row, col });
+    },
+    [selectedSlots]
+  );
+
+  const handlePointerEnter = useCallback(
+    (row: number, col: number) => {
+      if (isDragging) {
+        setDragEnd({ row, col });
       }
-      return next;
-    });
-    setHasChanges(true);
-  }, []);
-
-  const handlePointerDown = useCallback((slotKey: string) => {
-    setIsDragging(true);
-    const mode = selectedSlots.has(slotKey) ? "deselect" : "select";
-    setDragMode(mode);
-    toggleSlot(slotKey, mode);
-  }, [selectedSlots, toggleSlot]);
-
-  const handlePointerEnter = useCallback((slotKey: string) => {
-    if (isDragging) {
-      toggleSlot(slotKey, dragMode);
-    }
-  }, [isDragging, dragMode, toggleSlot]);
+    },
+    [isDragging]
+  );
 
   const handlePointerUp = useCallback(() => {
+    if (isDragging && pendingSlots.size > 0) {
+      setSelectedSlots((prev) => {
+        const next = new Set(prev);
+        for (const slot of pendingSlots) {
+          if (dragMode === "select") {
+            next.add(slot);
+          } else {
+            next.delete(slot);
+          }
+        }
+        return next;
+      });
+      setHasChanges(true);
+    }
     setIsDragging(false);
-  }, []);
+    setDragStart(null);
+    setDragEnd(null);
+  }, [isDragging, pendingSlots, dragMode]);
 
   // Global pointer up listener
   useEffect(() => {
@@ -104,23 +175,27 @@ export function AvailabilityGrid({
     const sortedSlots = Array.from(selectedSlots).sort();
 
     for (const slotKey of sortedSlots) {
-      const [date, time] = slotKey.split("-").reduce((acc, part, i) => {
-        if (i < 3) {
-          acc[0] = acc[0] ? `${acc[0]}-${part}` : part;
-        } else {
-          acc[1] = part;
-        }
-        return acc;
-      }, ["", ""] as [string, string]);
+      const [date, time] = slotKey.split("-").reduce(
+        (acc, part, i) => {
+          if (i < 3) {
+            acc[0] = acc[0] ? `${acc[0]}-${part}` : part;
+          } else {
+            acc[1] = part;
+          }
+          return acc;
+        },
+        ["", ""] as [string, string]
+      );
 
       const dateSlots = slotsMap.get(date) || [];
 
       // Calculate end time (30 mins later)
       const [h, m] = time.split(":").map(Number);
       const endMinute = m + 30;
-      const endTime = endMinute >= 60
-        ? `${(h + 1).toString().padStart(2, "0")}:00`
-        : `${h.toString().padStart(2, "0")}:30`;
+      const endTime =
+        endMinute >= 60
+          ? `${(h + 1).toString().padStart(2, "0")}:00`
+          : `${h.toString().padStart(2, "0")}:30`;
 
       // Try to extend existing range
       const lastRange = dateSlots[dateSlots.length - 1];
@@ -147,6 +222,17 @@ export function AvailabilityGrid({
 
     onSave(result);
     setHasChanges(false);
+  };
+
+  // Determine cell state
+  const getCellState = (slotKey: string): "selected" | "pending-select" | "pending-deselect" | "unselected" => {
+    const isSelected = selectedSlots.has(slotKey);
+    const isPending = pendingSlots.has(slotKey);
+
+    if (isPending) {
+      return dragMode === "select" ? "pending-select" : "pending-deselect";
+    }
+    return isSelected ? "selected" : "unselected";
   };
 
   return (
@@ -190,7 +276,7 @@ export function AvailabilityGrid({
 
           {/* Time slots grid */}
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {TIME_SLOTS.map((time) => {
+            {timeSlots.map((time, rowIndex) => {
               const [hour, minute] = time.split(":").map(Number);
               const isHourMark = minute === 0;
 
@@ -198,26 +284,42 @@ export function AvailabilityGrid({
                 <div
                   key={time}
                   className={`grid grid-cols-[60px_repeat(7,1fr)] ${
-                    isHourMark ? "border-t border-zinc-200 dark:border-zinc-700" : ""
+                    isHourMark
+                      ? "border-t border-zinc-200 dark:border-zinc-700"
+                      : ""
                   }`}
                 >
                   <div className="flex items-center justify-center p-1 text-xs text-zinc-400 dark:text-zinc-500">
-                    {isHourMark && format(parse(time, "HH:mm", new Date()), "h a")}
+                    {isHourMark &&
+                      format(parse(time, "HH:mm", new Date()), "h a")}
                   </div>
-                  {weekDates.map((date) => {
+                  {weekDates.map((date, colIndex) => {
                     const dateStr = format(date, "yyyy-MM-dd");
                     const slotKey = `${dateStr}-${time}`;
-                    const isSelected = selectedSlots.has(slotKey);
+                    const cellState = getCellState(slotKey);
+
+                    let cellClass = "bg-white dark:bg-zinc-900";
+                    if (cellState === "selected") {
+                      cellClass = "bg-green-400 dark:bg-green-600";
+                    } else if (cellState === "pending-select") {
+                      cellClass = "bg-green-300 dark:bg-green-500";
+                    } else if (cellState === "pending-deselect") {
+                      cellClass = "bg-red-200 dark:bg-red-400";
+                    }
 
                     return (
                       <div
                         key={slotKey}
-                        onPointerDown={() => handlePointerDown(slotKey)}
-                        onPointerEnter={() => handlePointerEnter(slotKey)}
-                        className={`h-6 cursor-pointer border-l border-zinc-100 transition-colors dark:border-zinc-800 ${
-                          isSelected
-                            ? "bg-green-400 dark:bg-green-600"
-                            : "bg-white hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+                        onPointerDown={() =>
+                          handlePointerDown(rowIndex, colIndex, slotKey)
+                        }
+                        onPointerEnter={() =>
+                          handlePointerEnter(rowIndex, colIndex)
+                        }
+                        className={`h-6 cursor-pointer border-l border-zinc-100 transition-colors dark:border-zinc-800 ${cellClass} ${
+                          cellState === "unselected"
+                            ? "hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                            : ""
                         }`}
                       />
                     );
@@ -235,7 +337,7 @@ export function AvailabilityGrid({
           <span>Available</span>
         </div>
         <div className="flex items-center gap-1">
-          <div className="h-3 w-3 rounded bg-white border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700" />
+          <div className="h-3 w-3 rounded border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900" />
           <span>Not available</span>
         </div>
       </div>

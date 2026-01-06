@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TTRPG Session Scheduler",
-  description: "Schedule your tabletop gaming sessions with ease. Coordinate availability across timezones for your D&D, Pathfinder, or other TTRPG campaigns.",
+  title: "When2Play - Campaign Scheduler",
+  description: "Find the perfect time for your tabletop gaming group. Coordinate availability across timezones for your D&D, Pathfinder, or other TTRPG campaigns.",
 };
 
 export default function RootLayout({

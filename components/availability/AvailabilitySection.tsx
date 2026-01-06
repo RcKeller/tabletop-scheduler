@@ -16,6 +16,9 @@ interface AvailabilitySectionProps {
   participant: Participant;
   timezone: string;
   onUpdate: () => void;
+  weekStart?: Date;
+  earliestTime?: string;
+  latestTime?: string;
 }
 
 type Tab = "specific" | "general" | "ai";
@@ -24,6 +27,9 @@ export function AvailabilitySection({
   participant,
   timezone,
   onUpdate,
+  weekStart,
+  earliestTime,
+  latestTime,
 }: AvailabilitySectionProps) {
   const [activeTab, setActiveTab] = useState<Tab>("specific");
   const [availability, setAvailability] = useState<TimeSlot[]>([]);
@@ -168,6 +174,9 @@ export function AvailabilitySection({
             timezone={timezone}
             onSave={handleSaveAvailability}
             isSaving={isSaving}
+            weekStart={weekStart}
+            earliestTime={earliestTime}
+            latestTime={latestTime}
           />
         )}
 

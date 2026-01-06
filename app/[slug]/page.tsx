@@ -11,6 +11,9 @@ export default async function Page({ params }: Props) {
 
   const event = await prisma.event.findUnique({
     where: { slug },
+    include: {
+      gameSystem: true,
+    },
   });
 
   if (!event) {
@@ -19,8 +22,26 @@ export default async function Page({ params }: Props) {
 
   // Serialize for client component
   const serializedEvent = {
-    ...event,
-    startTime: event.startTime?.toISOString() ?? null,
+    id: event.id,
+    slug: event.slug,
+    title: event.title,
+    description: event.description,
+    timezone: event.timezone,
+    startDate: event.startDate?.toISOString() ?? null,
+    endDate: event.endDate?.toISOString() ?? null,
+    earliestTime: event.earliestTime,
+    latestTime: event.latestTime,
+    sessionLengthMinutes: event.sessionLengthMinutes,
+    meetingType: event.meetingType,
+    meetingLocation: event.meetingLocation,
+    meetingRoom: event.meetingRoom,
+    campaignImageBase64: event.campaignImageBase64,
+    customPreSessionInstructions: event.customPreSessionInstructions,
+    gameSystem: event.gameSystem ? {
+      id: event.gameSystem.id,
+      name: event.gameSystem.name,
+      imageBase64: event.gameSystem.imageBase64,
+    } : null,
     createdAt: event.createdAt.toISOString(),
   };
 

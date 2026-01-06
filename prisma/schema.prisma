@@ -8,18 +8,65 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum MeetingType {
+  DISCORD
+  ZOOM
+  GOOGLE_MEET
+  ROLL20
+  FOUNDRY_VTT
+  IN_PERSON
+  OTHER
+}
+
+model GameSystem {
+  id                  String   @id @default(uuid())
+  name                String   @unique
+  description         String?
+  imageBase64         String?  @db.Text
+  defaultInstructions String?  @db.Text
+  isBuiltIn           Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  events              Event[]
+
+  @@map("game_systems")
+}
+
 model Event {
   id                String        @id @default(uuid())
   slug              String        @unique
   title             String
   description       String?
-  isRecurring       Boolean       @default(false)
-  recurrencePattern Json?
-  startTime         DateTime?
-  durationMinutes   Int?
   timezone          String        @default("UTC")
   createdAt         DateTime      @default(now())
   participants      Participant[]
+
+  // Game system relationship
+  gameSystemId               String?
+  gameSystem                 GameSystem? @relation(fields: [gameSystemId], references: [id], onDelete: SetNull)
+
+  // Campaign configuration
+  campaignImageBase64        String?     @db.Text
+  sessionLengthMinutes       Int         @default(180)
+  customPreSessionInstructions String?   @db.Text
+
+  // Date range for availability window
+  startDate                  DateTime?   @db.Date
+  endDate                    DateTime?   @db.Date
+
+  // Daily time window (stored in event timezone)
+  earliestTime               String      @default("00:00")
+  latestTime                 String      @default("23:30")
+
+  // Meeting configuration
+  meetingType                MeetingType?
+  meetingLocation            String?
+  meetingRoom                String?
+
+  // Legacy fields (kept for backward compatibility)
+  isRecurring                Boolean     @default(false)
+  recurrencePattern          Json?
+  startTime                  DateTime?
+  durationMinutes            Int?
 
   @@map("events")
 }
