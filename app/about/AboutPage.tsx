@@ -96,7 +96,7 @@ export function AboutPage() {
             </div>
             <div>
               <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
-                Hey, I'm Andy
+                Howdy - I'm Andy
               </h2>
               <p className="text-zinc-600 dark:text-zinc-400">
                 Software Engineer & TTRPG enthusiast from Las Vegas
@@ -119,17 +119,16 @@ export function AboutPage() {
               </a>
             </p>
 
-            <p className="text-lg">
-              This tool was built for us to take on the most fearsome foe —{" "}
-              <span className="font-semibold text-zinc-900 dark:text-zinc-100">
-                scheduling
-              </span>
-              , together.
-            </p>
-
             <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
-              <p className="text-sm">
-                This is, and will remain, <strong>not for profit</strong>. It is,
+              <p className="text-base">
+                This tool was built for us to take on the most fearsome foe —{" "}
+                <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                  scheduling
+                </span>
+                , together.
+              </p>
+              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+                This is, and will remain, <strong className="text-zinc-700 dark:text-zinc-300">not for profit</strong>. It is,
                 however, not free to run — so I may add a donate button in the
                 future. Depends on how popular this becomes.
               </p>
