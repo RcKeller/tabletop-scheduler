@@ -68,6 +68,9 @@ export function CampaignPage({ event }: CampaignPageProps) {
   const [selectedParticipant, setSelectedParticipant] = useState<Participant | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>(event.participants);
+  const [showAddPlayer, setShowAddPlayer] = useState(false);
+  const [newPlayerName, setNewPlayerName] = useState("");
+  const [isAddingPlayer, setIsAddingPlayer] = useState(false);
 
   const eventStartDate = useMemo(() => {
     return event.startDate ? parseISO(event.startDate) : new Date();
@@ -121,9 +124,53 @@ export function CampaignPage({ event }: CampaignPageProps) {
       // Update selectedParticipant for the modal
       setSelectedParticipant((prev) => prev ? { ...prev, ...updated } : null);
     } else {
-      throw new Error("Failed to save profile");
+      const errorData = await res.json().catch(() => ({}));
+      const errorMsg = errorData.details
+        ? `${errorData.error}: ${errorData.details}`
+        : (errorData.error || "Failed to save profile");
+      throw new Error(errorMsg);
     }
   }, [selectedParticipant, currentParticipant]);
+
+  // Handle adding a new player (by anyone)
+  const handleAddPlayer = useCallback(async () => {
+    if (!newPlayerName.trim()) return;
+
+    setIsAddingPlayer(true);
+    try {
+      const res = await fetch(`/api/events/${event.slug}/participants`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ displayName: newPlayerName.trim() }),
+      });
+
+      if (res.ok) {
+        const newParticipant = await res.json();
+        setParticipants((prev) => [...prev, {
+          ...newParticipant,
+          characterName: null,
+          characterClass: null,
+          characterSheetUrl: null,
+          characterTokenBase64: null,
+          notes: null,
+        }]);
+        setNewPlayerName("");
+        setShowAddPlayer(false);
+      }
+    } catch (error) {
+      console.error("Failed to add player:", error);
+    } finally {
+      setIsAddingPlayer(false);
+    }
+  }, [newPlayerName, event.slug]);
+
+  // Open profile modal for current user to create character
+  const handleCreateCharacter = useCallback(() => {
+    if (currentParticipant) {
+      setSelectedParticipant(currentParticipant);
+      setIsProfileModalOpen(true);
+    }
+  }, [currentParticipant]);
 
   // Load heatmap data
   useEffect(() => {
@@ -285,9 +332,14 @@ export function CampaignPage({ event }: CampaignPageProps) {
 
                   {/* Profile callout for players */}
                   {showProfileCallout && (
-                    <div className="rounded-md bg-blue-50 p-2 text-xs text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
-                      <p className="font-medium">Complete your player info</p>
-                      <p className="mt-0.5 text-blue-600 dark:text-blue-500">Add your character name and notes in the Party section below.</p>
+                    <div className="rounded-md bg-blue-50 p-2 dark:bg-blue-900/20">
+                      <p className="text-xs font-medium text-blue-700 dark:text-blue-400">Complete your player info</p>
+                      <button
+                        onClick={handleCreateCharacter}
+                        className="mt-1.5 w-full rounded bg-blue-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                      >
+                        Create your Character
+                      </button>
                     </div>
                   )}
 
@@ -314,9 +366,61 @@ export function CampaignPage({ event }: CampaignPageProps) {
 
             {/* Party Members */}
             <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-              <h2 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                Party ({participants.length})
-              </h2>
+              <div className="mb-2 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                  Party ({participants.length})
+                </h2>
+                {currentParticipant && !showAddPlayer && (
+                  <button
+                    onClick={() => setShowAddPlayer(true)}
+                    className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                  >
+                    + Add Player
+                  </button>
+                )}
+              </div>
+
+              {/* Add Player Form */}
+              {showAddPlayer && (
+                <div className="mb-3 rounded-md bg-zinc-50 p-2 dark:bg-zinc-800">
+                  <p className="mb-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                    Add a player to the campaign
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newPlayerName}
+                      onChange={(e) => setNewPlayerName(e.target.value)}
+                      placeholder="Player name..."
+                      className="flex-1 rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-700"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleAddPlayer();
+                        if (e.key === "Escape") {
+                          setShowAddPlayer(false);
+                          setNewPlayerName("");
+                        }
+                      }}
+                    />
+                    <button
+                      onClick={handleAddPlayer}
+                      disabled={isAddingPlayer || !newPlayerName.trim()}
+                      className="rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {isAddingPlayer ? "..." : "Add"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowAddPlayer(false);
+                        setNewPlayerName("");
+                      }}
+                      className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {participants.length === 0 ? (
                 <p className="text-sm text-zinc-500">No players yet</p>
               ) : (

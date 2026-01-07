@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { ImageUpload } from "./ImageUpload";
-import type { GameSystem } from "@/lib/types";
+import type { GameSystem, PrepUrl } from "@/lib/types";
 
 interface GameSystemModalProps {
   isOpen: boolean;
@@ -19,6 +19,7 @@ export function GameSystemModal({
   const [description, setDescription] = useState("");
   const [imageBase64, setImageBase64] = useState<string | null>(null);
   const [defaultInstructions, setDefaultInstructions] = useState("");
+  const [defaultUrls, setDefaultUrls] = useState<PrepUrl[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,9 +30,24 @@ export function GameSystemModal({
       setDescription("");
       setImageBase64(null);
       setDefaultInstructions("");
+      setDefaultUrls([]);
       setError(null);
     }
   }, [isOpen]);
+
+  const addUrl = useCallback(() => {
+    setDefaultUrls((prev) => [...prev, { label: "", url: "" }]);
+  }, []);
+
+  const updateUrl = useCallback((index: number, field: "label" | "url", value: string) => {
+    setDefaultUrls((prev) =>
+      prev.map((u, i) => (i === index ? { ...u, [field]: value } : u))
+    );
+  }, []);
+
+  const removeUrl = useCallback((index: number) => {
+    setDefaultUrls((prev) => prev.filter((_, i) => i !== index));
+  }, []);
 
   // Close on escape key
   useEffect(() => {
@@ -57,6 +73,11 @@ export function GameSystemModal({
       setIsSubmitting(true);
 
       try {
+        // Filter out empty URLs
+        const validUrls = defaultUrls.filter(
+          (u) => u.label.trim() && u.url.trim()
+        );
+
         const res = await fetch("/api/game-systems", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -65,6 +86,7 @@ export function GameSystemModal({
             description: description.trim() || null,
             imageBase64,
             defaultInstructions: defaultInstructions.trim() || null,
+            defaultUrls: validUrls.length > 0 ? validUrls : null,
           }),
         });
 
@@ -82,7 +104,7 @@ export function GameSystemModal({
         setIsSubmitting(false);
       }
     },
-    [name, description, imageBase64, defaultInstructions, onCreated, onClose]
+    [name, description, imageBase64, defaultInstructions, defaultUrls, onCreated, onClose]
   );
 
   if (!isOpen) return null;
@@ -177,6 +199,55 @@ export function GameSystemModal({
               rows={3}
               className="mt-1 block w-full rounded-md border border-zinc-300 px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             />
+          </div>
+
+          {/* Helpful Links */}
+          <div>
+            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              Helpful Links
+            </label>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              Add links to character builders, rules, etc.
+            </p>
+            <div className="mt-2 space-y-2">
+              {defaultUrls.map((url, index) => (
+                <div key={index} className="flex gap-2">
+                  <input
+                    type="text"
+                    value={url.label}
+                    onChange={(e) => updateUrl(index, "label", e.target.value)}
+                    placeholder="Label"
+                    className="w-1/3 rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  />
+                  <input
+                    type="url"
+                    value={url.url}
+                    onChange={(e) => updateUrl(index, "url", e.target.value)}
+                    placeholder="https://..."
+                    className="flex-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeUrl(index)}
+                    className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addUrl}
+                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add Link
+              </button>
+            </div>
           </div>
 
           <div className="flex justify-end gap-3 pt-2">

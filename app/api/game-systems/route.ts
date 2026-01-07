@@ -11,6 +11,7 @@ export async function GET() {
         description: true,
         imageBase64: true,
         defaultInstructions: true,
+        defaultUrls: true,
         isBuiltIn: true,
         createdAt: true,
       },
@@ -34,7 +35,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, description, imageBase64, defaultInstructions } = body;
+    const { name, description, imageBase64, defaultInstructions, defaultUrls } = body;
 
     if (!name || typeof name !== "string" || name.trim().length === 0) {
       return NextResponse.json(
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest) {
         description: description?.trim() || null,
         imageBase64: imageBase64 || null,
         defaultInstructions: defaultInstructions?.trim() || null,
+        defaultUrls: defaultUrls || null,
         isBuiltIn: false, // Custom systems are never built-in
       },
       select: {
@@ -77,6 +79,7 @@ export async function POST(request: NextRequest) {
         description: true,
         imageBase64: true,
         defaultInstructions: true,
+        defaultUrls: true,
         isBuiltIn: true,
         createdAt: true,
       },

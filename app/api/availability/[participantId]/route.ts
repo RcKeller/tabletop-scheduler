@@ -146,14 +146,8 @@ export async function PUT(
           })),
         });
       }
-
-      // When patterns are saved, clear specific availability so patterns become the source of truth
-      // This ensures patterns and grid are synchronized
-      if (body.clearSpecificOnPatternSave !== false) {
-        await prisma.availability.deleteMany({
-          where: { participantId },
-        });
-      }
+      // NOTE: We no longer clear specific availability when patterns are saved
+      // This allows Calendar entries to coexist with Recurring patterns
     }
 
     // Handle exceptions

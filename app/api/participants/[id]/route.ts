@@ -70,12 +70,24 @@ export async function PUT(
       updateData.characterSheetUrl = body.characterSheetUrl?.trim() || null;
     }
     if ("characterTokenBase64" in body) {
+      // Check size - base64 images can be large
+      if (body.characterTokenBase64 && body.characterTokenBase64.length > 1.4 * 1024 * 1024) {
+        return NextResponse.json(
+          { error: "Image must be less than 1MB" },
+          { status: 400 }
+        );
+      }
       updateData.characterTokenBase64 = body.characterTokenBase64 || null;
     }
     if ("notes" in body) {
       // Enforce 255 char limit on notes
       const trimmedNotes = body.notes?.trim() || null;
       updateData.notes = trimmedNotes ? trimmedNotes.slice(0, 255) : null;
+    }
+
+    // If no fields to update, just return current participant
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json(participant);
     }
 
     const updated = await prisma.participant.update({
@@ -86,8 +98,9 @@ export async function PUT(
     return NextResponse.json(updated);
   } catch (error) {
     console.error("Error updating participant:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { error: "Failed to update participant" },
+      { error: "Failed to update participant", details: message },
       { status: 500 }
     );
   }

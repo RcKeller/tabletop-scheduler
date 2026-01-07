@@ -133,63 +133,59 @@ export function PlayerProfileModal({
         {isCurrentUser ? (
           /* Editable form for current user */
           <div className="space-y-4">
-            {!participant.isGm && (
-              <>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                      Character Name
-                    </label>
-                    <input
-                      type="text"
-                      value={characterName}
-                      onChange={(e) => setCharacterName(e.target.value)}
-                      placeholder="e.g., Elara Nightwhisper"
-                      className="mt-1 block w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                      Class
-                    </label>
-                    <input
-                      type="text"
-                      value={characterClass}
-                      onChange={(e) => setCharacterClass(e.target.value)}
-                      placeholder="e.g., Rogue"
-                      className="mt-1 block w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                    />
-                  </div>
-                </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  {participant.isGm ? "Display Name" : "Character Name"}
+                </label>
+                <input
+                  type="text"
+                  value={characterName}
+                  onChange={(e) => setCharacterName(e.target.value)}
+                  placeholder={participant.isGm ? "e.g., The DM" : "e.g., Elara Nightwhisper"}
+                  className="mt-1 block w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  {participant.isGm ? "Title" : "Class"}
+                </label>
+                <input
+                  type="text"
+                  value={characterClass}
+                  onChange={(e) => setCharacterClass(e.target.value)}
+                  placeholder={participant.isGm ? "e.g., Dungeon Master" : "e.g., Rogue"}
+                  className="mt-1 block w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </div>
+            </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Character Sheet URL
-                  </label>
-                  <input
-                    type="url"
-                    value={characterSheetUrl}
-                    onChange={(e) => setCharacterSheetUrl(e.target.value)}
-                    placeholder="https://dndbeyond.com/..."
-                    className="mt-1 block w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                  />
-                </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                {participant.isGm ? "Reference URL" : "Character Sheet URL"}
+              </label>
+              <input
+                type="url"
+                value={characterSheetUrl}
+                onChange={(e) => setCharacterSheetUrl(e.target.value)}
+                placeholder={participant.isGm ? "https://..." : "https://dndbeyond.com/..."}
+                className="mt-1 block w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+            </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    Character Token
-                  </label>
-                  <div className="mt-1">
-                    <ImageUpload
-                      value={characterTokenBase64}
-                      onChange={setCharacterTokenBase64}
-                      label=""
-                      maxSizeMB={0.5}
-                    />
-                  </div>
-                </div>
-              </>
-            )}
+            <div>
+              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                {participant.isGm ? "Avatar" : "Character Token"}
+              </label>
+              <div className="mt-1">
+                <ImageUpload
+                  value={characterTokenBase64}
+                  onChange={setCharacterTokenBase64}
+                  label=""
+                  maxSizeMB={0.5}
+                />
+              </div>
+            </div>
 
             <div>
               <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">

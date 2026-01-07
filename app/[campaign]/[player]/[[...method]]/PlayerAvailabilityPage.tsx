@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { startOfWeek, parseISO } from "date-fns";
+import { startOfWeek, parseISO, addDays, format, getDay } from "date-fns";
 import Link from "next/link";
 import { AvailabilityGrid } from "@/components/availability/AvailabilityGrid";
 import { AvailabilityAI } from "@/components/availability/AvailabilityAI";
@@ -10,6 +10,117 @@ import { GeneralAvailabilityEditor } from "@/components/availability/GeneralAvai
 import { WeekNavigator } from "@/components/navigation/WeekNavigator";
 import { TimezoneSelector } from "@/components/timezone/TimezoneSelector";
 import type { TimeSlot, GeneralAvailability as GeneralAvailabilityType } from "@/lib/types";
+
+// Helper to expand patterns to slots for a date range
+function expandPatternsForWeek(
+  patterns: GeneralAvailabilityType[],
+  weekStart: Date,
+  earliestTime: string,
+  latestTime: string
+): Set<string> {
+  const slots = new Set<string>();
+
+  for (let i = 0; i < 7; i++) {
+    const date = addDays(weekStart, i);
+    const dateStr = format(date, "yyyy-MM-dd");
+    const dayOfWeek = getDay(date);
+
+    const dayPatterns = patterns.filter(p => p.dayOfWeek === dayOfWeek);
+
+    for (const pattern of dayPatterns) {
+      // Expand pattern to 30-min slots
+      let currentTime = pattern.startTime;
+      while (currentTime < pattern.endTime) {
+        slots.add(`${dateStr}-${currentTime}`);
+        const [h, m] = currentTime.split(":").map(Number);
+        const nextMinute = m + 30;
+        if (nextMinute >= 60) {
+          currentTime = `${(h + 1).toString().padStart(2, "0")}:00`;
+        } else {
+          currentTime = `${h.toString().padStart(2, "0")}:30`;
+        }
+      }
+    }
+  }
+
+  return slots;
+}
+
+// Convert TimeSlots to slot key set
+function slotsToKeySet(slots: TimeSlot[]): Set<string> {
+  const result = new Set<string>();
+  for (const slot of slots) {
+    let currentTime = slot.startTime;
+    while (currentTime < slot.endTime) {
+      result.add(`${slot.date}-${currentTime}`);
+      const [h, m] = currentTime.split(":").map(Number);
+      const nextMinute = m + 30;
+      if (nextMinute >= 60) {
+        currentTime = `${(h + 1).toString().padStart(2, "0")}:00`;
+      } else {
+        currentTime = `${h.toString().padStart(2, "0")}:30`;
+      }
+    }
+  }
+  return result;
+}
+
+// Convert slot keys to TimeSlots (merging consecutive)
+function keySetToSlots(keys: Set<string>): TimeSlot[] {
+  const byDate = new Map<string, string[]>();
+
+  for (const key of keys) {
+    const [datePart, time] = key.split("-").reduce(
+      (acc, part, i) => {
+        if (i < 3) {
+          acc[0] = acc[0] ? `${acc[0]}-${part}` : part;
+        } else {
+          acc[1] = part;
+        }
+        return acc;
+      },
+      ["", ""] as [string, string]
+    );
+
+    if (!byDate.has(datePart)) {
+      byDate.set(datePart, []);
+    }
+    byDate.get(datePart)!.push(time);
+  }
+
+  const result: TimeSlot[] = [];
+
+  for (const [date, times] of byDate) {
+    times.sort();
+
+    let rangeStart = times[0];
+    let rangeEnd = addThirtyMinutes(times[0]);
+
+    for (let i = 1; i < times.length; i++) {
+      const time = times[i];
+      if (time === rangeEnd) {
+        rangeEnd = addThirtyMinutes(time);
+      } else {
+        result.push({ date, startTime: rangeStart, endTime: rangeEnd });
+        rangeStart = time;
+        rangeEnd = addThirtyMinutes(time);
+      }
+    }
+
+    result.push({ date, startTime: rangeStart, endTime: rangeEnd });
+  }
+
+  return result;
+}
+
+function addThirtyMinutes(time: string): string {
+  const [h, m] = time.split(":").map(Number);
+  const nextMinute = m + 30;
+  if (nextMinute >= 60) {
+    return `${(h + 1).toString().padStart(2, "0")}:00`;
+  }
+  return `${h.toString().padStart(2, "0")}:30`;
+}
 
 interface EventProps {
   id: string;
@@ -57,7 +168,9 @@ export function PlayerAvailabilityPage({
   const router = useRouter();
   const [timezone, setTimezone] = useState(event.timezone);
   const [effectiveAvailability, setEffectiveAvailability] = useState<TimeSlot[]>([]);
+  const [specificAvailability, setSpecificAvailability] = useState<TimeSlot[]>([]);
   const [generalAvailability, setGeneralAvailability] = useState<GeneralAvailabilityType[]>([]);
+  const [exceptions, setExceptions] = useState<Array<{ date: string; startTime: string; endTime: string }>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadKey, setLoadKey] = useState(0);
@@ -99,7 +212,21 @@ export function PlayerAvailabilityPage({
             endTime: a.endTime,
           }))
         );
+        setSpecificAvailability(
+          data.availability.map((a: { date: string; startTime: string; endTime: string }) => ({
+            date: a.date,
+            startTime: a.startTime,
+            endTime: a.endTime,
+          }))
+        );
         setGeneralAvailability(data.generalAvailability);
+        setExceptions(
+          data.exceptions.map((e: { date: string; startTime: string; endTime: string }) => ({
+            date: e.date,
+            startTime: e.startTime,
+            endTime: e.endTime,
+          }))
+        );
       }
     } catch (error) {
       console.error("Failed to load availability:", error);
@@ -117,17 +244,89 @@ export function PlayerAvailabilityPage({
     localStorage.setItem(`participant_${event.id}`, participant.id);
   }, [event.id, participant.id]);
 
-  // Auto-save for Select Times
+  // Auto-save for Select Times with smart diff to preserve interoperability
   const handleAutoSaveAvailability = useCallback(async (slots: TimeSlot[]) => {
     setIsSaving(true);
     try {
+      // Convert user's selection to a set
+      const selectedKeys = slotsToKeySet(slots);
+
+      // Compute what patterns would produce for the current week
+      const patternKeys = expandPatternsForWeek(
+        generalAvailability,
+        currentWeekStart,
+        event.earliestTime,
+        event.latestTime
+      );
+
+      // Find slots that are selected but NOT from patterns (these are additions)
+      const additions = new Set<string>();
+      for (const key of selectedKeys) {
+        if (!patternKeys.has(key)) {
+          additions.add(key);
+        }
+      }
+
+      // Find slots that are from patterns but NOT selected (these need exceptions)
+      const newExceptions: Array<{ date: string; startTime: string; endTime: string }> = [];
+      for (const key of patternKeys) {
+        if (!selectedKeys.has(key)) {
+          const [datePart, time] = key.split("-").reduce(
+            (acc, part, i) => {
+              if (i < 3) {
+                acc[0] = acc[0] ? `${acc[0]}-${part}` : part;
+              } else {
+                acc[1] = part;
+              }
+              return acc;
+            },
+            ["", ""] as [string, string]
+          );
+          newExceptions.push({
+            date: datePart,
+            startTime: time,
+            endTime: addThirtyMinutes(time),
+          });
+        }
+      }
+
+      // Keep existing specific availability for other weeks
+      const currentWeekDates = new Set<string>();
+      for (let i = 0; i < 7; i++) {
+        currentWeekDates.add(format(addDays(currentWeekStart, i), "yyyy-MM-dd"));
+      }
+
+      const otherWeekSpecific = specificAvailability.filter(
+        s => !currentWeekDates.has(s.date)
+      );
+
+      // Combine additions with other week's specific availability
+      const newSpecificSlots = [
+        ...otherWeekSpecific,
+        ...keySetToSlots(additions),
+      ];
+
+      // Keep exceptions from other weeks
+      const otherWeekExceptions = exceptions.filter(
+        e => !currentWeekDates.has(e.date)
+      );
+
+      // Combine with new exceptions
+      const allExceptions = [...otherWeekExceptions, ...newExceptions];
+
       const res = await fetch(`/api/availability/${participant.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ availability: slots }),
+        body: JSON.stringify({
+          availability: newSpecificSlots,
+          exceptions: allExceptions,
+        }),
       });
+
       if (res.ok) {
         setEffectiveAvailability(slots);
+        setSpecificAvailability(newSpecificSlots);
+        setExceptions(allExceptions);
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     } catch (error) {
@@ -135,7 +334,7 @@ export function PlayerAvailabilityPage({
     } finally {
       setIsSaving(false);
     }
-  }, [participant.id]);
+  }, [participant.id, generalAvailability, currentWeekStart, event.earliestTime, event.latestTime, specificAvailability, exceptions]);
 
   // Save general availability patterns
   const handleSaveGeneralAvailability = async (patterns: Omit<GeneralAvailabilityType, "id" | "participantId">[]) => {

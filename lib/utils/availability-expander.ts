@@ -186,8 +186,10 @@ export function applyExceptions(
 /**
  * Combines multiple sources of availability:
  * 1. Start with general patterns expanded to specific dates
- * 2. Merge in any specific slot overrides
- * 3. Apply exceptions (unavailable times)
+ * 2. Merge in any specific slot additions (Calendar entries are additive)
+ * 3. Apply exceptions (unavailable times) - these trump all other sources
+ *
+ * Priority: Exceptions > Calendar > Recurring Patterns
  */
 export function computeEffectiveAvailability(
   patterns: Array<{ dayOfWeek: number; startTime: string; endTime: string }>,
@@ -207,17 +209,16 @@ export function computeEffectiveAvailability(
     latestTime
   );
 
-  // Merge with specific slots (specific slots take precedence for their dates)
-  const specificDates = new Set(specificSlots.map((s) => s.date));
+  // Combine both pattern slots and specific slots (additive merge)
+  // This allows Calendar entries to add availability on top of Recurring patterns
   const combinedSlots = [
-    // Keep pattern slots for dates without specific overrides
-    ...patternSlots.filter((s) => !specificDates.has(s.date)),
-    // Add all specific slots
+    ...patternSlots,
     ...specificSlots,
   ];
 
-  // Apply exceptions
+  // Apply exceptions (these remove time from all sources)
   const effectiveSlots = applyExceptions(combinedSlots, exceptions);
 
+  // Merge overlapping slots to clean up the result
   return mergeOverlappingSlots(effectiveSlots);
 }
