@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { startOfWeek, parseISO } from "date-fns";
+import { startOfWeek, parseISO, format } from "date-fns";
+import Link from "next/link";
 import { TimezoneSelector } from "@/components/timezone/TimezoneSelector";
 import { JoinEventForm } from "@/components/participant/JoinEventForm";
 import { CombinedHeatmap } from "@/components/heatmap/CombinedHeatmap";
 import { WeekNavigator } from "@/components/navigation/WeekNavigator";
-import type { TimeSlot, MeetingType } from "@/lib/types";
+import { PlayerProfileModal } from "@/components/participant/PlayerProfileModal";
+import type { TimeSlot, MeetingType, CampaignType } from "@/lib/types";
 
 interface GameSystem {
   id: string;
@@ -19,6 +21,11 @@ interface Participant {
   id: string;
   displayName: string;
   isGm: boolean;
+  characterName: string | null;
+  characterClass: string | null;
+  characterSheetUrl: string | null;
+  characterTokenBase64: string | null;
+  notes: string | null;
 }
 
 interface EventProps {
@@ -32,6 +39,7 @@ interface EventProps {
   earliestTime: string;
   latestTime: string;
   sessionLengthMinutes: number;
+  campaignType: CampaignType;
   meetingType: MeetingType | null;
   meetingLocation: string | null;
   meetingRoom: string | null;
@@ -57,6 +65,9 @@ export function CampaignPage({ event }: CampaignPageProps) {
   const [participantsWithAvailability, setParticipantsWithAvailability] = useState<ParticipantWithAvailability[]>([]);
   const [currentParticipant, setCurrentParticipant] = useState<Participant | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedParticipant, setSelectedParticipant] = useState<Participant | null>(null);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [participants, setParticipants] = useState<Participant[]>(event.participants);
 
   const eventStartDate = useMemo(() => {
     return event.startDate ? parseISO(event.startDate) : new Date();
@@ -74,12 +85,45 @@ export function CampaignPage({ event }: CampaignPageProps) {
   useEffect(() => {
     const storedId = localStorage.getItem(`participant_${event.id}`);
     if (storedId) {
-      const found = event.participants.find((p) => p.id === storedId);
+      const found = participants.find((p) => p.id === storedId);
       if (found) {
         setCurrentParticipant(found);
       }
     }
-  }, [event.id, event.participants]);
+  }, [event.id, participants]);
+
+  // Handle opening player profile modal
+  const handleOpenProfile = useCallback((participant: Participant) => {
+    setSelectedParticipant(participant);
+    setIsProfileModalOpen(true);
+  }, []);
+
+  // Handle saving player profile
+  const handleSaveProfile = useCallback(async (data: Partial<Participant>) => {
+    if (!selectedParticipant) return;
+
+    const res = await fetch(`/api/participants/${selectedParticipant.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+
+    if (res.ok) {
+      const updated = await res.json();
+      // Update local participants list
+      setParticipants((prev) =>
+        prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
+      );
+      // Update currentParticipant if it's the same person
+      if (currentParticipant?.id === updated.id) {
+        setCurrentParticipant((prev) => prev ? { ...prev, ...updated } : null);
+      }
+      // Update selectedParticipant for the modal
+      setSelectedParticipant((prev) => prev ? { ...prev, ...updated } : null);
+    } else {
+      throw new Error("Failed to save profile");
+    }
+  }, [selectedParticipant, currentParticipant]);
 
   // Load heatmap data
   useEffect(() => {
@@ -135,6 +179,20 @@ export function CampaignPage({ event }: CampaignPageProps) {
   };
 
   const meetingInfo = getMeetingInfo();
+  const hasGm = participants.some(p => p.isGm);
+
+  // Check if current participant needs to complete profile
+  const showProfileCallout = currentParticipant &&
+    !currentParticipant.isGm &&
+    event.customPreSessionInstructions &&
+    (!currentParticipant.characterName && !currentParticipant.notes);
+
+  const formatDateRange = () => {
+    if (!event.startDate || !event.endDate) return null;
+    const start = parseISO(event.startDate);
+    const end = parseISO(event.endDate);
+    return `${format(start, "MMM d")} - ${format(end, "MMM d, yyyy")}`;
+  };
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -181,8 +239,9 @@ export function CampaignPage({ event }: CampaignPageProps) {
 
       {/* Main Content */}
       <div className="mx-auto max-w-5xl px-3 py-3">
+        {/* First Section: Two columns */}
         <div className="grid gap-3 lg:grid-cols-3">
-          {/* Main Column */}
+          {/* Left Column: Campaign info + Session Details */}
           <div className="space-y-3 lg:col-span-2">
             {/* Description */}
             {event.description && (
@@ -202,54 +261,9 @@ export function CampaignPage({ event }: CampaignPageProps) {
                 </p>
               </div>
             )}
-
-            {/* Group Availability */}
-            <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-700">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                    Group Availability
-                  </h2>
-                  <WeekNavigator
-                    currentWeekStart={currentWeekStart}
-                    eventStartDate={eventStartDate}
-                    eventEndDate={eventEndDate}
-                    onWeekChange={setCurrentWeekStart}
-                  />
-                </div>
-                <div className="flex items-center gap-2 text-xs text-zinc-500">
-                  <TimezoneSelector
-                    value={timezone}
-                    onChange={setTimezone}
-                  />
-                </div>
-              </div>
-              <div className="p-2">
-                {isLoading ? (
-                  <div className="flex h-48 items-center justify-center">
-                    <p className="text-sm text-zinc-500">Loading...</p>
-                  </div>
-                ) : participantsWithAvailability.length === 0 ? (
-                  <div className="flex h-48 items-center justify-center text-center">
-                    <div>
-                      <p className="text-sm text-zinc-500">No availability data yet</p>
-                      <p className="mt-1 text-xs text-zinc-400">Join and add your availability to get started</p>
-                    </div>
-                  </div>
-                ) : (
-                  <CombinedHeatmap
-                    participants={participantsWithAvailability}
-                    weekStart={currentWeekStart}
-                    earliestTime={event.earliestTime}
-                    latestTime={event.latestTime}
-                    sessionLengthMinutes={event.sessionLengthMinutes}
-                  />
-                )}
-              </div>
-            </div>
           </div>
 
-          {/* Sidebar */}
+          {/* Right Column: Registration, Party, Share Link */}
           <div className="space-y-3">
             {/* Join / Edit Availability Card */}
             <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
@@ -265,9 +279,18 @@ export function CampaignPage({ event }: CampaignPageProps) {
                       <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
                         {currentParticipant.displayName}
                       </p>
-                      <p className="text-xs text-zinc-500">You're in this campaign</p>
+                      <p className="text-xs text-zinc-500">You're in this {event.campaignType === "ONESHOT" ? "game" : "campaign"}</p>
                     </div>
                   </div>
+
+                  {/* Profile callout for players */}
+                  {showProfileCallout && (
+                    <div className="rounded-md bg-blue-50 p-2 text-xs text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
+                      <p className="font-medium">Complete your player info</p>
+                      <p className="mt-0.5 text-blue-600 dark:text-blue-500">Add your character name and notes in the Party section below.</p>
+                    </div>
+                  )}
+
                   <button
                     onClick={handleEditAvailability}
                     className="w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -278,70 +301,86 @@ export function CampaignPage({ event }: CampaignPageProps) {
               ) : (
                 <div>
                   <h2 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                    Join This Campaign
+                    Join This {event.campaignType === "ONESHOT" ? "Game" : "Campaign"}
                   </h2>
                   <JoinEventForm
                     eventSlug={event.slug}
                     onJoined={handleJoined}
+                    hasGm={hasGm}
                   />
                 </div>
               )}
             </div>
 
-            {/* Session Info */}
-            <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-              <h2 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                Session Details
-              </h2>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">Session Length</span>
-                  <span className="text-zinc-900 dark:text-zinc-100">
-                    {Math.floor(event.sessionLengthMinutes / 60)}h {event.sessionLengthMinutes % 60 > 0 ? `${event.sessionLengthMinutes % 60}m` : ""}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">Time Window</span>
-                  <span className="text-zinc-900 dark:text-zinc-100">
-                    {formatTime(event.earliestTime)} - {formatTime(event.latestTime)}
-                  </span>
-                </div>
-                {meetingInfo && (
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500">Platform</span>
-                    <span className="text-zinc-900 dark:text-zinc-100">{meetingInfo.type}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
             {/* Party Members */}
             <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
               <h2 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                Party ({event.participants.length})
+                Party ({participants.length})
               </h2>
-              {event.participants.length === 0 ? (
+              {participants.length === 0 ? (
                 <p className="text-sm text-zinc-500">No players yet</p>
               ) : (
                 <div className="space-y-2">
-                  {event.participants.map((p) => (
-                    <div key={p.id} className="flex items-center gap-2">
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-100 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                        {p.displayName.charAt(0).toUpperCase()}
-                      </div>
-                      <span className="text-sm text-zinc-700 dark:text-zinc-300">
-                        {p.displayName}
-                      </span>
-                      {p.isGm && (
-                        <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                          GM
-                        </span>
-                      )}
-                      {currentParticipant?.id === p.id && (
-                        <span className="text-xs text-zinc-400">(you)</span>
-                      )}
-                    </div>
-                  ))}
+                  {participants.map((p) => {
+                    const isCurrentUser = currentParticipant?.id === p.id;
+
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => handleOpenProfile(p)}
+                        className="w-full rounded-md bg-zinc-50 p-2 text-left transition-colors hover:bg-zinc-100 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+                      >
+                        <div className="flex items-center gap-2">
+                          {/* Character token or avatar */}
+                          {p.characterTokenBase64 ? (
+                            <img
+                              src={p.characterTokenBase64}
+                              alt={p.characterName || p.displayName}
+                              className="h-8 w-8 rounded-full object-cover ring-1 ring-zinc-200 dark:ring-zinc-700"
+                            />
+                          ) : (
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-200 text-xs font-medium text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400">
+                              {p.displayName.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                                {p.displayName}
+                              </span>
+                              {p.isGm && (
+                                <span className="shrink-0 rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                  GM
+                                </span>
+                              )}
+                              {isCurrentUser && (
+                                <span className="shrink-0 text-xs text-zinc-400">(you)</span>
+                              )}
+                            </div>
+                            {/* Show character info if available */}
+                            {p.characterName && (
+                              <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                                {p.characterName}
+                                {p.characterClass && (
+                                  <span className="text-zinc-400 dark:text-zinc-500"> · {p.characterClass}</span>
+                                )}
+                              </p>
+                            )}
+                          </div>
+                          {/* Info indicator */}
+                          <svg className="h-4 w-4 shrink-0 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </div>
+                        {p.notes && (
+                          <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-1">
+                            {p.notes}
+                          </p>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -349,7 +388,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
             {/* Share Link */}
             <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
               <h2 className="mb-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                Share
+                Share Link
               </h2>
               <div className="flex gap-2">
                 <input
@@ -368,12 +407,91 @@ export function CampaignPage({ event }: CampaignPageProps) {
             </div>
           </div>
         </div>
+
+        {/* Second Section: Full-width Group Availability */}
+        <div className="mt-4 rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-700">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Group Availability
+              </h2>
+              <WeekNavigator
+                currentWeekStart={currentWeekStart}
+                eventStartDate={eventStartDate}
+                eventEndDate={eventEndDate}
+                onWeekChange={setCurrentWeekStart}
+              />
+            </div>
+            <div className="flex items-center gap-2 text-xs text-zinc-500">
+              <TimezoneSelector
+                value={timezone}
+                onChange={setTimezone}
+              />
+            </div>
+          </div>
+          <div className="p-2">
+            {isLoading ? (
+              <div className="space-y-4">
+                {/* Skeleton loader for heatmap */}
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "300px" }} />
+                  </div>
+                  <div className="w-64 shrink-0">
+                    <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "200px" }} />
+                  </div>
+                </div>
+                <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "80px" }} />
+              </div>
+            ) : participantsWithAvailability.length === 0 ? (
+              <div className="flex h-48 items-center justify-center text-center">
+                <div>
+                  <p className="text-sm text-zinc-500">No availability data yet</p>
+                  <p className="mt-1 text-xs text-zinc-400">Join and add your availability to get started</p>
+                </div>
+              </div>
+            ) : (
+              <CombinedHeatmap
+                participants={participantsWithAvailability}
+                weekStart={currentWeekStart}
+                earliestTime={event.earliestTime}
+                latestTime={event.latestTime}
+                sessionLengthMinutes={event.sessionLengthMinutes}
+                timezone={timezone}
+                eventTimezone={event.timezone}
+                sessionDetails={{
+                  campaignType: event.campaignType,
+                  sessionLengthMinutes: event.sessionLengthMinutes,
+                  meetingType: meetingInfo?.type,
+                  meetingLocation: meetingInfo?.location,
+                  dateRange: formatDateRange(),
+                  timeWindow: `${formatTime(event.earliestTime)} - ${formatTime(event.latestTime)}`,
+                }}
+              />
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Footer */}
       <footer className="mt-4 border-t border-zinc-200 py-2 text-center text-xs text-zinc-500 dark:border-zinc-800">
         When2Play
       </footer>
+
+      {/* Player Profile Modal */}
+      {selectedParticipant && (
+        <PlayerProfileModal
+          participant={selectedParticipant}
+          isOpen={isProfileModalOpen}
+          onClose={() => {
+            setIsProfileModalOpen(false);
+            setSelectedParticipant(null);
+          }}
+          onSave={handleSaveProfile}
+          eventSlug={event.slug}
+          isCurrentUser={currentParticipant?.id === selectedParticipant.id}
+        />
+      )}
     </div>
   );
 }

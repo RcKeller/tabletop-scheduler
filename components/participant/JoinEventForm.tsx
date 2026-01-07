@@ -12,9 +12,10 @@ interface Participant {
 interface JoinEventFormProps {
   eventSlug: string;
   onJoined: (participant: Participant) => void;
+  hasGm?: boolean;
 }
 
-export function JoinEventForm({ eventSlug, onJoined }: JoinEventFormProps) {
+export function JoinEventForm({ eventSlug, onJoined, hasGm = false }: JoinEventFormProps) {
   const [displayName, setDisplayName] = useState("");
   const [isGm, setIsGm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -77,19 +78,21 @@ export function JoinEventForm({ eventSlug, onJoined }: JoinEventFormProps) {
         </p>
       </div>
 
-      <div>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={isGm}
-            onChange={(e) => setIsGm(e.target.checked)}
-            className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
-          />
-          <span className="text-sm text-zinc-700 dark:text-zinc-300">
-            I&apos;m the Game Master / Dungeon Master
-          </span>
-        </label>
-      </div>
+      {!hasGm && (
+        <div>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={isGm}
+              onChange={(e) => setIsGm(e.target.checked)}
+              className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+            />
+            <span className="text-sm text-zinc-700 dark:text-zinc-300">
+              I&apos;m the Game Master / Dungeon Master
+            </span>
+          </label>
+        </div>
+      )}
 
       <button
         type="submit"

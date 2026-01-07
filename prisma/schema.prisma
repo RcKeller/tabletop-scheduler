@@ -18,6 +18,11 @@ enum MeetingType {
   OTHER
 }
 
+enum CampaignType {
+  ONESHOT
+  CAMPAIGN
+}
+
 model GameSystem {
   id                  String   @id @default(uuid())
   name                String   @unique
@@ -40,6 +45,9 @@ model Event {
   timezone          String        @default("UTC")
   createdAt         DateTime      @default(now())
   participants      Participant[]
+
+  // Campaign type (oneshot vs campaign)
+  campaignType                   CampaignType @default(CAMPAIGN)
 
   // Game system relationship
   gameSystemId               String?
@@ -74,15 +82,20 @@ model Event {
 }
 
 model Participant {
-  id                   String                 @id @default(uuid())
-  eventId              String
-  event                Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  displayName          String
-  isGm                 Boolean                @default(false)
-  createdAt            DateTime               @default(now())
-  availability         Availability[]
-  generalAvailability  GeneralAvailability[]
-  exceptions           AvailabilityException[]
+  id                    String                 @id @default(uuid())
+  eventId               String
+  event                 Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  displayName           String
+  isGm                  Boolean                @default(false)
+  characterName         String?
+  characterClass        String?
+  characterSheetUrl     String?
+  characterTokenBase64  String?                @db.Text
+  notes                 String?                @db.VarChar(255)
+  createdAt             DateTime               @default(now())
+  availability          Availability[]
+  generalAvailability   GeneralAvailability[]
+  exceptions            AvailabilityException[]
 
   @@unique([eventId, displayName])
   @@map("participants")

@@ -38,9 +38,15 @@ interface PlayerAvailabilityPageProps {
 }
 
 const METHOD_LABELS = {
-  select: "Select Times",
-  pattern: "Weekly Pattern",
-  describe: "Describe in Text",
+  select: "Calendar",
+  pattern: "Recurring",
+  describe: "AI Assistant",
+};
+
+const METHOD_DESCRIPTIONS = {
+  select: "Click and drag to mark when you're free this week",
+  pattern: "Set your typical weekly schedule",
+  describe: "Tell us in plain English when you're available",
 };
 
 export function PlayerAvailabilityPage({
@@ -299,109 +305,144 @@ export function PlayerAvailabilityPage({
                 </h1>
               </div>
             </div>
-            <button
-              onClick={handleDone}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              Done
-            </button>
+            <div className="flex items-center gap-2">
+              {isSaving && (
+                <span className="text-xs text-zinc-500">Saving...</span>
+              )}
+              <button
+                onClick={handleReset}
+                className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              >
+                Clear All
+              </button>
+              <button
+                onClick={handleDone}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Method Tabs */}
+      {/* Method Selection */}
       <div className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto max-w-4xl px-3">
-          <nav className="flex gap-0.5">
-            {(["select", "pattern", "describe"] as const).map((m) => (
-              <Link
-                key={m}
-                href={`/${event.slug}/${playerSlug}${m === "select" ? "" : `/${m}`}`}
-                className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
-                  method === m
-                    ? "border-blue-500 text-blue-600 dark:text-blue-400"
-                    : "border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
-                }`}
-              >
-                {METHOD_LABELS[m]}
-              </Link>
-            ))}
-          </nav>
+        <div className="mx-auto max-w-4xl px-3 py-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-zinc-500 dark:text-zinc-400 mr-2">Input method:</span>
+              {(["select", "pattern", "describe"] as const).map((m) => (
+                <Link
+                  key={m}
+                  href={`/${event.slug}/${playerSlug}${m === "select" ? "" : `/${m}`}`}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    method === m
+                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                      : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                  }`}
+                >
+                  {METHOD_LABELS[m]}
+                </Link>
+              ))}
+            </div>
+            <TimezoneSelector value={timezone} onChange={setTimezone} />
+          </div>
         </div>
       </div>
 
       {/* Main Content */}
       <main className="mx-auto max-w-4xl px-3 py-3">
-        {/* Timezone and actions bar */}
-        <div className="mb-2 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-500">Timezone:</span>
-            <TimezoneSelector value={timezone} onChange={setTimezone} />
-          </div>
-          <div className="flex items-center gap-2">
-            {isSaving && (
-              <span className="text-xs text-zinc-500">Saving...</span>
-            )}
-            <button
-              onClick={handleReset}
-              className="rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
-            >
-              Reset
-            </button>
-          </div>
-        </div>
-
         {isLoading ? (
-          <div className="flex h-64 items-center justify-center">
-            <p className="text-sm text-zinc-500">Loading...</p>
+          <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="space-y-3">
+              {/* Skeleton for grid */}
+              <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "300px" }} />
+              <div className="flex justify-between">
+                <div className="h-8 w-32 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
+                <div className="h-8 w-24 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
+              </div>
+            </div>
           </div>
         ) : (
-          <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-            {method === "select" && (
-              <div className="p-2">
-                <div className="mb-2 flex items-center justify-between">
-                  <WeekNavigator
-                    currentWeekStart={currentWeekStart}
-                    eventStartDate={eventStartDate}
-                    eventEndDate={eventEndDate}
-                    onWeekChange={setCurrentWeekStart}
+          <div className="space-y-3">
+            {/* Method description */}
+            <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                {METHOD_DESCRIPTIONS[method]}
+              </p>
+            </div>
+
+            {/* Method content */}
+            <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+              {method === "select" && (
+                <div className="p-2">
+                  <div className="mb-2">
+                    <WeekNavigator
+                      currentWeekStart={currentWeekStart}
+                      eventStartDate={eventStartDate}
+                      eventEndDate={eventEndDate}
+                      onWeekChange={setCurrentWeekStart}
+                    />
+                  </div>
+                  <AvailabilityGrid
+                    availability={effectiveAvailability}
+                    timezone={timezone}
+                    eventTimezone={event.timezone}
+                    onSave={handleAutoSaveAvailability}
+                    isSaving={isSaving}
+                    weekStart={currentWeekStart}
+                    earliestTime={event.earliestTime}
+                    latestTime={event.latestTime}
+                    autoSave
+                    showLegend={false}
                   />
                 </div>
-                <AvailabilityGrid
-                  availability={effectiveAvailability}
-                  timezone={timezone}
-                  onSave={handleAutoSaveAvailability}
-                  isSaving={isSaving}
-                  weekStart={currentWeekStart}
-                  earliestTime={event.earliestTime}
-                  latestTime={event.latestTime}
-                  autoSave
-                />
-              </div>
-            )}
+              )}
 
-            {method === "pattern" && (
-              <div className="p-2">
-                <GeneralAvailabilityEditor
-                  patterns={generalAvailability}
-                  timezone={timezone}
-                  onSave={handleSaveGeneralAvailability}
-                  isSaving={isSaving}
-                  eventEarliestTime={event.earliestTime}
-                  eventLatestTime={event.latestTime}
-                />
-              </div>
-            )}
+              {method === "pattern" && (
+                <div className="p-3">
+                  <GeneralAvailabilityEditor
+                    patterns={generalAvailability}
+                    timezone={timezone}
+                    onSave={handleSaveGeneralAvailability}
+                    isSaving={isSaving}
+                    eventEarliestTime={event.earliestTime}
+                    eventLatestTime={event.latestTime}
+                  />
+                </div>
+              )}
 
-            {method === "describe" && (
-              <div className="p-2">
-                <AvailabilityAI
-                  timezone={timezone}
-                  onApply={handleAIApply}
-                  currentPatterns={generalAvailability}
-                />
+              {method === "describe" && (
+                <div className="p-3">
+                  <AvailabilityAI
+                    timezone={timezone}
+                    onApply={handleAIApply}
+                    currentPatterns={generalAvailability}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Return CTA */}
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                    All set?
+                  </h3>
+                  <p className="mt-0.5 text-xs text-blue-700 dark:text-blue-300">
+                    Head back to see everyone's availability and find the best time
+                  </p>
+                </div>
+                <Link
+                  href={`/${event.slug}`}
+                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  View Campaign
+                </Link>
               </div>
-            )}
+            </div>
           </div>
         )}
       </main>

@@ -341,16 +341,6 @@ export function CreateCampaignForm() {
                 </div>
               </div>
             )}
-
-            {/* Show selected game system info */}
-            {gameSystem && !isCreatingGameSystem && (
-              <div className="mt-3 flex items-center gap-2 rounded-lg bg-green-50 p-2 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-400">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                {gameSystem.name}
-              </div>
-            )}
           </div>
 
           {/* Location Card */}
@@ -405,15 +395,20 @@ export function CreateCampaignForm() {
               <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
                 Player Prep
               </label>
-              {!hasInstructions && (
-                <button
-                  type="button"
-                  onClick={() => setHasInstructions(true)}
-                  className="text-xs font-medium text-blue-500 hover:text-blue-600"
-                >
-                  + Add
-                </button>
-              )}
+              <label className="flex cursor-pointer items-center gap-2">
+                <span className="text-xs text-zinc-500">
+                  {hasInstructions ? "Enabled" : "Disabled"}
+                </span>
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={hasInstructions}
+                    onChange={(e) => setHasInstructions(e.target.checked)}
+                    className="peer sr-only"
+                  />
+                  <div className="h-5 w-9 rounded-full bg-zinc-200 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:bg-blue-500 peer-checked:after:translate-x-4 dark:bg-zinc-700"></div>
+                </div>
+              </label>
             </div>
 
             {hasInstructions && (

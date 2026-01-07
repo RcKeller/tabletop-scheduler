@@ -35,6 +35,7 @@ export default async function Page({ params }: Props) {
     earliestTime: event.earliestTime,
     latestTime: event.latestTime,
     sessionLengthMinutes: event.sessionLengthMinutes,
+    campaignType: event.campaignType,
     meetingType: event.meetingType,
     meetingLocation: event.meetingLocation,
     meetingRoom: event.meetingRoom,
@@ -49,6 +50,11 @@ export default async function Page({ params }: Props) {
       id: p.id,
       displayName: p.displayName,
       isGm: p.isGm,
+      characterName: p.characterName,
+      characterClass: p.characterClass,
+      characterSheetUrl: p.characterSheetUrl,
+      characterTokenBase64: p.characterTokenBase64,
+      notes: p.notes,
     })),
   };
 

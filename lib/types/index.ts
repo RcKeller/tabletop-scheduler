@@ -48,6 +48,9 @@ export type MeetingType =
   | "IN_PERSON"
   | "OTHER";
 
+// Campaign type enum (matches Prisma enum)
+export type CampaignType = "ONESHOT" | "CAMPAIGN";
+
 // Player prep URL type
 export interface PrepUrl {
   label: string;

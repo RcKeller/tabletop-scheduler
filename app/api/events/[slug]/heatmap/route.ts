@@ -156,7 +156,7 @@ export async function GET(
       }
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       event: {
         id: event.id,
         slug: event.slug,
@@ -174,6 +174,11 @@ export async function GET(
       heatmap: heatmapData,
       totalParticipants: participantsData.length,
     });
+
+    // Add cache headers for short-term caching (5 seconds stale-while-revalidate)
+    response.headers.set("Cache-Control", "public, s-maxage=1, stale-while-revalidate=5");
+
+    return response;
   } catch (error) {
     console.error("Error fetching heatmap data:", error);
     return NextResponse.json(

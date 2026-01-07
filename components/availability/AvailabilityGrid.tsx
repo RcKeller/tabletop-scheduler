@@ -2,17 +2,20 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { format, addDays, startOfWeek, parse } from "date-fns";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import type { TimeSlot } from "@/lib/types";
 
 interface AvailabilityGridProps {
   availability: TimeSlot[];
   timezone: string;
+  eventTimezone?: string;
   onSave: (slots: TimeSlot[]) => void;
   isSaving: boolean;
   weekStart?: Date;
-  earliestTime?: string; // HH:MM format
-  latestTime?: string; // HH:MM format (same as earliest = 24hr)
-  autoSave?: boolean; // Auto-save after each change
+  earliestTime?: string;
+  latestTime?: string;
+  autoSave?: boolean;
+  showLegend?: boolean;
 }
 
 // Generate time slots (30-min intervals for full day)
@@ -57,13 +60,17 @@ function getWeekDates(start?: Date): Date[] {
 export function AvailabilityGrid({
   availability,
   timezone,
+  eventTimezone,
   onSave,
   isSaving,
   weekStart,
   earliestTime = "00:00",
   latestTime = "23:30",
   autoSave = false,
+  showLegend = true,
 }: AvailabilityGridProps) {
+  // Use event timezone if provided, otherwise fall back to viewer timezone
+  const displayTimezone = eventTimezone || timezone;
   const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
   const [isDragging, setIsDragging] = useState(false);
   const [dragMode, setDragMode] = useState<"select" | "deselect">("select");
@@ -71,6 +78,9 @@ export function AvailabilityGrid({
   const [dragEnd, setDragEnd] = useState<{ row: number; col: number } | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingSaveRef = useRef<string | null>(null); // Track pending save hash
+  const initializedRef = useRef(false);
 
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
   const timeSlots = useMemo(
@@ -101,15 +111,13 @@ export function AvailabilityGrid({
     return pending;
   }, [isDragging, dragStart, dragEnd, timeSlots, weekDates]);
 
-  // Initialize selected slots from availability
-  useEffect(() => {
+  // Convert availability prop to slot set
+  const availabilityToSlots = useCallback((avail: TimeSlot[]): Set<string> => {
     const slots = new Set<string>();
-    for (const slot of availability) {
-      // Add all 30-min intervals in this slot
+    for (const slot of avail) {
       let currentTime = slot.startTime;
       while (currentTime < slot.endTime) {
         slots.add(`${slot.date}-${currentTime}`);
-        // Increment by 30 minutes
         const [h, m] = currentTime.split(":").map(Number);
         const nextMinute = m + 30;
         if (nextMinute >= 60) {
@@ -119,9 +127,45 @@ export function AvailabilityGrid({
         }
       }
     }
-    setSelectedSlots(slots);
+    return slots;
+  }, []);
+
+  // Initialize selected slots from availability
+  useEffect(() => {
+    const serverSlots = availabilityToSlots(availability);
+    const serverSlotsHash = JSON.stringify([...serverSlots].sort());
+
+    // On first load, always initialize from server
+    if (!initializedRef.current) {
+      setSelectedSlots(serverSlots);
+      setHasChanges(false);
+      initializedRef.current = true;
+      return;
+    }
+
+    // If we have a pending save, check if this response matches it
+    if (pendingSaveRef.current !== null) {
+      // Server response came back - if it matches our pending save, clear the pending flag
+      if (serverSlotsHash === pendingSaveRef.current) {
+        pendingSaveRef.current = null;
+      }
+      // Either way, don't overwrite local state while we have pending changes
+      return;
+    }
+
+    // No pending save - sync from server (e.g., another tab changed data)
+    setSelectedSlots(serverSlots);
     setHasChanges(false);
-  }, [availability]);
+  }, [availability, availabilityToSlots]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handlePointerDown = useCallback(
     (row: number, col: number, slotKey: string) => {
@@ -198,13 +242,26 @@ export function AvailabilityGrid({
           nextSlots.delete(slot);
         }
       }
+      // Optimistic update - show changes immediately
       setSelectedSlots(nextSlots);
       setHasChanges(true);
 
-      // Auto-save if enabled
+      // Auto-save with debounce if enabled
       if (autoSave) {
-        const timeSlots = convertSlotsToTimeSlots(nextSlots);
-        onSave(timeSlots);
+        // Clear any pending save timeout
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+        }
+
+        // Track what we're saving to prevent server response from overwriting
+        const slotsHash = JSON.stringify([...nextSlots].sort());
+        pendingSaveRef.current = slotsHash;
+
+        // Debounce the actual save
+        saveTimeoutRef.current = setTimeout(() => {
+          const timeSlotsToSave = convertSlotsToTimeSlots(nextSlots);
+          onSave(timeSlotsToSave);
+        }, 300);
       }
     }
     setIsDragging(false);
@@ -235,30 +292,33 @@ export function AvailabilityGrid({
     return isSelected ? "selected" : "unselected";
   };
 
+  // Prevent text selection during drag
+  const preventSelection = useCallback((e: Event) => {
+    if (isDragging) {
+      e.preventDefault();
+    }
+  }, [isDragging]);
+
+  useEffect(() => {
+    document.addEventListener("selectstart", preventSelection);
+    return () => document.removeEventListener("selectstart", preventSelection);
+  }, [preventSelection]);
+
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          Click and drag to select available times
-        </p>
-        {!autoSave && (
-          <button
-            onClick={handleSave}
-            disabled={!hasChanges || isSaving}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isSaving ? "Saving..." : "Save Changes"}
-          </button>
-        )}
-        {autoSave && isSaving && (
-          <span className="text-xs text-zinc-500">Saving...</span>
-        )}
-      </div>
-
       <div
         ref={gridRef}
         className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700"
-        style={{ touchAction: "none" }}
+        style={{
+          touchAction: "none",
+          WebkitUserSelect: "none",
+          userSelect: "none",
+          MozUserSelect: "none",
+          msUserSelect: "none"
+        } as React.CSSProperties}
+        onMouseDown={() => document.body.style.userSelect = "none"}
+        onMouseUp={() => document.body.style.userSelect = ""}
+        onDragStart={(e) => e.preventDefault()}
       >
         <div className="min-w-[600px]">
           {/* Header row with days */}
@@ -295,8 +355,20 @@ export function AvailabilityGrid({
                   }`}
                 >
                   <div className="flex items-center justify-center p-1 text-xs text-zinc-400 dark:text-zinc-500">
-                    {isHourMark &&
-                      format(parse(time, "HH:mm", new Date()), "h a")}
+                    {isHourMark && (() => {
+                      // Convert time from event timezone to viewer timezone for display
+                      if (eventTimezone && timezone && eventTimezone !== timezone) {
+                        try {
+                          const dateStr = format(weekDates[0], "yyyy-MM-dd");
+                          // Create date in event timezone and convert to viewer timezone
+                          const eventDate = fromZonedTime(`${dateStr} ${time}`, eventTimezone);
+                          return formatInTimeZone(eventDate, timezone, "h a");
+                        } catch {
+                          return format(parse(time, "HH:mm", new Date()), "h a");
+                        }
+                      }
+                      return format(parse(time, "HH:mm", new Date()), "h a");
+                    })()}
                   </div>
                   {weekDates.map((date, colIndex) => {
                     const dateStr = format(date, "yyyy-MM-dd");
@@ -336,14 +408,32 @@ export function AvailabilityGrid({
         </div>
       </div>
 
-      <div className="flex items-center gap-4 text-xs text-zinc-500 dark:text-zinc-400">
-        <div className="flex items-center gap-1">
-          <div className="h-3 w-3 rounded bg-green-400 dark:bg-green-600" />
-          <span>Available</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="h-3 w-3 rounded border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900" />
-          <span>Not available</span>
+      <div className="flex items-center justify-between">
+        {showLegend && (
+          <div className="flex items-center gap-4 text-xs text-zinc-500 dark:text-zinc-400">
+            <div className="flex items-center gap-1">
+              <div className="h-3 w-3 rounded bg-green-400 dark:bg-green-600" />
+              <span>Available</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="h-3 w-3 rounded border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900" />
+              <span>Not available</span>
+            </div>
+          </div>
+        )}
+        <div className="flex items-center gap-2 ml-auto">
+          {autoSave && isSaving && (
+            <span className="text-xs text-zinc-500">Saving...</span>
+          )}
+          {!autoSave && (
+            <button
+              onClick={handleSave}
+              disabled={!hasChanges || isSaving}
+              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isSaving ? "Saving..." : "Save Changes"}
+            </button>
+          )}
         </div>
       </div>
     </div>
