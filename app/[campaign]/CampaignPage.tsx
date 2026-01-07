@@ -8,7 +8,8 @@ import { TimezoneSelector } from "@/components/timezone/TimezoneSelector";
 import { JoinEventForm } from "@/components/participant/JoinEventForm";
 import { CombinedHeatmap } from "@/components/heatmap/CombinedHeatmap";
 import { WeekNavigator } from "@/components/navigation/WeekNavigator";
-import { PlayerProfileModal } from "@/components/participant/PlayerProfileModal";
+import { PlayerDetailModal } from "@/components/participant/PlayerDetailModal";
+import { CampaignHeader } from "@/components/campaign/CampaignHeader";
 import type { TimeSlot, MeetingType, CampaignType } from "@/lib/types";
 
 interface GameSystem {
@@ -101,37 +102,6 @@ export function CampaignPage({ event }: CampaignPageProps) {
     setIsProfileModalOpen(true);
   }, []);
 
-  // Handle saving player profile
-  const handleSaveProfile = useCallback(async (data: Partial<Participant>) => {
-    if (!selectedParticipant) return;
-
-    const res = await fetch(`/api/participants/${selectedParticipant.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-
-    if (res.ok) {
-      const updated = await res.json();
-      // Update local participants list
-      setParticipants((prev) =>
-        prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
-      );
-      // Update currentParticipant if it's the same person
-      if (currentParticipant?.id === updated.id) {
-        setCurrentParticipant((prev) => prev ? { ...prev, ...updated } : null);
-      }
-      // Update selectedParticipant for the modal
-      setSelectedParticipant((prev) => prev ? { ...prev, ...updated } : null);
-    } else {
-      const errorData = await res.json().catch(() => ({}));
-      const errorMsg = errorData.details
-        ? `${errorData.error}: ${errorData.details}`
-        : (errorData.error || "Failed to save profile");
-      throw new Error(errorMsg);
-    }
-  }, [selectedParticipant, currentParticipant]);
-
   // Handle adding a new player (by anyone)
   const handleAddPlayer = useCallback(async () => {
     if (!newPlayerName.trim()) return;
@@ -164,13 +134,15 @@ export function CampaignPage({ event }: CampaignPageProps) {
     }
   }, [newPlayerName, event.slug]);
 
-  // Open profile modal for current user to create character
+  // Navigate to character edit page for current user
   const handleCreateCharacter = useCallback(() => {
     if (currentParticipant) {
-      setSelectedParticipant(currentParticipant);
-      setIsProfileModalOpen(true);
+      const playerSlug = encodeURIComponent(
+        currentParticipant.displayName.toLowerCase().replace(/\s+/g, "-")
+      );
+      router.push(`/${event.slug}/${playerSlug}/character`);
     }
-  }, [currentParticipant]);
+  }, [currentParticipant, event.slug, router]);
 
   // Load heatmap data
   useEffect(() => {
@@ -244,45 +216,11 @@ export function CampaignPage({ event }: CampaignPageProps) {
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       {/* Hero Section with Campaign Image */}
-      <div className="relative">
-        {event.campaignImageBase64 ? (
-          <div className="aspect-[16/9] max-h-[400px] w-full overflow-hidden">
-            <img
-              src={event.campaignImageBase64}
-              alt={event.title}
-              className="h-full w-full object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
-          </div>
-        ) : (
-          <div className="h-32 bg-gradient-to-br from-blue-600 to-purple-700" />
-        )}
-
-        {/* Campaign Title Overlay */}
-        <div className="absolute bottom-0 left-0 right-0 p-3 md:p-4">
-          <div className="mx-auto max-w-5xl">
-            <div className="flex items-end gap-2">
-              {event.gameSystem?.imageBase64 && !event.campaignImageBase64 && (
-                <img
-                  src={event.gameSystem.imageBase64}
-                  alt={event.gameSystem.name}
-                  className="h-16 w-16 rounded-lg border-2 border-white/20 object-cover shadow-lg"
-                />
-              )}
-              <div>
-                {event.gameSystem && (
-                  <p className="text-sm font-medium text-white/80">
-                    {event.gameSystem.name}
-                  </p>
-                )}
-                <h1 className="text-2xl font-bold text-white md:text-3xl">
-                  {event.title}
-                </h1>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <CampaignHeader
+        title={event.title}
+        campaignImageBase64={event.campaignImageBase64}
+        gameSystem={event.gameSystem}
+      />
 
       {/* Main Content */}
       <div className="mx-auto max-w-5xl px-3 py-3">
@@ -582,16 +520,15 @@ export function CampaignPage({ event }: CampaignPageProps) {
         When2Play
       </footer>
 
-      {/* Player Profile Modal */}
+      {/* Player Detail Modal */}
       {selectedParticipant && (
-        <PlayerProfileModal
+        <PlayerDetailModal
           participant={selectedParticipant}
           isOpen={isProfileModalOpen}
           onClose={() => {
             setIsProfileModalOpen(false);
             setSelectedParticipant(null);
           }}
-          onSave={handleSaveProfile}
           eventSlug={event.slug}
           isCurrentUser={currentParticipant?.id === selectedParticipant.id}
         />
