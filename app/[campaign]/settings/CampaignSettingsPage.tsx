@@ -4,14 +4,9 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { GameSystem, MeetingType, PrepUrl } from "@/lib/types";
-import { CollapsibleSection } from "@/components/ui/CollapsibleSection";
 import { GameSystemAutocomplete } from "@/components/campaign/GameSystemAutocomplete";
 import { GameSystemModal } from "@/components/campaign/GameSystemModal";
-import { SessionLengthSelector } from "@/components/campaign/SessionLengthSelector";
-import { DateRangePicker } from "@/components/campaign/DateRangePicker";
-import { TimeWindowSelector } from "@/components/campaign/TimeWindowSelector";
 import { MeetingTypeSelector } from "@/components/campaign/MeetingTypeSelector";
-import { PreSessionInstructions } from "@/components/campaign/PreSessionInstructions";
 
 interface EventData {
   id: string;
@@ -45,11 +40,6 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
 
   // Form state
   const [gameSystem, setGameSystem] = useState<GameSystem | null>(event.gameSystem);
-  const [sessionLengthMinutes, setSessionLengthMinutes] = useState(event.sessionLengthMinutes);
-  const [startDate, setStartDate] = useState<string | null>(event.startDate);
-  const [endDate, setEndDate] = useState<string | null>(event.endDate);
-  const [earliestTime, setEarliestTime] = useState(event.earliestTime);
-  const [latestTime, setLatestTime] = useState(event.latestTime);
   const [meetingType, setMeetingType] = useState<MeetingType | null>(event.meetingType);
   const [meetingLocation, setMeetingLocation] = useState(event.meetingLocation || "");
   const [meetingRoom, setMeetingRoom] = useState(event.meetingRoom || "");
@@ -66,16 +56,11 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
   // Save state
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasChanges, setHasChanges] = useState(false);
-
-  // Mark as changed when any field updates
-  const markChanged = useCallback(() => setHasChanges(true), []);
 
   // Handle game system change
   const handleGameSystemChange = useCallback(
     (system: GameSystem | null) => {
       setGameSystem(system);
-      markChanged();
       // Auto-fill instructions from game system if empty
       if (system?.defaultInstructions && !preSessionInstructions) {
         setPreSessionInstructions(system.defaultInstructions);
@@ -84,7 +69,7 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
         setPlayerPrepUrls(system.defaultUrls);
       }
     },
-    [preSessionInstructions, playerPrepUrls.length, markChanged]
+    [preSessionInstructions, playerPrepUrls.length]
   );
 
   // Handle game system created
@@ -96,19 +81,35 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
     [handleGameSystemChange]
   );
 
-  // Save settings
-  const handleSave = async () => {
+  // URL handlers
+  const handleAddUrl = useCallback(() => {
+    setPlayerPrepUrls([...playerPrepUrls, { label: "", url: "" }]);
+  }, [playerPrepUrls]);
+
+  const handleRemoveUrl = useCallback(
+    (index: number) => {
+      setPlayerPrepUrls(playerPrepUrls.filter((_, i) => i !== index));
+    },
+    [playerPrepUrls]
+  );
+
+  const handleUpdateUrl = useCallback(
+    (index: number, field: "label" | "url", value: string) => {
+      const newUrls = [...playerPrepUrls];
+      newUrls[index] = { ...newUrls[index], [field]: value };
+      setPlayerPrepUrls(newUrls);
+    },
+    [playerPrepUrls]
+  );
+
+  // Save and continue
+  const handleContinue = async () => {
     setIsSaving(true);
     setError(null);
 
     try {
       const payload = {
         gameSystemId: gameSystem?.id || null,
-        sessionLengthMinutes,
-        startDate,
-        endDate,
-        earliestTime,
-        latestTime,
         meetingType,
         meetingLocation: meetingLocation || null,
         meetingRoom: meetingRoom || null,
@@ -126,13 +127,13 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Failed to save settings");
+        throw new Error(data.error || "Failed to save");
       }
 
-      setHasChanges(false);
-      router.push(`/${event.slug}`);
+      // Continue to scheduling page
+      router.push(`/${event.slug}/schedule`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save settings");
+      setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setIsSaving(false);
     }
@@ -142,188 +143,180 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       {/* Header */}
       <div className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto max-w-2xl px-4 py-6">
-          <div className="flex items-center gap-3">
-            <Link
-              href={`/${event.slug}`}
-              className="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-            >
-              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </Link>
-            <div>
-              <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
-                Campaign Settings
-              </h1>
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">{event.title}</p>
+        <div className="mx-auto max-w-xl px-4 py-6">
+          {/* Step indicator */}
+          <div className="mb-4 flex items-center justify-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-medium text-white">
+                1
+              </div>
+              <span className="text-xs font-medium text-blue-600 dark:text-blue-400">Setup</span>
+            </div>
+            <div className="h-px w-8 bg-zinc-300 dark:bg-zinc-700" />
+            <div className="flex items-center gap-1.5">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-200 text-xs font-medium text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400">
+                2
+              </div>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">Schedule</span>
+            </div>
+            <div className="h-px w-8 bg-zinc-300 dark:bg-zinc-700" />
+            <div className="flex items-center gap-1.5">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-200 text-xs font-medium text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400">
+                3
+              </div>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">Share</span>
             </div>
           </div>
+
+          <h1 className="text-center text-xl font-semibold text-zinc-900 dark:text-zinc-100">
+            Set up your campaign
+          </h1>
+          <p className="mt-1 text-center text-sm text-zinc-500 dark:text-zinc-400">
+            {event.title}
+          </p>
         </div>
       </div>
 
       {/* Content */}
-      <div className="mx-auto max-w-2xl px-4 py-6">
-        <div className="space-y-4">
-          {/* Game & Session */}
-          <CollapsibleSection
-            title="Game & Session"
-            description="What game are you playing?"
-            defaultOpen={true}
-          >
-            <div className="space-y-4">
-              <GameSystemAutocomplete
-                value={gameSystem}
-                onChange={handleGameSystemChange}
-                onCreateNew={() => setIsCreatingGameSystem(true)}
-              />
-              <SessionLengthSelector
-                value={sessionLengthMinutes}
-                onChange={(v) => {
-                  setSessionLengthMinutes(v);
-                  markChanged();
-                }}
-              />
-            </div>
-          </CollapsibleSection>
+      <div className="mx-auto max-w-xl px-4 py-6">
+        <div className="space-y-6">
+          {/* Game System */}
+          <div>
+            <GameSystemAutocomplete
+              value={gameSystem}
+              onChange={handleGameSystemChange}
+              onCreateNew={() => setIsCreatingGameSystem(true)}
+            />
+            {gameSystem && (
+              <Link
+                href={`/${event.slug}/system/${gameSystem.id}`}
+                className="mt-2 inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400"
+              >
+                View system details
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
+            )}
+          </div>
 
-          {/* Scheduling Window */}
-          <CollapsibleSection
-            title="Scheduling Window"
-            description="When can sessions happen?"
-            defaultOpen={!event.startDate}
-          >
-            <div className="space-y-4">
-              <DateRangePicker
-                startDate={startDate}
-                endDate={endDate}
-                onStartDateChange={(v) => {
-                  setStartDate(v);
-                  markChanged();
-                }}
-                onEndDateChange={(v) => {
-                  setEndDate(v);
-                  markChanged();
-                }}
-              />
-              <TimeWindowSelector
-                earliestTime={earliestTime}
-                latestTime={latestTime}
-                onEarliestChange={(v) => {
-                  setEarliestTime(v);
-                  markChanged();
-                }}
-                onLatestChange={(v) => {
-                  setLatestTime(v);
-                  markChanged();
-                }}
-              />
-            </div>
-          </CollapsibleSection>
-
-          {/* Meeting Details */}
-          <CollapsibleSection
-            title="Meeting Details"
-            description="Where will you play?"
-            badge={meetingType ? "Configured" : undefined}
-          >
+          {/* Meeting Info */}
+          <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
             <MeetingTypeSelector
               meetingType={meetingType}
               meetingLocation={meetingLocation}
               meetingRoom={meetingRoom}
-              onMeetingTypeChange={(v) => {
-                setMeetingType(v);
-                markChanged();
-              }}
-              onMeetingLocationChange={(v) => {
-                setMeetingLocation(v);
-                markChanged();
-              }}
-              onMeetingRoomChange={(v) => {
-                setMeetingRoom(v);
-                markChanged();
-              }}
+              onMeetingTypeChange={setMeetingType}
+              onMeetingLocationChange={setMeetingLocation}
+              onMeetingRoomChange={setMeetingRoom}
             />
-          </CollapsibleSection>
+          </div>
 
-          {/* Player Setup */}
-          <CollapsibleSection
-            title="Player Setup"
-            description="Instructions and resources for players"
-            badge={preSessionInstructions ? "Has instructions" : undefined}
-          >
+          {/* Pre-session Instructions */}
+          <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
             <div className="space-y-4">
-              <PreSessionInstructions
-                value={preSessionInstructions}
-                defaultValue={gameSystem?.defaultInstructions || ""}
-                onChange={(v) => {
-                  setPreSessionInstructions(v);
-                  markChanged();
-                }}
-                urls={playerPrepUrls}
-                defaultUrls={gameSystem?.defaultUrls || []}
-                onUrlsChange={(v) => {
-                  setPlayerPrepUrls(v);
-                  markChanged();
-                }}
-              />
-
-              {/* Player limits */}
               <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Player Limits
+                <label
+                  htmlFor="instructions"
+                  className="block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                >
+                  Pre-Session Instructions
                 </label>
                 <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                  Optional minimum/maximum player counts
+                  What should players know or prepare before sessions?
                 </p>
-                <div className="mt-2 flex items-center gap-3">
-                  <div className="flex-1">
-                    <label
-                      htmlFor="minPlayers"
-                      className="mb-1 block text-xs text-zinc-500 dark:text-zinc-400"
-                    >
-                      Minimum
-                    </label>
-                    <input
-                      type="number"
-                      id="minPlayers"
-                      min="1"
-                      max="20"
-                      value={minPlayers}
-                      onChange={(e) => {
-                        setMinPlayers(e.target.value);
-                        markChanged();
-                      }}
-                      placeholder="e.g., 3"
-                      className="block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                    />
-                  </div>
-                  <span className="mt-5 text-zinc-400">to</span>
-                  <div className="flex-1">
-                    <label
-                      htmlFor="maxPlayers"
-                      className="mb-1 block text-xs text-zinc-500 dark:text-zinc-400"
-                    >
-                      Maximum
-                    </label>
-                    <input
-                      type="number"
-                      id="maxPlayers"
-                      min="1"
-                      max="20"
-                      value={maxPlayers}
-                      onChange={(e) => {
-                        setMaxPlayers(e.target.value);
-                        markChanged();
-                      }}
-                      placeholder="e.g., 6"
-                      className="block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                    />
-                  </div>
+                <textarea
+                  id="instructions"
+                  value={preSessionInstructions}
+                  onChange={(e) => setPreSessionInstructions(e.target.value)}
+                  placeholder="e.g., Bring your character sheet, dice, and any spell cards..."
+                  rows={3}
+                  className="mt-2 block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </div>
+
+              {/* Helpful Links */}
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  Helpful Links
+                </label>
+                <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  Character builders, rules, session notes, etc.
+                </p>
+                <div className="mt-2 space-y-2">
+                  {playerPrepUrls.map((urlItem, index) => (
+                    <div key={index} className="flex gap-2">
+                      <input
+                        type="text"
+                        value={urlItem.label}
+                        onChange={(e) => handleUpdateUrl(index, "label", e.target.value)}
+                        placeholder="Label"
+                        className="w-1/3 rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                      />
+                      <input
+                        type="url"
+                        value={urlItem.url}
+                        onChange={(e) => handleUpdateUrl(index, "url", e.target.value)}
+                        placeholder="https://..."
+                        className="flex-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveUrl(index)}
+                        className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={handleAddUrl}
+                    className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                  >
+                    + Add link
+                  </button>
                 </div>
               </div>
             </div>
-          </CollapsibleSection>
+          </div>
+
+          {/* Player Limits */}
+          <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              Player Limits
+            </label>
+            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+              Optional minimum and maximum player counts
+            </p>
+            <div className="mt-2 flex items-center gap-3">
+              <div className="flex-1">
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={minPlayers}
+                  onChange={(e) => setMinPlayers(e.target.value)}
+                  placeholder="Min"
+                  className="block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </div>
+              <span className="text-zinc-400">to</span>
+              <div className="flex-1">
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={maxPlayers}
+                  onChange={(e) => setMaxPlayers(e.target.value)}
+                  placeholder="Max"
+                  className="block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Error */}
@@ -336,18 +329,21 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
         {/* Actions */}
         <div className="mt-6 flex items-center justify-between">
           <Link
-            href={`/${event.slug}`}
+            href={`/${event.slug}/schedule`}
             className="text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
           >
-            Skip for now
+            Skip this step
           </Link>
           <button
             type="button"
-            onClick={handleSave}
+            onClick={handleContinue}
             disabled={isSaving}
-            className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
           >
-            {isSaving ? "Saving..." : "Save & Continue"}
+            {isSaving ? "Saving..." : "Continue"}
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
           </button>
         </div>
       </div>
