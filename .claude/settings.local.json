@@ -3,7 +3,9 @@
     "allow": [
       "Bash(git -C /Users/dev/tabletop-scheduler log --oneline -10)",
       "Bash(git -C /Users/dev/tabletop-scheduler status)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(npx prisma db push:*)",
+      "Bash(npx prisma generate:*)"
     ]
   }
 }

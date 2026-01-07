@@ -125,18 +125,36 @@ export function AvailabilityAI({
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Describe changes to your availability in plain English.
+        <p className="text-sm text-zinc-600 dark:text-zinc-300">
+          Just tell us when you can play using everyday language.
         </p>
-        <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
-          Examples:
-        </p>
-        <ul className="mt-1 space-y-1 text-xs text-zinc-400 dark:text-zinc-500">
-          <li>&bull; &quot;I&apos;m available Mon-Fri 6-10pm&quot; (sets weekly schedule)</li>
-          <li>&bull; &quot;Also free Sunday the 12th from 5-7pm&quot; (adds specific time)</li>
-          <li>&bull; &quot;Not available Wednesday the 14th&quot; (adds exclusion)</li>
-          <li>&bull; &quot;I work 9-5 weekdays&quot; (exclusion - unavailable during work)</li>
-        </ul>
+        <div className="mt-3 rounded-md bg-zinc-50 p-3 dark:bg-zinc-800/50">
+          <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-2">
+            You can say things like:
+          </p>
+          <ul className="space-y-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+            <li className="flex gap-2">
+              <span className="text-green-500">+</span>
+              <span>&quot;I&apos;m free weeknights after 6pm&quot;</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="text-green-500">+</span>
+              <span>&quot;Saturdays and Sundays anytime works&quot;</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="text-green-500">+</span>
+              <span>&quot;I can also do this Sunday afternoon&quot;</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="text-red-400">-</span>
+              <span>&quot;I work 9-5 Monday through Friday&quot;</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="text-red-400">-</span>
+              <span>&quot;Can&apos;t make it next Thursday&quot;</span>
+            </li>
+          </ul>
+        </div>
       </div>
 
       {error && (
@@ -150,7 +168,7 @@ export function AvailabilityAI({
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="e.g., I'm not available on Wednesday the 14th, but I can also do Sundays 5-7pm"
+            placeholder="Tell us about your schedule... e.g., I'm usually free weekday evenings after 7, and most of Saturday"
             rows={4}
             className="block w-full rounded-md border border-zinc-300 px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
           />
@@ -178,10 +196,10 @@ export function AvailabilityAI({
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   />
                 </svg>
-                Processing...
+                Understanding...
               </span>
             ) : (
-              "Parse Changes"
+              "Update My Availability"
             )}
           </button>
         </>
@@ -190,19 +208,19 @@ export function AvailabilityAI({
           {/* Interpretation */}
           <div className="rounded-md bg-blue-50 p-4 dark:bg-blue-900/20">
             <h4 className="text-sm font-medium text-blue-800 dark:text-blue-300">
-              Understood:
+              Here&apos;s what we understood:
             </h4>
             <p className="mt-1 text-sm text-blue-700 dark:text-blue-400">
               {result.interpretation}
             </p>
             {result.mode === "replace" && (
               <p className="mt-2 text-xs text-blue-600 dark:text-blue-500">
-                This will set your weekly schedule.
+                This will set up your regular weekly schedule.
               </p>
             )}
             {result.mode === "adjust" && (
               <p className="mt-2 text-xs text-blue-600 dark:text-blue-500">
-                This will adjust your existing availability.
+                This will update your existing schedule.
               </p>
             )}
           </div>
@@ -217,7 +235,7 @@ export function AvailabilityAI({
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                     </svg>
-                    Weekly Schedule ({result.patterns.length})
+                    Your weekly schedule
                   </h4>
                 </div>
                 <ul className="divide-y divide-green-100 dark:divide-green-800">
@@ -246,7 +264,7 @@ export function AvailabilityAI({
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                     </svg>
-                    Adding Availability ({result.additions.length})
+                    Times you can play
                   </h4>
                 </div>
                 <ul className="divide-y divide-green-100 dark:divide-green-800">
@@ -275,7 +293,7 @@ export function AvailabilityAI({
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
                     </svg>
-                    Removing Availability ({result.exclusions.length})
+                    Times you can&apos;t play
                   </h4>
                 </div>
                 <ul className="divide-y divide-red-100 dark:divide-red-800">
@@ -307,7 +325,7 @@ export function AvailabilityAI({
 
             {!hasChanges && (
               <div className="rounded-md bg-yellow-50 p-4 text-sm text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400">
-                No changes detected. Try describing your availability or unavailability more clearly.
+                We couldn&apos;t understand that. Try telling us specific days and times, like &quot;I&apos;m free Saturdays from noon to 6pm&quot;.
               </div>
             )}
           </div>
@@ -318,14 +336,14 @@ export function AvailabilityAI({
               onClick={handleCancel}
               className="flex-1 rounded-md border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
             >
-              Cancel
+              Start Over
             </button>
             <button
               onClick={handleApply}
               disabled={!hasChanges}
               className="flex-1 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Apply Changes
+              Looks Good!
             </button>
           </div>
         </div>

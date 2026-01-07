@@ -6,11 +6,11 @@ interface HeatmapLegendProps {
 
 export function HeatmapLegend({ totalParticipants }: HeatmapLegendProps) {
   const legendItems = [
-    { label: "All available", color: "bg-green-500 dark:bg-green-600", percent: 100 },
-    { label: "Most available", color: "bg-green-400 dark:bg-green-500", percent: 75 },
-    { label: "Some available", color: "bg-yellow-400 dark:bg-yellow-500", percent: 50 },
-    { label: "Few available", color: "bg-orange-400 dark:bg-orange-500", percent: 25 },
-    { label: "Very few", color: "bg-red-300 dark:bg-red-400", percent: 1 },
+    { label: "All available", color: "bg-green-600 dark:bg-green-500", percent: 100 },
+    { label: "Most available", color: "bg-green-500 dark:bg-green-600", percent: 75 },
+    { label: "Some available", color: "bg-green-400 dark:bg-green-500", percent: 50 },
+    { label: "Few available", color: "bg-green-300 dark:bg-green-400", percent: 25 },
+    { label: "Very few", color: "bg-green-200 dark:bg-green-300", percent: 1 },
     { label: "None available", color: "bg-zinc-200 dark:bg-zinc-700", percent: 0 },
   ];
 

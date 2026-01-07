@@ -56,17 +56,17 @@ function getWeekDates(start: Date): Date[] {
   return Array.from({ length: 7 }, (_, i) => addDays(start, i));
 }
 
-// Get availability color based on percentage
+// Get availability color based on percentage (light to dark green scale)
 function getHeatmapColor(availableCount: number, totalCount: number): string {
   if (totalCount === 0) return "bg-zinc-200 dark:bg-zinc-700";
 
   const percentage = (availableCount / totalCount) * 100;
 
-  if (percentage === 100) return "bg-green-500 dark:bg-green-600";
-  if (percentage >= 75) return "bg-green-400 dark:bg-green-500";
-  if (percentage >= 50) return "bg-yellow-400 dark:bg-yellow-500";
-  if (percentage >= 25) return "bg-orange-400 dark:bg-orange-500";
-  if (percentage > 0) return "bg-red-300 dark:bg-red-400";
+  if (percentage === 100) return "bg-green-600 dark:bg-green-500";
+  if (percentage >= 75) return "bg-green-500 dark:bg-green-600";
+  if (percentage >= 50) return "bg-green-400 dark:bg-green-500";
+  if (percentage >= 25) return "bg-green-300 dark:bg-green-400";
+  if (percentage > 0) return "bg-green-200 dark:bg-green-300";
   return "bg-zinc-200 dark:bg-zinc-700";
 }
 

@@ -24,6 +24,7 @@ model GameSystem {
   description         String?
   imageBase64         String?  @db.Text
   defaultInstructions String?  @db.Text
+  defaultUrls         Json?    // Array of { label: string, url: string }
   isBuiltIn           Boolean  @default(false)
   createdAt           DateTime @default(now())
   events              Event[]
@@ -48,6 +49,7 @@ model Event {
   campaignImageBase64        String?     @db.Text
   sessionLengthMinutes       Int         @default(180)
   customPreSessionInstructions String?   @db.Text
+  playerPrepUrls             Json?       // Array of { label: string, url: string }
 
   // Date range for availability window
   startDate                  DateTime?   @db.Date

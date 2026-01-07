@@ -1,18 +1,21 @@
 import { prisma } from "@/lib/db/prisma";
 import { notFound } from "next/navigation";
-import { EventPage } from "./EventPage";
+import { CampaignPage } from "./CampaignPage";
 
 interface Props {
-  params: Promise<{ slug: string }>;
+  params: Promise<{ campaign: string }>;
 }
 
 export default async function Page({ params }: Props) {
-  const { slug } = await params;
+  const { campaign: slug } = await params;
 
   const event = await prisma.event.findUnique({
     where: { slug },
     include: {
       gameSystem: true,
+      participants: {
+        orderBy: { createdAt: "asc" },
+      },
     },
   });
 
@@ -42,8 +45,12 @@ export default async function Page({ params }: Props) {
       name: event.gameSystem.name,
       imageBase64: event.gameSystem.imageBase64,
     } : null,
-    createdAt: event.createdAt.toISOString(),
+    participants: event.participants.map(p => ({
+      id: p.id,
+      displayName: p.displayName,
+      isGm: p.isGm,
+    })),
   };
 
-  return <EventPage event={serializedEvent} />;
+  return <CampaignPage event={serializedEvent} />;
 }

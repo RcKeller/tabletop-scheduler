@@ -108,6 +108,7 @@ export async function POST(request: NextRequest) {
         campaignImageBase64: body.campaignImageBase64 || null,
         sessionLengthMinutes,
         customPreSessionInstructions: body.customPreSessionInstructions?.trim() || null,
+        playerPrepUrls: body.playerPrepUrls || null,
 
         // Date range
         startDate: body.startDate ? new Date(body.startDate) : null,

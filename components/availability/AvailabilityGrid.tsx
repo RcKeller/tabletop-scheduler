@@ -12,6 +12,7 @@ interface AvailabilityGridProps {
   weekStart?: Date;
   earliestTime?: string; // HH:MM format
   latestTime?: string; // HH:MM format (same as earliest = 24hr)
+  autoSave?: boolean; // Auto-save after each change
 }
 
 // Generate time slots (30-min intervals for full day)
@@ -61,6 +62,7 @@ export function AvailabilityGrid({
   weekStart,
   earliestTime = "00:00",
   latestTime = "23:30",
+  autoSave = false,
 }: AvailabilityGridProps) {
   const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
   const [isDragging, setIsDragging] = useState(false);
@@ -141,38 +143,10 @@ export function AvailabilityGrid({
     [isDragging]
   );
 
-  const handlePointerUp = useCallback(() => {
-    if (isDragging && pendingSlots.size > 0) {
-      setSelectedSlots((prev) => {
-        const next = new Set(prev);
-        for (const slot of pendingSlots) {
-          if (dragMode === "select") {
-            next.add(slot);
-          } else {
-            next.delete(slot);
-          }
-        }
-        return next;
-      });
-      setHasChanges(true);
-    }
-    setIsDragging(false);
-    setDragStart(null);
-    setDragEnd(null);
-  }, [isDragging, pendingSlots, dragMode]);
-
-  // Global pointer up listener
-  useEffect(() => {
-    window.addEventListener("pointerup", handlePointerUp);
-    return () => window.removeEventListener("pointerup", handlePointerUp);
-  }, [handlePointerUp]);
-
-  const handleSave = () => {
-    // Convert selected slots to TimeSlot format
+  // Convert selected slots to TimeSlot array
+  const convertSlotsToTimeSlots = useCallback((slots: Set<string>): TimeSlot[] => {
     const slotsMap = new Map<string, { start: string; end: string }[]>();
-
-    // Group by date and find contiguous ranges
-    const sortedSlots = Array.from(selectedSlots).sort();
+    const sortedSlots = Array.from(slots).sort();
 
     for (const slotKey of sortedSlots) {
       const [date, time] = slotKey.split("-").reduce(
@@ -188,8 +162,6 @@ export function AvailabilityGrid({
       );
 
       const dateSlots = slotsMap.get(date) || [];
-
-      // Calculate end time (30 mins later)
       const [h, m] = time.split(":").map(Number);
       const endMinute = m + 30;
       const endTime =
@@ -197,7 +169,6 @@ export function AvailabilityGrid({
           ? `${(h + 1).toString().padStart(2, "0")}:00`
           : `${h.toString().padStart(2, "0")}:30`;
 
-      // Try to extend existing range
       const lastRange = dateSlots[dateSlots.length - 1];
       if (lastRange && lastRange.end === time) {
         lastRange.end = endTime;
@@ -208,18 +179,47 @@ export function AvailabilityGrid({
       slotsMap.set(date, dateSlots);
     }
 
-    // Convert to TimeSlot array
     const result: TimeSlot[] = [];
     for (const [date, ranges] of slotsMap) {
       for (const range of ranges) {
-        result.push({
-          date,
-          startTime: range.start,
-          endTime: range.end,
-        });
+        result.push({ date, startTime: range.start, endTime: range.end });
       }
     }
+    return result;
+  }, []);
 
+  const handlePointerUp = useCallback(() => {
+    if (isDragging && pendingSlots.size > 0) {
+      const nextSlots = new Set(selectedSlots);
+      for (const slot of pendingSlots) {
+        if (dragMode === "select") {
+          nextSlots.add(slot);
+        } else {
+          nextSlots.delete(slot);
+        }
+      }
+      setSelectedSlots(nextSlots);
+      setHasChanges(true);
+
+      // Auto-save if enabled
+      if (autoSave) {
+        const timeSlots = convertSlotsToTimeSlots(nextSlots);
+        onSave(timeSlots);
+      }
+    }
+    setIsDragging(false);
+    setDragStart(null);
+    setDragEnd(null);
+  }, [isDragging, pendingSlots, dragMode, selectedSlots, autoSave, convertSlotsToTimeSlots, onSave]);
+
+  // Global pointer up listener
+  useEffect(() => {
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => window.removeEventListener("pointerup", handlePointerUp);
+  }, [handlePointerUp]);
+
+  const handleSave = () => {
+    const result = convertSlotsToTimeSlots(selectedSlots);
     onSave(result);
     setHasChanges(false);
   };
@@ -236,18 +236,23 @@ export function AvailabilityGrid({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
           Click and drag to select available times
         </p>
-        <button
-          onClick={handleSave}
-          disabled={!hasChanges || isSaving}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isSaving ? "Saving..." : "Save Changes"}
-        </button>
+        {!autoSave && (
+          <button
+            onClick={handleSave}
+            disabled={!hasChanges || isSaving}
+            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isSaving ? "Saving..." : "Save Changes"}
+          </button>
+        )}
+        {autoSave && isSaving && (
+          <span className="text-xs text-zinc-500">Saving...</span>
+        )}
       </div>
 
       <div

@@ -48,6 +48,12 @@ export type MeetingType =
   | "IN_PERSON"
   | "OTHER";
 
+// Player prep URL type
+export interface PrepUrl {
+  label: string;
+  url: string;
+}
+
 // Game system type
 export interface GameSystem {
   id: string;
@@ -55,6 +61,7 @@ export interface GameSystem {
   description: string | null;
   imageBase64: string | null;
   defaultInstructions: string | null;
+  defaultUrls: PrepUrl[] | null;
   isBuiltIn: boolean;
   createdAt: string;
 }
@@ -68,6 +75,7 @@ export interface CreateCampaignPayload {
   campaignImageBase64?: string;
   sessionLengthMinutes: number;
   customPreSessionInstructions?: string;
+  playerPrepUrls?: PrepUrl[];
   startDate: string; // YYYY-MM-DD
   endDate: string; // YYYY-MM-DD
   earliestTime: string; // HH:MM
@@ -90,6 +98,7 @@ export interface Campaign {
   campaignImageBase64: string | null;
   sessionLengthMinutes: number;
   customPreSessionInstructions: string | null;
+  playerPrepUrls: PrepUrl[] | null;
   startDate: string | null;
   endDate: string | null;
   earliestTime: string;

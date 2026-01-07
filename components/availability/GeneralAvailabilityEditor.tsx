@@ -8,6 +8,8 @@ interface GeneralAvailabilityEditorProps {
   timezone: string;
   onSave: (patterns: Omit<GeneralAvailability, "id" | "participantId">[]) => void;
   isSaving: boolean;
+  eventEarliestTime?: string; // Campaign's earliest allowed time
+  eventLatestTime?: string; // Campaign's latest allowed time
 }
 
 const DAYS = [
@@ -39,27 +41,55 @@ interface PatternEntry {
 }
 
 /**
- * Calculate default evening hours based on timezone.
- * Returns the last 5 hours of the day (e.g., 7pm-12am or 19:00-00:00)
+ * Generate default weekly patterns:
+ * - Sat/Sun: 10am-10pm
+ * - M-F: 5pm-10pm
  */
-function getDefaultEveningHours(): { startTime: string; endTime: string } {
-  // Default to 7pm-12am (last 5 hours of day)
-  return { startTime: "19:00", endTime: "00:00" };
+function generateDefaultPatterns(): PatternEntry[] {
+  const patterns: PatternEntry[] = [];
+
+  // Weekend: Sat & Sun, 10am-10pm
+  [0, 6].forEach((dayOfWeek, i) => {
+    patterns.push({
+      id: `default-weekend-${i}`,
+      dayOfWeek,
+      startTime: "10:00",
+      endTime: "22:00",
+    });
+  });
+
+  // Weekdays: M-F, 5pm-10pm
+  [1, 2, 3, 4, 5].forEach((dayOfWeek, i) => {
+    patterns.push({
+      id: `default-weekday-${i}`,
+      dayOfWeek,
+      startTime: "17:00",
+      endTime: "22:00",
+    });
+  });
+
+  return patterns;
 }
 
 /**
- * Generate default weekly patterns for weekday evenings
+ * Check if a time is within the event's time window
  */
-function generateDefaultPatterns(): PatternEntry[] {
-  const { startTime, endTime } = getDefaultEveningHours();
+function isTimeInWindow(time: string, earliest: string, latest: string): boolean {
+  const toMins = (t: string) => {
+    const [h, m] = t.split(":").map(Number);
+    return h * 60 + m;
+  };
 
-  // Default: Monday through Friday evenings
-  return [1, 2, 3, 4, 5].map((dayOfWeek, i) => ({
-    id: `default-${i}`,
-    dayOfWeek,
-    startTime,
-    endTime,
-  }));
+  const timeMins = toMins(time);
+  const earliestMins = toMins(earliest);
+  let latestMins = toMins(latest);
+
+  // Handle midnight crossing
+  if (latestMins <= earliestMins) {
+    latestMins += 24 * 60;
+  }
+
+  return timeMins >= earliestMins && timeMins <= latestMins;
 }
 
 export function GeneralAvailabilityEditor({
@@ -67,10 +97,23 @@ export function GeneralAvailabilityEditor({
   timezone,
   onSave,
   isSaving,
+  eventEarliestTime,
+  eventLatestTime,
 }: GeneralAvailabilityEditorProps) {
   const [entries, setEntries] = useState<PatternEntry[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
   const [initialized, setInitialized] = useState(false);
+
+  // Check if any entries are outside the campaign window
+  const entriesOutsideWindow = useMemo(() => {
+    if (!eventEarliestTime || !eventLatestTime) return [];
+
+    return entries.filter((entry) => {
+      const startInWindow = isTimeInWindow(entry.startTime, eventEarliestTime, eventLatestTime);
+      const endInWindow = isTimeInWindow(entry.endTime, eventEarliestTime, eventLatestTime);
+      return !startInWindow || !endInWindow;
+    });
+  }, [entries, eventEarliestTime, eventLatestTime]);
 
   // Initialize from patterns or generate defaults
   useEffect(() => {
@@ -162,15 +205,37 @@ export function GeneralAvailabilityEditor({
     return `${formatTime(start)} - ${formatTime(end)}`;
   };
 
+  const formatTimeDisplay = (time: string) => {
+    const [h, m] = time.split(":").map(Number);
+    const hour = h % 12 || 12;
+    const ampm = h < 12 ? "AM" : "PM";
+    return `${hour}:${m.toString().padStart(2, "0")} ${ampm}`;
+  };
+
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-zinc-500 dark:text-zinc-400">
-        Set your recurring weekly availability. This forms your base schedule that applies to all weeks.
+    <div className="space-y-3">
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        Set your recurring weekly availability.
       </p>
 
+      {/* Warning for times outside campaign window */}
+      {entriesOutsideWindow.length > 0 && eventEarliestTime && eventLatestTime && (
+        <div className="rounded-md bg-amber-50 p-3 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
+          <div className="flex items-start gap-2">
+            <svg className="mt-0.5 h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span>
+              Some of your availability is outside this campaign's time window ({formatTimeDisplay(eventEarliestTime)} - {formatTimeDisplay(eventLatestTime)}).
+              Only times within this window will count.
+            </span>
+          </div>
+        </div>
+      )}
+
       {entries.length === 0 && (
-        <div className="rounded-md bg-yellow-50 p-4 text-sm text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400">
-          No weekly schedule set. Add time slots below to indicate when you&apos;re generally available.
+        <div className="rounded-md bg-yellow-50 p-3 text-xs text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400">
+          No weekly schedule set. Add time slots below.
         </div>
       )}
 
