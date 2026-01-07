@@ -95,27 +95,6 @@ export function QuickStartForm() {
           <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
-              onClick={() => setCampaignType("ONESHOT")}
-              className={`rounded-lg border-2 p-4 text-left transition-all ${
-                campaignType === "ONESHOT"
-                  ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900/20"
-                  : "border-zinc-200 hover:border-zinc-300 dark:border-zinc-700 dark:hover:border-zinc-600"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <svg className={`h-5 w-5 ${campaignType === "ONESHOT" ? "text-blue-600 dark:text-blue-400" : "text-zinc-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                <span className={`font-semibold ${campaignType === "ONESHOT" ? "text-blue-900 dark:text-blue-100" : "text-zinc-700 dark:text-zinc-300"}`}>
-                  One-Shot
-                </span>
-              </div>
-              <p className={`mt-1 text-xs ${campaignType === "ONESHOT" ? "text-blue-700 dark:text-blue-300" : "text-zinc-500 dark:text-zinc-400"}`}>
-                Single session game
-              </p>
-            </button>
-            <button
-              type="button"
               onClick={() => setCampaignType("CAMPAIGN")}
               className={`rounded-lg border-2 p-4 text-left transition-all ${
                 campaignType === "CAMPAIGN"
@@ -133,6 +112,27 @@ export function QuickStartForm() {
               </div>
               <p className={`mt-1 text-xs ${campaignType === "CAMPAIGN" ? "text-blue-700 dark:text-blue-300" : "text-zinc-500 dark:text-zinc-400"}`}>
                 Ongoing weekly/bi-weekly
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCampaignType("ONESHOT")}
+              className={`rounded-lg border-2 p-4 text-left transition-all ${
+                campaignType === "ONESHOT"
+                  ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-900/20"
+                  : "border-zinc-200 hover:border-zinc-300 dark:border-zinc-700 dark:hover:border-zinc-600"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <svg className={`h-5 w-5 ${campaignType === "ONESHOT" ? "text-blue-600 dark:text-blue-400" : "text-zinc-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <span className={`font-semibold ${campaignType === "ONESHOT" ? "text-blue-900 dark:text-blue-100" : "text-zinc-700 dark:text-zinc-300"}`}>
+                  One-Shot
+                </span>
+              </div>
+              <p className={`mt-1 text-xs ${campaignType === "ONESHOT" ? "text-blue-700 dark:text-blue-300" : "text-zinc-500 dark:text-zinc-400"}`}>
+                Single session game
               </p>
             </button>
           </div>
@@ -177,9 +177,7 @@ export function QuickStartForm() {
           <ImageUpload
             value={campaignImageBase64}
             onChange={setCampaignImageBase64}
-            label="Drop an image or click to upload"
-            maxSizeMB={1}
-            className="h-32"
+            maxSizeMB={2}
           />
         </div>
 

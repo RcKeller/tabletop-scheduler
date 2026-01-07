@@ -8,7 +8,7 @@ import { AvailabilityGrid } from "@/components/availability/AvailabilityGrid";
 import { AvailabilityAI } from "@/components/availability/AvailabilityAI";
 import { GeneralAvailabilityEditor } from "@/components/availability/GeneralAvailabilityEditor";
 import { WeekNavigator } from "@/components/navigation/WeekNavigator";
-import { TimezoneSelector } from "@/components/timezone/TimezoneSelector";
+import { TimezoneAutocomplete } from "@/components/timezone/TimezoneAutocomplete";
 import type { TimeSlot, GeneralAvailability as GeneralAvailabilityType } from "@/lib/types";
 import { expandPatternsForWeek, slotsToKeySet, keySetToSlots } from "@/lib/utils/availability";
 import { addThirtyMinutes } from "@/lib/utils/time-slots";
@@ -442,7 +442,7 @@ export function PlayerAvailabilityPage({
               <div>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">{event.title}</p>
                 <h1 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                  {participant.displayName}'s Availability
+                  {participant.displayName}&apos;s Availability
                 </h1>
               </div>
             </div>
@@ -456,12 +456,6 @@ export function PlayerAvailabilityPage({
               >
                 Clear All
               </button>
-              <button
-                onClick={handleDone}
-                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-              >
-                Done
-              </button>
             </div>
           </div>
         </div>
@@ -470,24 +464,23 @@ export function PlayerAvailabilityPage({
       {/* Method Selection */}
       <div className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto max-w-4xl px-3 py-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-zinc-500 dark:text-zinc-400 mr-2">Input method:</span>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-800">
               {(["select", "pattern", "describe"] as const).map((m) => (
                 <Link
                   key={m}
                   href={`/${event.slug}/${playerSlug}${m === "select" ? "" : `/${m}`}`}
                   className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                     method === m
-                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                      ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100"
+                      : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
                   }`}
                 >
                   {METHOD_LABELS[m]}
                 </Link>
               ))}
             </div>
-            <TimezoneSelector value={timezone} onChange={setTimezone} />
+            <TimezoneAutocomplete value={timezone} onChange={setTimezone} />
           </div>
         </div>
       </div>
@@ -559,53 +552,55 @@ export function PlayerAvailabilityPage({
               )}
             </div>
 
-            {/* Next Step CTA */}
-            {event.customPreSessionInstructions && !participant.hasCharacterInfo ? (
-              <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-900/20">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <h3 className="text-sm font-medium text-purple-900 dark:text-purple-100">
-                      One more step: Set up your character
-                    </h3>
-                    <p className="mt-0.5 text-xs text-purple-700 dark:text-purple-300">
-                      The GM has provided instructions for character creation
-                    </p>
+            {/* Next Step CTA - only show after availability has been set */}
+            {effectiveAvailability.length > 0 && (
+              event.customPreSessionInstructions && !participant.hasCharacterInfo ? (
+                <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-900/20">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-sm font-medium text-purple-900 dark:text-purple-100">
+                        One more step: Set up your character
+                      </h3>
+                      <p className="mt-0.5 text-xs text-purple-700 dark:text-purple-300">
+                        The GM has provided instructions for character creation
+                      </p>
+                    </div>
+                    <div className="flex flex-shrink-0 gap-2">
+                      <Link
+                        href={`/${event.slug}`}
+                        className="rounded-md border border-purple-300 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:text-purple-300 dark:hover:bg-purple-900/30"
+                      >
+                        Skip
+                      </Link>
+                      <Link
+                        href={`/${event.slug}/${encodeURIComponent(participant.displayName.toLowerCase().replace(/\s+/g, "-"))}/character`}
+                        className="rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
+                      >
+                        Set Up Character
+                      </Link>
+                    </div>
                   </div>
-                  <div className="flex flex-shrink-0 gap-2">
+                </div>
+              ) : (
+                <div className="rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-medium text-green-900 dark:text-green-100">
+                        All set!
+                      </h3>
+                      <p className="mt-0.5 text-xs text-green-700 dark:text-green-300">
+                        Head back to see everyone&apos;s availability and find the best time
+                      </p>
+                    </div>
                     <Link
                       href={`/${event.slug}`}
-                      className="rounded-md border border-purple-300 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:text-purple-300 dark:hover:bg-purple-900/30"
+                      className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
                     >
-                      Skip
-                    </Link>
-                    <Link
-                      href={`/${event.slug}/${encodeURIComponent(participant.displayName.toLowerCase().replace(/\s+/g, "-"))}/character`}
-                      className="rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
-                    >
-                      Set Up Character
+                      View Campaign
                     </Link>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                      All set!
-                    </h3>
-                    <p className="mt-0.5 text-xs text-blue-700 dark:text-blue-300">
-                      Head back to see everyone&apos;s availability and find the best time
-                    </p>
-                  </div>
-                  <Link
-                    href={`/${event.slug}`}
-                    className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                  >
-                    View Campaign
-                  </Link>
-                </div>
-              </div>
+              )
             )}
           </div>
         )}

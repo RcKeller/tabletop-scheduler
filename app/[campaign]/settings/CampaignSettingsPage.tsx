@@ -3,10 +3,9 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import type { GameSystem, MeetingType, PrepUrl } from "@/lib/types";
+import type { GameSystem, PrepUrl } from "@/lib/types";
 import { GameSystemAutocomplete } from "@/components/campaign/GameSystemAutocomplete";
 import { GameSystemModal } from "@/components/campaign/GameSystemModal";
-import { MeetingTypeSelector } from "@/components/campaign/MeetingTypeSelector";
 
 interface EventData {
   id: string;
@@ -15,15 +14,6 @@ interface EventData {
   description: string | null;
   timezone: string;
   campaignType: string;
-  startDate: string | null;
-  endDate: string | null;
-  earliestTime: string;
-  latestTime: string;
-  sessionLengthMinutes: number;
-  meetingType: MeetingType | null;
-  meetingLocation: string | null;
-  meetingRoom: string | null;
-  campaignImageBase64: string | null;
   customPreSessionInstructions: string | null;
   playerPrepUrls: PrepUrl[] | null;
   minPlayers: number | null;
@@ -40,15 +30,16 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
 
   // Form state
   const [gameSystem, setGameSystem] = useState<GameSystem | null>(event.gameSystem);
-  const [meetingType, setMeetingType] = useState<MeetingType | null>(event.meetingType);
-  const [meetingLocation, setMeetingLocation] = useState(event.meetingLocation || "");
-  const [meetingRoom, setMeetingRoom] = useState(event.meetingRoom || "");
-  const [preSessionInstructions, setPreSessionInstructions] = useState(
+  const [playerInstructions, setPlayerInstructions] = useState(
     event.customPreSessionInstructions || ""
   );
   const [playerPrepUrls, setPlayerPrepUrls] = useState<PrepUrl[]>(event.playerPrepUrls || []);
-  const [minPlayers, setMinPlayers] = useState<string>(event.minPlayers?.toString() || "");
-  const [maxPlayers, setMaxPlayers] = useState<string>(event.maxPlayers?.toString() || "");
+  const [minPlayers, setMinPlayers] = useState<string>(
+    event.minPlayers?.toString() || "4"
+  );
+  const [maxPlayers, setMaxPlayers] = useState<string>(
+    event.maxPlayers?.toString() || "6"
+  );
 
   // Modal state
   const [isCreatingGameSystem, setIsCreatingGameSystem] = useState(false);
@@ -62,14 +53,14 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
     (system: GameSystem | null) => {
       setGameSystem(system);
       // Auto-fill instructions from game system if empty
-      if (system?.defaultInstructions && !preSessionInstructions) {
-        setPreSessionInstructions(system.defaultInstructions);
+      if (system?.defaultInstructions && !playerInstructions) {
+        setPlayerInstructions(system.defaultInstructions);
       }
       if (system?.defaultUrls && playerPrepUrls.length === 0) {
         setPlayerPrepUrls(system.defaultUrls);
       }
     },
-    [preSessionInstructions, playerPrepUrls.length]
+    [playerInstructions, playerPrepUrls.length]
   );
 
   // Handle game system created
@@ -110,13 +101,10 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
     try {
       const payload = {
         gameSystemId: gameSystem?.id || null,
-        meetingType,
-        meetingLocation: meetingLocation || null,
-        meetingRoom: meetingRoom || null,
-        customPreSessionInstructions: preSessionInstructions || null,
+        customPreSessionInstructions: playerInstructions || null,
         playerPrepUrls: playerPrepUrls.filter((u) => u.label && u.url),
-        minPlayers: minPlayers ? parseInt(minPlayers) : null,
-        maxPlayers: maxPlayers ? parseInt(maxPlayers) : null,
+        minPlayers: minPlayers ? parseInt(minPlayers) : 4,
+        maxPlayers: maxPlayers ? parseInt(maxPlayers) : 6,
       };
 
       const res = await fetch(`/api/events/${event.slug}`, {
@@ -144,32 +132,50 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
       {/* Header */}
       <div className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto max-w-xl px-4 py-6">
-          {/* Step indicator */}
-          <div className="mb-4 flex items-center justify-center gap-2">
-            <div className="flex items-center gap-1.5">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-medium text-white">
-                1
+          {/* Step indicator - hyperlinked */}
+          <nav className="mb-4 flex items-center justify-center gap-1.5">
+            <Link
+              href="/"
+              className="flex items-center gap-1 transition-colors hover:opacity-80"
+            >
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-green-600 text-xs font-medium text-white">
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
               </div>
-              <span className="text-xs font-medium text-blue-600 dark:text-blue-400">Setup</span>
-            </div>
-            <div className="h-px w-8 bg-zinc-300 dark:bg-zinc-700" />
-            <div className="flex items-center gap-1.5">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-200 text-xs font-medium text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400">
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">Create</span>
+            </Link>
+            <div className="h-px w-6 bg-blue-400 dark:bg-blue-600" />
+            <div className="flex items-center gap-1">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-medium text-white">
                 2
               </div>
-              <span className="text-xs text-zinc-500 dark:text-zinc-400">Schedule</span>
+              <span className="text-xs font-medium text-blue-600 dark:text-blue-400">Details</span>
             </div>
-            <div className="h-px w-8 bg-zinc-300 dark:bg-zinc-700" />
-            <div className="flex items-center gap-1.5">
+            <div className="h-px w-6 bg-zinc-300 dark:bg-zinc-700" />
+            <Link
+              href={`/${event.slug}/schedule`}
+              className="flex items-center gap-1 transition-colors hover:opacity-80"
+            >
               <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-200 text-xs font-medium text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400">
                 3
               </div>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">Schedule</span>
+            </Link>
+            <div className="h-px w-6 bg-zinc-300 dark:bg-zinc-700" />
+            <Link
+              href={`/${event.slug}`}
+              className="flex items-center gap-1 transition-colors hover:opacity-80"
+            >
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-200 text-xs font-medium text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400">
+                4
+              </div>
               <span className="text-xs text-zinc-500 dark:text-zinc-400">Share</span>
-            </div>
-          </div>
+            </Link>
+          </nav>
 
           <h1 className="text-center text-xl font-semibold text-zinc-900 dark:text-zinc-100">
-            Set up your campaign
+            Game Details
           </h1>
           <p className="mt-1 text-center text-sm text-zinc-500 dark:text-zinc-400">
             {event.title}
@@ -181,7 +187,7 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
       <div className="mx-auto max-w-xl px-4 py-6">
         <div className="space-y-6">
           {/* Game System */}
-          <div>
+          <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
             <GameSystemAutocomplete
               value={gameSystem}
               onChange={handleGameSystemChange}
@@ -198,122 +204,121 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
                 </svg>
               </Link>
             )}
-          </div>
 
-          {/* Meeting Info */}
-          <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-            <MeetingTypeSelector
-              meetingType={meetingType}
-              meetingLocation={meetingLocation}
-              meetingRoom={meetingRoom}
-              onMeetingTypeChange={setMeetingType}
-              onMeetingLocationChange={setMeetingLocation}
-              onMeetingRoomChange={setMeetingRoom}
-            />
-          </div>
-
-          {/* Pre-session Instructions */}
-          <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="space-y-4">
-              <div>
-                <label
-                  htmlFor="instructions"
-                  className="block text-sm font-medium text-zinc-700 dark:text-zinc-300"
-                >
-                  Pre-Session Instructions
-                </label>
-                <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                  What should players know or prepare before sessions?
-                </p>
-                <textarea
-                  id="instructions"
-                  value={preSessionInstructions}
-                  onChange={(e) => setPreSessionInstructions(e.target.value)}
-                  placeholder="e.g., Bring your character sheet, dice, and any spell cards..."
-                  rows={3}
-                  className="mt-2 block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                />
-              </div>
-
-              {/* Helpful Links */}
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                  Helpful Links
-                </label>
-                <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                  Character builders, rules, session notes, etc.
-                </p>
-                <div className="mt-2 space-y-2">
-                  {playerPrepUrls.map((urlItem, index) => (
-                    <div key={index} className="flex gap-2">
-                      <input
-                        type="text"
-                        value={urlItem.label}
-                        onChange={(e) => handleUpdateUrl(index, "label", e.target.value)}
-                        placeholder="Label"
-                        className="w-1/3 rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                      />
-                      <input
-                        type="url"
-                        value={urlItem.url}
-                        onChange={(e) => handleUpdateUrl(index, "url", e.target.value)}
-                        placeholder="https://..."
-                        className="flex-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveUrl(index)}
-                        className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-                      >
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={handleAddUrl}
-                    className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
-                  >
-                    + Add link
-                  </button>
+            {/* Table Size */}
+            <div className="mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Table Size
+              </label>
+              <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                How many players can join your game?
+              </p>
+              <div className="mt-3 flex items-center gap-3">
+                <div className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800">
+                  <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Min</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="98"
+                    value={minPlayers}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setMinPlayers(val);
+                      // Ensure max is always >= min
+                      if (parseInt(val) > parseInt(maxPlayers)) {
+                        setMaxPlayers(val);
+                      }
+                    }}
+                    className="w-14 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-center text-sm font-medium text-zinc-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
+                  />
                 </div>
+                <span className="text-zinc-400">—</span>
+                <div className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800">
+                  <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Max</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="98"
+                    value={maxPlayers}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setMaxPlayers(val);
+                      // Ensure min is always <= max
+                      if (parseInt(val) < parseInt(minPlayers)) {
+                        setMinPlayers(val);
+                      }
+                    }}
+                    className="w-14 rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-center text-sm font-medium text-zinc-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
+                  />
+                </div>
+                <span className="text-sm text-zinc-500 dark:text-zinc-400">players</span>
               </div>
             </div>
           </div>
 
-          {/* Player Limits */}
+          {/* Player Instructions */}
           <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Player Limits
+            <label
+              htmlFor="instructions"
+              className="block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+            >
+              Player Instructions
             </label>
             <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-              Optional minimum and maximum player counts
+              What should players know or prepare? Character creation rules, house rules, etc.
             </p>
-            <div className="mt-2 flex items-center gap-3">
-              <div className="flex-1">
-                <input
-                  type="number"
-                  min="1"
-                  max="20"
-                  value={minPlayers}
-                  onChange={(e) => setMinPlayers(e.target.value)}
-                  placeholder="Min"
-                  className="block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                />
-              </div>
-              <span className="text-zinc-400">to</span>
-              <div className="flex-1">
-                <input
-                  type="number"
-                  min="1"
-                  max="20"
-                  value={maxPlayers}
-                  onChange={(e) => setMaxPlayers(e.target.value)}
-                  placeholder="Max"
-                  className="block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-                />
+            <textarea
+              id="instructions"
+              value={playerInstructions}
+              onChange={(e) => setPlayerInstructions(e.target.value)}
+              placeholder="e.g., We're using standard 5e rules with the following house rules..."
+              rows={6}
+              className="mt-2 block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+            />
+
+            {/* Helpful Links */}
+            <div className="mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Helpful Links
+              </label>
+              <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                Character builders, rules references, session notes, etc.
+              </p>
+              <div className="mt-2 space-y-2">
+                {playerPrepUrls.map((urlItem, index) => (
+                  <div key={index} className="flex gap-2">
+                    <input
+                      type="text"
+                      value={urlItem.label}
+                      onChange={(e) => handleUpdateUrl(index, "label", e.target.value)}
+                      placeholder="Label"
+                      className="w-1/3 rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    />
+                    <input
+                      type="url"
+                      value={urlItem.url}
+                      onChange={(e) => handleUpdateUrl(index, "url", e.target.value)}
+                      placeholder="https://..."
+                      className="flex-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveUrl(index)}
+                      className="rounded p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={handleAddUrl}
+                  className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                >
+                  + Add link
+                </button>
               </div>
             </div>
           </div>

@@ -3,8 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { startOfWeek, parseISO, format } from "date-fns";
-import Link from "next/link";
-import { TimezoneSelector } from "@/components/timezone/TimezoneSelector";
+import { TimezoneAutocomplete } from "@/components/timezone/TimezoneAutocomplete";
 import { JoinEventForm } from "@/components/participant/JoinEventForm";
 import { CombinedHeatmap } from "@/components/heatmap/CombinedHeatmap";
 import { WeekNavigator } from "@/components/navigation/WeekNavigator";
@@ -13,7 +12,9 @@ import { CampaignHeader } from "@/components/campaign/CampaignHeader";
 import { Footer } from "@/components/layout/Footer";
 import { EmptyPartyList } from "@/components/empty-states/EmptyPartyList";
 import { EmptyHeatmap } from "@/components/empty-states/EmptyHeatmap";
-import type { TimeSlot, MeetingType, CampaignType, Participant, ParticipantWithAvailability } from "@/lib/types";
+import type { MeetingType, CampaignType, Participant, ParticipantWithAvailability } from "@/lib/types";
+
+type TabType = "availability" | "party" | "info";
 
 interface EventProps {
   id: string;
@@ -42,6 +43,7 @@ interface CampaignPageProps {
 
 export function CampaignPage({ event }: CampaignPageProps) {
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState<TabType>("info");
   const [timezone, setTimezone] = useState(event.timezone);
   const [participantsWithAvailability, setParticipantsWithAvailability] = useState<ParticipantWithAvailability[]>([]);
   const [currentParticipant, setCurrentParticipant] = useState<Participant | null>(null);
@@ -52,6 +54,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
   const [showAddPlayer, setShowAddPlayer] = useState(false);
   const [newPlayerName, setNewPlayerName] = useState("");
   const [isAddingPlayer, setIsAddingPlayer] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const eventStartDate = useMemo(() => {
     return event.startDate ? parseISO(event.startDate) : new Date();
@@ -147,7 +150,6 @@ export function CampaignPage({ event }: CampaignPageProps) {
 
   const handleJoined = (participant: { id: string; displayName: string; isGm: boolean }) => {
     localStorage.setItem(`participant_${event.id}`, participant.id);
-    // Navigate to player availability page
     const playerSlug = encodeURIComponent(participant.displayName.toLowerCase().replace(/\s+/g, "-"));
     router.push(`/${event.slug}/${playerSlug}`);
   };
@@ -157,6 +159,12 @@ export function CampaignPage({ event }: CampaignPageProps) {
       const playerSlug = encodeURIComponent(currentParticipant.displayName.toLowerCase().replace(/\s+/g, "-"));
       router.push(`/${event.slug}/${playerSlug}`);
     }
+  };
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
   };
 
   const getMeetingInfo = () => {
@@ -193,6 +201,12 @@ export function CampaignPage({ event }: CampaignPageProps) {
     return `${format(start, "MMM d")} - ${format(end, "MMM d, yyyy")}`;
   };
 
+  const tabs: { id: TabType; label: string; count?: number }[] = [
+    { id: "info", label: "Details" },
+    { id: "party", label: "Party", count: participants.length },
+    { id: "availability", label: "Availability" },
+  ];
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       {/* Hero Section with Campaign Image */}
@@ -200,105 +214,156 @@ export function CampaignPage({ event }: CampaignPageProps) {
         title={event.title}
         campaignImageBase64={event.campaignImageBase64}
         gameSystem={event.gameSystem}
+        slug={event.slug}
+        onShare={handleCopyLink}
+        shareLabel={copiedLink ? "Copied!" : "Share"}
       />
 
-      {/* Main Content */}
-      <div className="mx-auto max-w-5xl px-3 py-3">
-        {/* First Section: Two columns */}
-        <div className="grid gap-3 lg:grid-cols-3">
-          {/* Left Column: Campaign info + Session Details */}
-          <div className="space-y-3 lg:col-span-2">
-            {/* Description */}
-            {event.description && (
-              <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-                <p className="text-sm text-zinc-700 dark:text-zinc-300">{event.description}</p>
+      {/* Main Content - Centered single column */}
+      <div className="mx-auto max-w-5xl px-4 py-4">
+        {/* Quick Actions Bar */}
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+          {currentParticipant ? (
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
               </div>
-            )}
-
-            {/* Player Prep / Pre-session Instructions */}
-            {event.customPreSessionInstructions && (
-              <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-                <h2 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                  Before You Play
-                </h2>
-                <p className="whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-400">
-                  {event.customPreSessionInstructions}
+              <div>
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                  {currentParticipant.displayName}
+                </p>
+                <p className="text-xs text-zinc-500">
+                  {currentParticipant.isGm ? "Game Master" : "Player"}
                 </p>
               </div>
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              Join to set your availability
+            </p>
+          )}
+
+          <div className="flex items-center gap-2">
+            {currentParticipant ? (
+              <>
+                {showProfileCallout && (
+                  <button
+                    onClick={handleCreateCharacter}
+                    className="rounded-md bg-purple-100 px-3 py-1.5 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:hover:bg-purple-900/50"
+                  >
+                    Create Character
+                  </button>
+                )}
+                <button
+                  onClick={handleEditAvailability}
+                  className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  Edit Availability
+                </button>
+              </>
+            ) : (
+              <JoinEventForm
+                eventSlug={event.slug}
+                onJoined={handleJoined}
+                hasGm={hasGm}
+                compact
+              />
             )}
           </div>
+        </div>
 
-          {/* Right Column: Registration, Party, Share Link */}
-          <div className="space-y-3">
-            {/* Join / Edit Availability Card */}
-            <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-              {currentParticipant ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400">
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                        {currentParticipant.displayName}
-                      </p>
-                      <p className="text-xs text-zinc-500">You're in this {event.campaignType === "ONESHOT" ? "game" : "campaign"}</p>
+        {/* Tabs */}
+        <div className="mb-4 flex gap-1 rounded-lg border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                activeTab === tab.id
+                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100"
+                  : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
+              }`}
+            >
+              {tab.label}
+              {tab.count !== undefined && (
+                <span className="ml-1.5 text-xs text-zinc-400">({tab.count})</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === "availability" && (
+          <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex flex-col gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-700 sm:flex-row sm:items-center sm:justify-between">
+              <WeekNavigator
+                currentWeekStart={currentWeekStart}
+                eventStartDate={eventStartDate}
+                eventEndDate={eventEndDate}
+                onWeekChange={setCurrentWeekStart}
+              />
+              <TimezoneAutocomplete
+                value={timezone}
+                onChange={setTimezone}
+              />
+            </div>
+            <div className="p-2">
+              {isLoading ? (
+                <div className="space-y-4">
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "300px" }} />
                     </div>
                   </div>
-
-                  {/* Profile callout for players */}
-                  {showProfileCallout && (
-                    <button
-                        onClick={handleCreateCharacter}
-                        className="w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                      >
-                        Create your Character
-                      </button>
-                  )}
-
-                  <button
-                    onClick={handleEditAvailability}
-                    className="w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                  >
-                    Edit Your Availability
-                  </button>
                 </div>
+              ) : participantsWithAvailability.length === 0 ? (
+                <EmptyHeatmap hasPlayers={participants.length > 0} />
               ) : (
-                <div>
-                  <h2 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                    Join This {event.campaignType === "ONESHOT" ? "Game" : "Campaign"}
-                  </h2>
-                  <JoinEventForm
-                    eventSlug={event.slug}
-                    onJoined={handleJoined}
-                    hasGm={hasGm}
-                  />
-                </div>
+                <CombinedHeatmap
+                  participants={participantsWithAvailability}
+                  weekStart={currentWeekStart}
+                  earliestTime={event.earliestTime}
+                  latestTime={event.latestTime}
+                  sessionLengthMinutes={event.sessionLengthMinutes}
+                  timezone={timezone}
+                  eventTimezone={event.timezone}
+                  sessionDetails={{
+                    campaignType: event.campaignType,
+                    sessionLengthMinutes: event.sessionLengthMinutes,
+                    meetingType: meetingInfo?.type,
+                    meetingLocation: meetingInfo?.location,
+                    dateRange: formatDateRange(),
+                    timeWindow: `${formatTime(event.earliestTime)} - ${formatTime(event.latestTime)}`,
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "party" && (
+          <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
+              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Party Members
+              </h2>
+              {currentParticipant && !showAddPlayer && (
+                <button
+                  onClick={() => setShowAddPlayer(true)}
+                  className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                >
+                  + Add Player
+                </button>
               )}
             </div>
 
-            {/* Party Members */}
-            <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="mb-2 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                  Party ({participants.length})
-                </h2>
-                {currentParticipant && !showAddPlayer && (
-                  <button
-                    onClick={() => setShowAddPlayer(true)}
-                    className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400"
-                  >
-                    + Add Player
-                  </button>
-                )}
-              </div>
-
+            <div className="p-4">
               {/* Add Player Form */}
               {showAddPlayer && (
-                <div className="mb-3 rounded-md bg-zinc-50 p-2 dark:bg-zinc-800">
-                  <p className="mb-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                <div className="mb-4 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800">
+                  <p className="mb-2 text-sm text-zinc-600 dark:text-zinc-400">
                     Add a player to the campaign
                   </p>
                   <div className="flex gap-2">
@@ -307,7 +372,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
                       value={newPlayerName}
                       onChange={(e) => setNewPlayerName(e.target.value)}
                       placeholder="Player name..."
-                      className="flex-1 rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-700"
+                      className="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-700"
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleAddPlayer();
                         if (e.key === "Escape") {
@@ -319,16 +384,16 @@ export function CampaignPage({ event }: CampaignPageProps) {
                     <button
                       onClick={handleAddPlayer}
                       disabled={isAddingPlayer || !newPlayerName.trim()}
-                      className="rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                      className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
                     >
-                      {isAddingPlayer ? "..." : "Add"}
+                      {isAddingPlayer ? "Adding..." : "Add"}
                     </button>
                     <button
                       onClick={() => {
                         setShowAddPlayer(false);
                         setNewPlayerName("");
                       }}
-                      className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                      className="rounded-md px-3 py-2 text-sm text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700"
                     >
                       Cancel
                     </button>
@@ -339,7 +404,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
               {participants.length === 0 ? (
                 <EmptyPartyList />
               ) : (
-                <div className="space-y-2">
+                <div className="grid gap-3 sm:grid-cols-2">
                   {participants.map((p) => {
                     const isCurrentUser = currentParticipant?.id === p.id;
 
@@ -348,155 +413,142 @@ export function CampaignPage({ event }: CampaignPageProps) {
                         key={p.id}
                         type="button"
                         onClick={() => handleOpenProfile(p)}
-                        className="w-full rounded-md bg-zinc-50 p-2 text-left transition-colors hover:bg-zinc-100 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+                        className="flex items-start gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-zinc-600 dark:hover:bg-zinc-750"
                       >
-                        <div className="flex items-center gap-2">
-                          {/* Character token or avatar */}
-                          {p.characterTokenBase64 ? (
-                            <img
-                              src={p.characterTokenBase64}
-                              alt={p.characterName || p.displayName}
-                              className="h-8 w-8 rounded-full object-cover ring-1 ring-zinc-200 dark:ring-zinc-700"
-                            />
-                          ) : (
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-200 text-xs font-medium text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400">
-                              {p.displayName.charAt(0).toUpperCase()}
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                                {p.displayName}
+                        {p.characterTokenBase64 ? (
+                          <img
+                            src={p.characterTokenBase64}
+                            alt={p.characterName || p.displayName}
+                            className="h-12 w-12 rounded-full object-cover ring-2 ring-zinc-200 dark:ring-zinc-700"
+                          />
+                        ) : (
+                          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-200 text-lg font-medium text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400">
+                            {p.displayName.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                              {p.displayName}
+                            </span>
+                            {p.isGm && (
+                              <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                GM
                               </span>
-                              {p.isGm && (
-                                <span className="shrink-0 rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                                  GM
-                                </span>
-                              )}
-                              {isCurrentUser && (
-                                <span className="shrink-0 text-xs text-zinc-400">(you)</span>
-                              )}
-                            </div>
-                            {/* Show character info if available */}
-                            {p.characterName && (
-                              <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
-                                {p.characterName}
-                                {p.characterClass && (
-                                  <span className="text-zinc-400 dark:text-zinc-500"> · {p.characterClass}</span>
-                                )}
-                              </p>
+                            )}
+                            {isCurrentUser && (
+                              <span className="text-xs text-zinc-400">(you)</span>
                             )}
                           </div>
-                          {/* Info indicator */}
-                          <svg className="h-4 w-4 shrink-0 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
+                          {p.characterName && (
+                            <p className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400">
+                              {p.characterName}
+                              {p.characterClass && (
+                                <span className="text-zinc-400 dark:text-zinc-500"> · {p.characterClass}</span>
+                              )}
+                            </p>
+                          )}
+                          {p.notes && (
+                            <p className="mt-1 text-xs text-zinc-500 line-clamp-2">
+                              {p.notes}
+                            </p>
+                          )}
                         </div>
-                        {p.notes && (
-                          <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-1">
-                            {p.notes}
-                          </p>
-                        )}
+                        <svg className="h-5 w-5 shrink-0 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
                       </button>
                     );
                   })}
                 </div>
               )}
             </div>
+          </div>
+        )}
 
-            {/* Share Link */}
-            <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-              <h2 className="mb-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                Share Link
-              </h2>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={typeof window !== "undefined" ? window.location.href : `/${event.slug}`}
-                  className="flex-1 rounded border border-zinc-300 bg-zinc-50 px-2 py-1 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
-                />
-                <button
-                  onClick={() => navigator.clipboard.writeText(window.location.href)}
-                  className="rounded bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-                >
-                  Copy
-                </button>
+        {activeTab === "info" && (
+          <div className="space-y-4">
+            {/* Description */}
+            {event.description && (
+              <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                  About this {event.campaignType === "ONESHOT" ? "Game" : "Campaign"}
+                </h3>
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                  {event.description}
+                </p>
               </div>
-            </div>
+            )}
 
-            {/* Campaign Settings Link */}
-            <Link
-              href={`/${event.slug}/settings`}
-              className="flex items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white p-2.5 text-sm text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              Campaign Settings
-            </Link>
-          </div>
-        </div>
-
-        {/* Second Section: Full-width Group Availability */}
-        <div className="mt-4 rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-700">
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                Group Availability
-              </h2>
-              <WeekNavigator
-                currentWeekStart={currentWeekStart}
-                eventStartDate={eventStartDate}
-                eventEndDate={eventEndDate}
-                onWeekChange={setCurrentWeekStart}
-              />
-            </div>
-            <div className="flex items-center gap-2 text-xs text-zinc-500">
-              <TimezoneSelector
-                value={timezone}
-                onChange={setTimezone}
-              />
-            </div>
-          </div>
-          <div className="p-2">
-            {isLoading ? (
-              <div className="space-y-4">
-                {/* Skeleton loader for heatmap */}
-                <div className="flex gap-4">
-                  <div className="flex-1">
-                    <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "300px" }} />
-                  </div>
-                  <div className="w-64 shrink-0">
-                    <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "200px" }} />
+            {/* Pre-session Instructions */}
+            {event.customPreSessionInstructions && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/50 dark:bg-blue-900/20">
+                <div className="flex items-start gap-3">
+                  <svg className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <h3 className="text-sm font-semibold text-blue-800 dark:text-blue-300">
+                      Before You Play
+                    </h3>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-blue-700 dark:text-blue-300/80">
+                      {event.customPreSessionInstructions}
+                    </p>
                   </div>
                 </div>
-                <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "80px" }} />
               </div>
-            ) : participantsWithAvailability.length === 0 ? (
-              <EmptyHeatmap hasPlayers={participants.length > 0} />
-            ) : (
-              <CombinedHeatmap
-                participants={participantsWithAvailability}
-                weekStart={currentWeekStart}
-                earliestTime={event.earliestTime}
-                latestTime={event.latestTime}
-                sessionLengthMinutes={event.sessionLengthMinutes}
-                timezone={timezone}
-                eventTimezone={event.timezone}
-                sessionDetails={{
-                  campaignType: event.campaignType,
-                  sessionLengthMinutes: event.sessionLengthMinutes,
-                  meetingType: meetingInfo?.type,
-                  meetingLocation: meetingInfo?.location,
-                  dateRange: formatDateRange(),
-                  timeWindow: `${formatTime(event.earliestTime)} - ${formatTime(event.latestTime)}`,
-                }}
-              />
             )}
+
+            {/* Session Details */}
+            <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+              <h3 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Session Details
+              </h3>
+              <dl className="grid gap-3 text-sm sm:grid-cols-2">
+                {event.gameSystem && (
+                  <div>
+                    <dt className="text-zinc-500 dark:text-zinc-400">Game System</dt>
+                    <dd className="font-medium text-zinc-900 dark:text-zinc-100">{event.gameSystem.name}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt className="text-zinc-500 dark:text-zinc-400">Session Length</dt>
+                  <dd className="font-medium text-zinc-900 dark:text-zinc-100">
+                    {event.sessionLengthMinutes >= 60
+                      ? `${Math.floor(event.sessionLengthMinutes / 60)}h ${event.sessionLengthMinutes % 60 > 0 ? `${event.sessionLengthMinutes % 60}m` : ""}`
+                      : `${event.sessionLengthMinutes}m`}
+                  </dd>
+                </div>
+                {formatDateRange() && (
+                  <div>
+                    <dt className="text-zinc-500 dark:text-zinc-400">Date Range</dt>
+                    <dd className="font-medium text-zinc-900 dark:text-zinc-100">{formatDateRange()}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt className="text-zinc-500 dark:text-zinc-400">Time Window</dt>
+                  <dd className="font-medium text-zinc-900 dark:text-zinc-100">
+                    {formatTime(event.earliestTime)} - {formatTime(event.latestTime)}
+                  </dd>
+                </div>
+                {meetingInfo && (
+                  <>
+                    <div>
+                      <dt className="text-zinc-500 dark:text-zinc-400">Platform</dt>
+                      <dd className="font-medium text-zinc-900 dark:text-zinc-100">{meetingInfo.type}</dd>
+                    </div>
+                    {meetingInfo.location && (
+                      <div>
+                        <dt className="text-zinc-500 dark:text-zinc-400">Location</dt>
+                        <dd className="font-medium text-zinc-900 dark:text-zinc-100">{meetingInfo.location}</dd>
+                      </div>
+                    )}
+                  </>
+                )}
+              </dl>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       <Footer />

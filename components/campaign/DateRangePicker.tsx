@@ -36,10 +36,10 @@ export function DateRangePicker({
   return (
     <div className={className}>
       <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-        Availability Date Range
+        Schedule Range
       </label>
       <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-        Set when players can indicate their availability (up to {maxRangeMonths} months)
+        When should we look for session times? (up to {maxRangeMonths} months)
       </p>
       <div className="mt-2 flex items-center gap-3">
         <div className="flex-1">

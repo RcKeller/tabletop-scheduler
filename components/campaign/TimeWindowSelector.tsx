@@ -39,10 +39,10 @@ export function TimeWindowSelector({
   return (
     <div className={className}>
       <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
-        Daily Time Window
+        Time Window
       </label>
       <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-        Set when sessions could happen each day (in your timezone)
+        What hours work for sessions? (in your timezone)
       </p>
       <div className="mt-2 flex items-center gap-3">
         <div className="flex-1">

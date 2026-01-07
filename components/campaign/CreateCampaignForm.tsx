@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { format, addMonths } from "date-fns";
-import { TimezoneSelector } from "@/components/timezone/TimezoneSelector";
+import { TimezoneAutocomplete } from "@/components/timezone/TimezoneAutocomplete";
 import { getBrowserTimezone } from "@/lib/utils/timezone";
 import { GameSystemAutocomplete } from "./GameSystemAutocomplete";
 import { ImageUpload } from "./ImageUpload";
@@ -250,7 +250,7 @@ export function CreateCampaignForm() {
                     Timezone
                   </label>
                   <div className="mt-1.5">
-                    <TimezoneSelector value={timezone} onChange={setTimezone} className="w-full" />
+                    <TimezoneAutocomplete value={timezone} onChange={setTimezone} className="w-full" />
                   </div>
                 </div>
               </div>

@@ -12,7 +12,6 @@ export default async function Page({ params }: Props) {
   const event = await prisma.event.findUnique({
     where: { slug },
     include: {
-      gameSystem: true,
       participants: true,
     },
   });
@@ -31,32 +30,12 @@ export default async function Page({ params }: Props) {
     redirect(`/${slug}`);
   }
 
-  // Serialize for client component
+  // Only pass what the page needs
   const serializedEvent = {
     id: event.id,
     slug: event.slug,
     title: event.title,
-    description: event.description,
-    timezone: event.timezone,
-    campaignImageBase64: event.campaignImageBase64,
     customPreSessionInstructions: event.customPreSessionInstructions,
-    gameSystem: event.gameSystem
-      ? {
-          id: event.gameSystem.id,
-          name: event.gameSystem.name,
-          imageBase64: event.gameSystem.imageBase64,
-        }
-      : null,
-    participants: event.participants.map((p) => ({
-      id: p.id,
-      displayName: p.displayName,
-      isGm: p.isGm,
-      characterName: p.characterName,
-      characterClass: p.characterClass,
-      characterSheetUrl: p.characterSheetUrl,
-      characterTokenBase64: p.characterTokenBase64,
-      notes: p.notes,
-    })),
   };
 
   const serializedParticipant = {
@@ -70,10 +49,23 @@ export default async function Page({ params }: Props) {
     notes: participant.notes,
   };
 
+  // Pass all participants for the party display
+  const allParticipants = event.participants.map((p) => ({
+    id: p.id,
+    displayName: p.displayName,
+    isGm: p.isGm,
+    characterName: p.characterName,
+    characterClass: p.characterClass,
+    characterSheetUrl: p.characterSheetUrl,
+    characterTokenBase64: p.characterTokenBase64,
+    notes: p.notes,
+  }));
+
   return (
     <CharacterEditPage
       event={serializedEvent}
       participant={serializedParticipant}
+      allParticipants={allParticipants}
     />
   );
 }

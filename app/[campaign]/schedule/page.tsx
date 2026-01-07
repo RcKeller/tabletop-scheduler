@@ -28,6 +28,9 @@ export default async function Page({ params }: Props) {
     earliestTime: event.earliestTime,
     latestTime: event.latestTime,
     sessionLengthMinutes: event.sessionLengthMinutes,
+    meetingType: event.meetingType,
+    meetingLocation: event.meetingLocation,
+    meetingRoom: event.meetingRoom,
   };
 
   return <SchedulePage event={serializedEvent} />;
