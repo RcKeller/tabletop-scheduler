@@ -74,7 +74,7 @@ export function JoinEventForm({ eventSlug, onJoined, hasGm = false }: JoinEventF
           className="mt-1 block w-full rounded-md border border-zinc-300 px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
         />
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          This is how others will see you. Use your character or real name.
+          This is how others will see you (out of character).
         </p>
       </div>
 

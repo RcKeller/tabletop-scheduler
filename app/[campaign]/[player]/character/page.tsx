@@ -53,7 +53,9 @@ export default async function Page({ params }: Props) {
       isGm: p.isGm,
       characterName: p.characterName,
       characterClass: p.characterClass,
+      characterSheetUrl: p.characterSheetUrl,
       characterTokenBase64: p.characterTokenBase64,
+      notes: p.notes,
     })),
   };
 

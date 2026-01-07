@@ -387,38 +387,85 @@ export function PlayerAvailabilityPage({
     }
   };
 
-  // AI applies patterns, additions, and exclusions
+  // AI applies patterns, additions, exclusions, and routine removals
   const handleAIApply = async (
     patterns: Omit<GeneralAvailabilityType, "id" | "participantId">[],
     additions: Array<{ date: string; startTime: string; endTime: string }>,
     exclusions: Array<{ date: string; startTime?: string; endTime?: string; reason?: string }>,
+    routineRemovals: Array<{ dayOfWeek: number; startTime?: string; endTime?: string }>,
     mode: "replace" | "adjust"
   ) => {
     setIsSaving(true);
     try {
       const body: Record<string, unknown> = {};
 
+      // Start with current patterns for merging
+      let updatedPatterns: Omit<GeneralAvailabilityType, "id" | "participantId">[] =
+        mode === "replace" ? [] : generalAvailability.map(p => ({
+          dayOfWeek: p.dayOfWeek,
+          startTime: p.startTime,
+          endTime: p.endTime,
+        }));
+
+      // Apply routine removals first (remove days/times from routine)
+      if (routineRemovals.length > 0) {
+        for (const removal of routineRemovals) {
+          if (!removal.startTime || !removal.endTime) {
+            // Remove entire day
+            updatedPatterns = updatedPatterns.filter(p => p.dayOfWeek !== removal.dayOfWeek);
+          } else {
+            // Remove specific time range from that day
+            // This is more complex - we might need to split existing patterns
+            updatedPatterns = updatedPatterns.flatMap(p => {
+              if (p.dayOfWeek !== removal.dayOfWeek) return [p];
+
+              // Check if removal overlaps with this pattern
+              if (removal.endTime! <= p.startTime || removal.startTime! >= p.endTime) {
+                // No overlap
+                return [p];
+              }
+
+              const result: typeof updatedPatterns = [];
+
+              // Part before removal
+              if (p.startTime < removal.startTime!) {
+                result.push({
+                  dayOfWeek: p.dayOfWeek,
+                  startTime: p.startTime,
+                  endTime: removal.startTime!,
+                });
+              }
+
+              // Part after removal
+              if (p.endTime > removal.endTime!) {
+                result.push({
+                  dayOfWeek: p.dayOfWeek,
+                  startTime: removal.endTime!,
+                  endTime: p.endTime,
+                });
+              }
+
+              return result;
+            });
+          }
+        }
+        body.generalAvailability = updatedPatterns;
+        body.clearSpecificOnPatternSave = false;
+      }
+
+      // Apply new patterns (add/replace)
       if (patterns.length > 0) {
         if (mode === "replace") {
           body.generalAvailability = patterns;
         } else {
-          const existingByDay = new Map<number, GeneralAvailabilityType[]>();
-          for (const p of generalAvailability) {
-            const existing = existingByDay.get(p.dayOfWeek) || [];
-            existing.push(p);
-            existingByDay.set(p.dayOfWeek, existing);
-          }
-
+          // Merge with existing (or already-modified) patterns
+          const basePatterns = body.generalAvailability as typeof updatedPatterns || updatedPatterns;
           const mergedPatterns: Omit<GeneralAvailabilityType, "id" | "participantId">[] = [];
           const daysWithNewPatterns = new Set(patterns.map(p => p.dayOfWeek));
 
-          for (const p of generalAvailability) {
+          for (const p of basePatterns) {
             if (!daysWithNewPatterns.has(p.dayOfWeek)) {
-              mergedPatterns.push({
-                dayOfWeek: p.dayOfWeek,
-                startTime: p.startTime,
-                endTime: p.endTime,
-              });
+              mergedPatterns.push(p);
             }
           }
 
@@ -431,6 +478,7 @@ export function PlayerAvailabilityPage({
         }
       }
 
+      // Apply specific date additions
       if (additions.length > 0) {
         if (mode === "adjust") {
           const existingSlots = new Set(
@@ -446,6 +494,7 @@ export function PlayerAvailabilityPage({
         }
       }
 
+      // Apply exclusions (specific date exceptions)
       if (exclusions.length > 0) {
         const exceptions = exclusions.map(exc => ({
           date: exc.date,
@@ -583,6 +632,7 @@ export function PlayerAvailabilityPage({
                     eventTimezone={event.timezone}
                     onSave={handleAutoSaveAvailability}
                     isSaving={isSaving}
+                    isLoading={isLoading}
                     weekStart={currentWeekStart}
                     earliestTime={event.earliestTime}
                     latestTime={event.latestTime}

@@ -137,3 +137,14 @@ model AvailabilityException {
   @@unique([participantId, date, startTime, endTime])
   @@map("availability_exceptions")
 }
+
+model Feedback {
+  id          String   @id @default(uuid())
+  name        String
+  email       String?
+  type        String   @default("bug") // "bug" or "feature"
+  description String   @db.Text
+  createdAt   DateTime @default(now())
+
+  @@map("feedback")
+}

@@ -4,12 +4,19 @@ import { useState } from "react";
 import type { GeneralAvailability } from "@/lib/types";
 import type { ParseResult } from "@/lib/ai/availability-parser";
 
+interface RoutineRemoval {
+  dayOfWeek: number;
+  startTime?: string;
+  endTime?: string;
+}
+
 interface AvailabilityAIProps {
   timezone: string;
   onApply: (
     patterns: Omit<GeneralAvailability, "id" | "participantId">[],
     additions: Array<{ date: string; startTime: string; endTime: string }>,
     exclusions: Array<{ date: string; startTime?: string; endTime?: string; reason?: string }>,
+    routineRemovals: RoutineRemoval[],
     mode: "replace" | "adjust"
   ) => void;
   currentPatterns: GeneralAvailability[];
@@ -107,7 +114,13 @@ export function AvailabilityAI({
 
   const handleApply = () => {
     if (result) {
-      onApply(result.patterns, result.additions, result.exclusions, result.mode);
+      onApply(
+        result.patterns,
+        result.additions,
+        result.exclusions,
+        result.routineRemovals || [],
+        result.mode
+      );
       setText("");
       setResult(null);
     }
@@ -120,7 +133,8 @@ export function AvailabilityAI({
   const hasPatterns = result && result.patterns.length > 0;
   const hasAdditions = result && result.additions.length > 0;
   const hasExclusions = result && result.exclusions.length > 0;
-  const hasChanges = hasPatterns || hasAdditions || hasExclusions;
+  const hasRoutineRemovals = result && result.routineRemovals && result.routineRemovals.length > 0;
+  const hasChanges = hasPatterns || hasAdditions || hasExclusions || hasRoutineRemovals;
 
   return (
     <div className="space-y-4">
@@ -272,7 +286,7 @@ export function AvailabilityAI({
               </div>
             )}
 
-            {/* Exclusions (removals) */}
+            {/* Exclusions (specific dates) */}
             {hasExclusions && (
               <div className="rounded-md border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20">
                 <div className="border-b border-red-200 bg-red-100 px-4 py-2 dark:border-red-800 dark:bg-red-900/40">
@@ -302,6 +316,37 @@ export function AvailabilityAI({
                       <span className="text-sm text-red-600 dark:text-red-400">
                         {exc.startTime && exc.endTime
                           ? `${formatTime(exc.startTime)} - ${formatTime(exc.endTime)}`
+                          : "All day"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Routine Removals (recurring days to remove) */}
+            {hasRoutineRemovals && (
+              <div className="rounded-md border border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-900/20">
+                <div className="border-b border-orange-200 bg-orange-100 px-4 py-2 dark:border-orange-800 dark:bg-orange-900/40">
+                  <h4 className="flex items-center gap-2 text-sm font-medium text-orange-800 dark:text-orange-300">
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                    </svg>
+                    Days removed from routine
+                  </h4>
+                </div>
+                <ul className="divide-y divide-orange-100 dark:divide-orange-800">
+                  {result.routineRemovals.map((removal, index) => (
+                    <li
+                      key={index}
+                      className="flex items-center justify-between px-4 py-2"
+                    >
+                      <span className="text-sm font-medium text-orange-700 dark:text-orange-300">
+                        {DAYS[removal.dayOfWeek]}s
+                      </span>
+                      <span className="text-sm text-orange-600 dark:text-orange-400">
+                        {removal.startTime && removal.endTime
+                          ? `${formatTime(removal.startTime)} - ${formatTime(removal.endTime)}`
                           : "All day"}
                       </span>
                     </li>

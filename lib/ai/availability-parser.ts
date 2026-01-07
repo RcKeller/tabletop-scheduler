@@ -19,13 +19,21 @@ interface ParsedExclusion {
   reason?: string;
 }
 
+interface RoutineRemoval {
+  dayOfWeek: number; // 0=Sunday, 1=Monday, etc. - Remove this day entirely from routine
+  startTime?: string; // Optional: only remove a specific time range
+  endTime?: string;
+}
+
 export interface ParseResult {
   // Weekly recurring patterns to ADD
   patterns: ParsedPattern[];
   // Specific date/times to ADD
   additions: ParsedSpecificSlot[];
-  // Times when NOT available (exclusions)
+  // Times when NOT available (exclusions) - specific dates only
   exclusions: ParsedExclusion[];
+  // Days to REMOVE from weekly routine (e.g., "not available on mondays")
+  routineRemovals: RoutineRemoval[];
   // Human-readable interpretation
   interpretation: string;
   // Whether this replaces existing or adds to it
@@ -39,9 +47,10 @@ IMPORTANT: The user likely already has some availability set. Your job is to par
 Your job is to:
 1. Parse the user's availability/unavailability text
 2. Identify if they're describing:
-   - Recurring weekly patterns (e.g., "available evenings Mon-Fri")
-   - Specific date additions (e.g., "also free Sunday January 12th")
-   - Exclusions/unavailability (e.g., "not available Wednesday the 12th", "I have plans on the 15th")
+   - Recurring weekly patterns (e.g., "available evenings Mon-Fri") -> patterns
+   - Specific date additions (e.g., "also free Sunday January 12th") -> additions
+   - Specific date unavailability (e.g., "busy on January 15th") -> exclusions
+   - RECURRING unavailability (e.g., "not available on mondays", "can't do weekends") -> routineRemovals
 3. Convert times to 24-hour format (HH:MM)
 4. Convert relative dates to actual dates
 
@@ -56,10 +65,13 @@ Rules:
 - "Weekdays" means Monday through Friday
 - "Weekends" means Saturday and Sunday
 
-DETECTING EXCLUSIONS:
-- Look for negative phrases: "not available", "can't make it", "busy", "unavailable", "have plans", "won't be free", "except", "but not"
-- Exclusions should go in the "exclusions" array, not patterns/additions
-- If they say "I work 9-5" that means they're NOT available 9-5 (it's an exclusion/conflict)
+DETECTING UNAVAILABILITY - CRITICAL:
+- Look for: "not available", "can't make it", "busy", "unavailable", "have plans", "won't be free", "except", "but not", "never", "don't work for me"
+- If they say "I work 9-5 M-F" -> routineRemovals for Mon-Fri 9-5
+- If they say "not available on mondays" or "mondays don't work" -> routineRemovals for Monday (entire day)
+- If they say "busy this Thursday" -> exclusions for specific date
+- RECURRING unavailability (day names without "this/next/the") -> routineRemovals
+- SPECIFIC DATE unavailability (with "this/next/the" or actual dates) -> exclusions
 
 MODE DETECTION - VERY IMPORTANT:
 - DEFAULT to mode = "adjust" - this is the most common case
@@ -71,6 +83,7 @@ MODE DETECTION - VERY IMPORTANT:
 - Use mode = "adjust" for:
   - Adding specific dates: "also available Sunday", "free on the 15th"
   - Adding exclusions: "not available Wednesday", "busy on the 12th"
+  - Removing from routine: "can't do mondays", "weekends don't work"
   - Partial additions: "can also do mornings"
   - Any statement that doesn't explicitly define a COMPLETE schedule
 - When in doubt, use "adjust" - it's safer to add than to accidentally erase
@@ -86,6 +99,9 @@ Respond ONLY with valid JSON in this format:
   "exclusions": [
     { "date": "2026-01-14", "startTime": "17:00", "endTime": "22:00", "reason": "optional reason" }
   ],
+  "routineRemovals": [
+    { "dayOfWeek": 1 }
+  ],
   "interpretation": "Brief human-readable summary of what you understood",
   "mode": "replace" or "adjust"
 }
@@ -93,9 +109,12 @@ Respond ONLY with valid JSON in this format:
 Notes:
 - patterns: recurring weekly availability - ONLY populate if user is defining/changing their weekly schedule
 - additions: specific one-time dates to ADD availability (empty array if none)
-- exclusions: specific times when NOT available (empty array if none)
+- exclusions: specific dates when NOT available (empty array if none) - use for ONE-TIME unavailability
+- routineRemovals: days to REMOVE from weekly routine (empty array if none) - use for RECURRING unavailability
+  - For whole-day removal, just provide dayOfWeek
+  - For partial removal, also provide startTime and endTime (e.g., "no mornings on Monday")
 - For whole-day exclusions, omit startTime and endTime
-- PREFER additions/exclusions over patterns for partial statements`;
+- PREFER routineRemovals for recurring unavailability, exclusions for one-time dates`;
 
 /**
  * Calculate upcoming dates for each day of the week from a given start date
@@ -196,6 +215,9 @@ Respond with ONLY valid JSON.`,
     if (!Array.isArray(parsed.exclusions)) {
       parsed.exclusions = [];
     }
+    if (!Array.isArray(parsed.routineRemovals)) {
+      parsed.routineRemovals = [];
+    }
     if (!parsed.mode) {
       parsed.mode = "adjust";
     }
@@ -243,6 +265,23 @@ Respond with ONLY valid JSON.`,
       }
     }
 
+    // Validate routine removals
+    for (const removal of parsed.routineRemovals) {
+      if (
+        typeof removal.dayOfWeek !== "number" ||
+        removal.dayOfWeek < 0 ||
+        removal.dayOfWeek > 6
+      ) {
+        throw new Error(`Invalid dayOfWeek in routineRemoval: ${removal.dayOfWeek}`);
+      }
+      if (removal.startTime && !/^\d{2}:\d{2}$/.test(removal.startTime)) {
+        throw new Error(`Invalid startTime format: ${removal.startTime}`);
+      }
+      if (removal.endTime && !/^\d{2}:\d{2}$/.test(removal.endTime)) {
+        throw new Error(`Invalid endTime format: ${removal.endTime}`);
+      }
+    }
+
     return parsed;
   } catch (error) {
     console.error("Failed to parse AI response:", responseText, error);
@@ -256,6 +295,7 @@ export function convertLegacyResult(result: { slots: ParsedPattern[]; interpreta
     patterns: result.slots,
     additions: [],
     exclusions: [],
+    routineRemovals: [],
     interpretation: result.interpretation,
     mode: "replace",
   };

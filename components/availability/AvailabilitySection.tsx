@@ -137,11 +137,12 @@ export function AvailabilitySection({
     }
   };
 
-  // AI applies patterns, additions, and exclusions
+  // AI applies patterns, additions, exclusions, and routine removals
   const handleAIApply = async (
     patterns: Omit<GeneralAvailabilityType, "id" | "participantId">[],
     additions: Array<{ date: string; startTime: string; endTime: string }>,
     exclusions: Array<{ date: string; startTime?: string; endTime?: string; reason?: string }>,
+    routineRemovals: Array<{ dayOfWeek: number; startTime?: string; endTime?: string }>,
     mode: "replace" | "adjust"
   ) => {
     setIsSaving(true);
@@ -149,33 +150,71 @@ export function AvailabilitySection({
       // Build the request body based on mode and what was provided
       const body: Record<string, unknown> = {};
 
+      // Start with current patterns for merging
+      let updatedPatterns: Omit<GeneralAvailabilityType, "id" | "participantId">[] =
+        mode === "replace" ? [] : generalAvailability.map(p => ({
+          dayOfWeek: p.dayOfWeek,
+          startTime: p.startTime,
+          endTime: p.endTime,
+        }));
+
+      // Apply routine removals first (remove days/times from routine)
+      if (routineRemovals.length > 0) {
+        for (const removal of routineRemovals) {
+          if (!removal.startTime || !removal.endTime) {
+            // Remove entire day
+            updatedPatterns = updatedPatterns.filter(p => p.dayOfWeek !== removal.dayOfWeek);
+          } else {
+            // Remove specific time range from that day
+            updatedPatterns = updatedPatterns.flatMap(p => {
+              if (p.dayOfWeek !== removal.dayOfWeek) return [p];
+
+              // Check if removal overlaps with this pattern
+              if (removal.endTime! <= p.startTime || removal.startTime! >= p.endTime) {
+                return [p];
+              }
+
+              const result: typeof updatedPatterns = [];
+
+              if (p.startTime < removal.startTime!) {
+                result.push({
+                  dayOfWeek: p.dayOfWeek,
+                  startTime: p.startTime,
+                  endTime: removal.startTime!,
+                });
+              }
+
+              if (p.endTime > removal.endTime!) {
+                result.push({
+                  dayOfWeek: p.dayOfWeek,
+                  startTime: removal.endTime!,
+                  endTime: p.endTime,
+                });
+              }
+
+              return result;
+            });
+          }
+        }
+        body.generalAvailability = updatedPatterns;
+        body.clearSpecificOnPatternSave = false;
+      }
+
       // Handle patterns (weekly schedule)
       if (patterns.length > 0) {
         if (mode === "replace") {
           // Replace mode: set new patterns entirely
           body.generalAvailability = patterns;
         } else {
-          // Adjust mode: MERGE with existing patterns
-          // Create a map of existing patterns by day
-          const existingByDay = new Map<number, GeneralAvailabilityType[]>();
-          for (const p of generalAvailability) {
-            const existing = existingByDay.get(p.dayOfWeek) || [];
-            existing.push(p);
-            existingByDay.set(p.dayOfWeek, existing);
-          }
-
-          // Merge new patterns - for same day, replace; for new day, add
+          // Adjust mode: MERGE with existing (or already-modified) patterns
+          const basePatterns = body.generalAvailability as typeof updatedPatterns || updatedPatterns;
           const mergedPatterns: Omit<GeneralAvailabilityType, "id" | "participantId">[] = [];
           const daysWithNewPatterns = new Set(patterns.map(p => p.dayOfWeek));
 
           // Keep existing patterns for days not being updated
-          for (const p of generalAvailability) {
+          for (const p of basePatterns) {
             if (!daysWithNewPatterns.has(p.dayOfWeek)) {
-              mergedPatterns.push({
-                dayOfWeek: p.dayOfWeek,
-                startTime: p.startTime,
-                endTime: p.endTime,
-              });
+              mergedPatterns.push(p);
             }
           }
 
@@ -185,7 +224,7 @@ export function AvailabilitySection({
           }
 
           body.generalAvailability = mergedPatterns;
-          body.clearSpecificOnPatternSave = false; // Don't clear specific slots in adjust mode
+          body.clearSpecificOnPatternSave = false;
         }
       }
 

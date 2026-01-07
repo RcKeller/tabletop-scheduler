@@ -10,6 +10,7 @@ import { CombinedHeatmap } from "@/components/heatmap/CombinedHeatmap";
 import { WeekNavigator } from "@/components/navigation/WeekNavigator";
 import { PlayerDetailModal } from "@/components/participant/PlayerDetailModal";
 import { CampaignHeader } from "@/components/campaign/CampaignHeader";
+import { Footer } from "@/components/layout/Footer";
 import type { TimeSlot, MeetingType, CampaignType } from "@/lib/types";
 
 interface GameSystem {
@@ -512,10 +513,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
         </div>
       </div>
 
-      {/* Footer */}
-      <footer className="mt-4 border-t border-zinc-200 py-2 text-center text-xs text-zinc-500 dark:border-zinc-800">
-        When2Play
-      </footer>
+      <Footer />
 
       {/* Player Detail Modal */}
       {selectedParticipant && (

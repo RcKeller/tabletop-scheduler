@@ -11,6 +11,7 @@ interface AvailabilityGridProps {
   eventTimezone?: string;
   onSave: (slots: TimeSlot[]) => void;
   isSaving: boolean;
+  isLoading?: boolean;
   weekStart?: Date;
   earliestTime?: string;
   latestTime?: string;
@@ -63,6 +64,7 @@ export function AvailabilityGrid({
   eventTimezone,
   onSave,
   isSaving,
+  isLoading = false,
   weekStart,
   earliestTime = "00:00",
   latestTime = "23:30",
@@ -303,6 +305,56 @@ export function AvailabilityGrid({
     document.addEventListener("selectstart", preventSelection);
     return () => document.removeEventListener("selectstart", preventSelection);
   }, [preventSelection]);
+
+  // Loading skeleton
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
+          <div className="min-w-[600px]">
+            {/* Header skeleton */}
+            <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800">
+              <div className="p-2 text-center text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                Time
+              </div>
+              {weekDates.map((date) => (
+                <div
+                  key={date.toISOString()}
+                  className="p-2 text-center text-xs font-medium text-zinc-700 dark:text-zinc-300"
+                >
+                  <div>{format(date, "EEE")}</div>
+                  <div className="text-zinc-500 dark:text-zinc-400">
+                    {format(date, "M/d")}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Skeleton grid rows */}
+            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              {Array.from({ length: Math.min(timeSlots.length, 12) }).map((_, i) => (
+                <div
+                  key={i}
+                  className="grid grid-cols-[60px_repeat(7,1fr)]"
+                >
+                  <div className="flex h-6 items-center justify-end pr-2">
+                    <div className="h-3 w-10 animate-pulse rounded bg-zinc-200 dark:bg-zinc-700" />
+                  </div>
+                  {Array.from({ length: 7 }).map((_, j) => (
+                    <div key={j} className="h-6 border-l border-zinc-100 p-0.5 dark:border-zinc-800">
+                      <div
+                        className="h-full w-full animate-pulse rounded-sm bg-zinc-100 dark:bg-zinc-800"
+                        style={{ animationDelay: `${(i * 7 + j) * 30}ms` }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
