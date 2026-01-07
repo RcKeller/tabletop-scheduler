@@ -215,3 +215,52 @@ export interface HeatmapCell {
   availableParticipants: string[];
   totalParticipants: number;
 }
+
+// Participant types
+export interface Participant {
+  id: string;
+  displayName: string;
+  isGm: boolean;
+  characterName: string | null;
+  characterClass: string | null;
+  characterSheetUrl: string | null;
+  characterTokenBase64: string | null;
+  notes: string | null;
+}
+
+// Minimal participant for lists/summaries
+export interface ParticipantSummary {
+  id: string;
+  displayName: string;
+  isGm: boolean;
+  characterName: string | null;
+  characterClass: string | null;
+  characterTokenBase64: string | null;
+  notes: string | null;
+}
+
+// Participant with availability data (for heatmap)
+export interface ParticipantWithAvailability {
+  id: string;
+  name: string;
+  availability: TimeSlot[];
+}
+
+// Campaign update payload (for settings page)
+export interface UpdateCampaignPayload {
+  title?: string;
+  description?: string | null;
+  gameSystemId?: string | null;
+  sessionLengthMinutes?: number;
+  startDate?: string | null;
+  endDate?: string | null;
+  earliestTime?: string;
+  latestTime?: string;
+  meetingType?: MeetingType | null;
+  meetingLocation?: string | null;
+  meetingRoom?: string | null;
+  customPreSessionInstructions?: string | null;
+  playerPrepUrls?: PrepUrl[] | null;
+  minPlayers?: number | null;
+  maxPlayers?: number | null;
+}

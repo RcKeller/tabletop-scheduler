@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { startOfWeek, endOfWeek, format, addDays } from "date-fns";
 import { computeEffectiveAvailability } from "@/lib/utils/availability-expander";
+import { generateTimeSlots, addThirtyMinutes } from "@/lib/utils/time-slots";
 
 export async function GET(
   request: NextRequest,
@@ -99,31 +100,8 @@ export async function GET(
     // Calculate heatmap cells
     const heatmapData: Record<string, { count: number; participantIds: string[] }> = {};
 
-    const parseTime = (t: string) => {
-      const [h, m] = t.split(":").map(Number);
-      return h * 60 + m;
-    };
-
-    const startMins = parseTime(earliestTime);
-    let endMins = parseTime(latestTime);
-    const is24Hour = earliestTime === latestTime;
-
-    if (is24Hour) {
-      endMins = startMins + 24 * 60;
-    } else if (endMins <= startMins) {
-      endMins += 24 * 60;
-    }
-
-    // Generate time slots
-    const timeSlots: string[] = [];
-    for (let mins = startMins; mins < endMins; mins += 30) {
-      const normalizedMins = mins % (24 * 60);
-      const hour = Math.floor(normalizedMins / 60);
-      const minute = normalizedMins % 60;
-      timeSlots.push(
-        `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`
-      );
-    }
+    // Generate time slots using shared utility
+    const timeSlots = generateTimeSlots(earliestTime, latestTime);
 
     // Initialize all slots
     for (const date of weekDates) {
@@ -145,13 +123,7 @@ export async function GET(
           }
 
           // Increment by 30 minutes
-          const [h, m] = currentTime.split(":").map(Number);
-          const nextMinute = m + 30;
-          if (nextMinute >= 60) {
-            currentTime = `${(h + 1).toString().padStart(2, "0")}:00`;
-          } else {
-            currentTime = `${h.toString().padStart(2, "0")}:30`;
-          }
+          currentTime = addThirtyMinutes(currentTime);
         }
       }
     }

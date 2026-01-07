@@ -2,17 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-
-interface Participant {
-  id: string;
-  displayName: string;
-  isGm: boolean;
-  characterName: string | null;
-  characterClass: string | null;
-  characterSheetUrl: string | null;
-  characterTokenBase64: string | null;
-  notes: string | null;
-}
+import type { Participant } from "@/lib/types";
 
 interface PlayerDetailModalProps {
   participant: Participant;

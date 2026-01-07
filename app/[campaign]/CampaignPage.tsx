@@ -11,24 +11,9 @@ import { WeekNavigator } from "@/components/navigation/WeekNavigator";
 import { PlayerDetailModal } from "@/components/participant/PlayerDetailModal";
 import { CampaignHeader } from "@/components/campaign/CampaignHeader";
 import { Footer } from "@/components/layout/Footer";
-import type { TimeSlot, MeetingType, CampaignType } from "@/lib/types";
-
-interface GameSystem {
-  id: string;
-  name: string;
-  imageBase64: string | null;
-}
-
-interface Participant {
-  id: string;
-  displayName: string;
-  isGm: boolean;
-  characterName: string | null;
-  characterClass: string | null;
-  characterSheetUrl: string | null;
-  characterTokenBase64: string | null;
-  notes: string | null;
-}
+import { EmptyPartyList } from "@/components/empty-states/EmptyPartyList";
+import { EmptyHeatmap } from "@/components/empty-states/EmptyHeatmap";
+import type { TimeSlot, MeetingType, CampaignType, Participant, ParticipantWithAvailability } from "@/lib/types";
 
 interface EventProps {
   id: string;
@@ -47,14 +32,8 @@ interface EventProps {
   meetingRoom: string | null;
   campaignImageBase64: string | null;
   customPreSessionInstructions: string | null;
-  gameSystem: GameSystem | null;
+  gameSystem: { id: string; name: string; imageBase64: string | null } | null;
   participants: Participant[];
-}
-
-interface ParticipantWithAvailability {
-  id: string;
-  name: string;
-  availability: TimeSlot[];
 }
 
 interface CampaignPageProps {
@@ -358,7 +337,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
               )}
 
               {participants.length === 0 ? (
-                <p className="text-sm text-zinc-500">No players yet</p>
+                <EmptyPartyList />
               ) : (
                 <div className="space-y-2">
                   {participants.map((p) => {
@@ -445,6 +424,18 @@ export function CampaignPage({ event }: CampaignPageProps) {
                 </button>
               </div>
             </div>
+
+            {/* Campaign Settings Link */}
+            <Link
+              href={`/${event.slug}/settings`}
+              className="flex items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white p-2.5 text-sm text-zinc-600 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Campaign Settings
+            </Link>
           </div>
         </div>
 
@@ -484,12 +475,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
                 <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "80px" }} />
               </div>
             ) : participantsWithAvailability.length === 0 ? (
-              <div className="flex h-48 items-center justify-center text-center">
-                <div>
-                  <p className="text-sm text-zinc-500">No availability data yet</p>
-                  <p className="mt-1 text-xs text-zinc-400">Join and add your availability to get started</p>
-                </div>
-              </div>
+              <EmptyHeatmap hasPlayers={participants.length > 0} />
             ) : (
               <CombinedHeatmap
                 participants={participantsWithAvailability}

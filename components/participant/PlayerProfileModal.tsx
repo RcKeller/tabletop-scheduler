@@ -2,17 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { ImageUpload } from "@/components/campaign/ImageUpload";
-
-interface Participant {
-  id: string;
-  displayName: string;
-  isGm: boolean;
-  characterName: string | null;
-  characterClass: string | null;
-  characterSheetUrl: string | null;
-  characterTokenBase64: string | null;
-  notes: string | null;
-}
+import type { Participant } from "@/lib/types";
 
 interface PlayerProfileModalProps {
   participant: Participant;

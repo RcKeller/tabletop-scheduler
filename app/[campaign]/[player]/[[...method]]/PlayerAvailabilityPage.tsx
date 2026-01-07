@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { startOfWeek, parseISO, addDays, format, getDay } from "date-fns";
+import { startOfWeek, parseISO, addDays, format } from "date-fns";
 import Link from "next/link";
 import { AvailabilityGrid } from "@/components/availability/AvailabilityGrid";
 import { AvailabilityAI } from "@/components/availability/AvailabilityAI";
@@ -10,117 +10,8 @@ import { GeneralAvailabilityEditor } from "@/components/availability/GeneralAvai
 import { WeekNavigator } from "@/components/navigation/WeekNavigator";
 import { TimezoneSelector } from "@/components/timezone/TimezoneSelector";
 import type { TimeSlot, GeneralAvailability as GeneralAvailabilityType } from "@/lib/types";
-
-// Helper to expand patterns to slots for a date range
-function expandPatternsForWeek(
-  patterns: GeneralAvailabilityType[],
-  weekStart: Date,
-  earliestTime: string,
-  latestTime: string
-): Set<string> {
-  const slots = new Set<string>();
-
-  for (let i = 0; i < 7; i++) {
-    const date = addDays(weekStart, i);
-    const dateStr = format(date, "yyyy-MM-dd");
-    const dayOfWeek = getDay(date);
-
-    const dayPatterns = patterns.filter(p => p.dayOfWeek === dayOfWeek);
-
-    for (const pattern of dayPatterns) {
-      // Expand pattern to 30-min slots
-      let currentTime = pattern.startTime;
-      while (currentTime < pattern.endTime) {
-        slots.add(`${dateStr}-${currentTime}`);
-        const [h, m] = currentTime.split(":").map(Number);
-        const nextMinute = m + 30;
-        if (nextMinute >= 60) {
-          currentTime = `${(h + 1).toString().padStart(2, "0")}:00`;
-        } else {
-          currentTime = `${h.toString().padStart(2, "0")}:30`;
-        }
-      }
-    }
-  }
-
-  return slots;
-}
-
-// Convert TimeSlots to slot key set
-function slotsToKeySet(slots: TimeSlot[]): Set<string> {
-  const result = new Set<string>();
-  for (const slot of slots) {
-    let currentTime = slot.startTime;
-    while (currentTime < slot.endTime) {
-      result.add(`${slot.date}-${currentTime}`);
-      const [h, m] = currentTime.split(":").map(Number);
-      const nextMinute = m + 30;
-      if (nextMinute >= 60) {
-        currentTime = `${(h + 1).toString().padStart(2, "0")}:00`;
-      } else {
-        currentTime = `${h.toString().padStart(2, "0")}:30`;
-      }
-    }
-  }
-  return result;
-}
-
-// Convert slot keys to TimeSlots (merging consecutive)
-function keySetToSlots(keys: Set<string>): TimeSlot[] {
-  const byDate = new Map<string, string[]>();
-
-  for (const key of keys) {
-    const [datePart, time] = key.split("-").reduce(
-      (acc, part, i) => {
-        if (i < 3) {
-          acc[0] = acc[0] ? `${acc[0]}-${part}` : part;
-        } else {
-          acc[1] = part;
-        }
-        return acc;
-      },
-      ["", ""] as [string, string]
-    );
-
-    if (!byDate.has(datePart)) {
-      byDate.set(datePart, []);
-    }
-    byDate.get(datePart)!.push(time);
-  }
-
-  const result: TimeSlot[] = [];
-
-  for (const [date, times] of byDate) {
-    times.sort();
-
-    let rangeStart = times[0];
-    let rangeEnd = addThirtyMinutes(times[0]);
-
-    for (let i = 1; i < times.length; i++) {
-      const time = times[i];
-      if (time === rangeEnd) {
-        rangeEnd = addThirtyMinutes(time);
-      } else {
-        result.push({ date, startTime: rangeStart, endTime: rangeEnd });
-        rangeStart = time;
-        rangeEnd = addThirtyMinutes(time);
-      }
-    }
-
-    result.push({ date, startTime: rangeStart, endTime: rangeEnd });
-  }
-
-  return result;
-}
-
-function addThirtyMinutes(time: string): string {
-  const [h, m] = time.split(":").map(Number);
-  const nextMinute = m + 30;
-  if (nextMinute >= 60) {
-    return `${(h + 1).toString().padStart(2, "0")}:00`;
-  }
-  return `${h.toString().padStart(2, "0")}:30`;
-}
+import { expandPatternsForWeek, slotsToKeySet, keySetToSlots } from "@/lib/utils/availability";
+import { addThirtyMinutes } from "@/lib/utils/time-slots";
 
 interface EventProps {
   id: string;
@@ -133,6 +24,7 @@ interface EventProps {
   earliestTime: string;
   latestTime: string;
   sessionLengthMinutes: number;
+  customPreSessionInstructions: string | null;
   gameSystem: { id: string; name: string } | null;
 }
 
@@ -140,6 +32,7 @@ interface ParticipantProps {
   id: string;
   displayName: string;
   isGm: boolean;
+  hasCharacterInfo: boolean;
 }
 
 interface PlayerAvailabilityPageProps {
@@ -666,25 +559,54 @@ export function PlayerAvailabilityPage({
               )}
             </div>
 
-            {/* Return CTA */}
-            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                    All set?
-                  </h3>
-                  <p className="mt-0.5 text-xs text-blue-700 dark:text-blue-300">
-                    Head back to see everyone's availability and find the best time
-                  </p>
+            {/* Next Step CTA */}
+            {event.customPreSessionInstructions && !participant.hasCharacterInfo ? (
+              <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-900/20">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-medium text-purple-900 dark:text-purple-100">
+                      One more step: Set up your character
+                    </h3>
+                    <p className="mt-0.5 text-xs text-purple-700 dark:text-purple-300">
+                      The GM has provided instructions for character creation
+                    </p>
+                  </div>
+                  <div className="flex flex-shrink-0 gap-2">
+                    <Link
+                      href={`/${event.slug}`}
+                      className="rounded-md border border-purple-300 px-3 py-2 text-sm font-medium text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:text-purple-300 dark:hover:bg-purple-900/30"
+                    >
+                      Skip
+                    </Link>
+                    <Link
+                      href={`/${event.slug}/${encodeURIComponent(participant.displayName.toLowerCase().replace(/\s+/g, "-"))}/character`}
+                      className="rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
+                    >
+                      Set Up Character
+                    </Link>
+                  </div>
                 </div>
-                <Link
-                  href={`/${event.slug}`}
-                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                >
-                  View Campaign
-                </Link>
               </div>
-            </div>
+            ) : (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                      All set!
+                    </h3>
+                    <p className="mt-0.5 text-xs text-blue-700 dark:text-blue-300">
+                      Head back to see everyone&apos;s availability and find the best time
+                    </p>
+                  </div>
+                  <Link
+                    href={`/${event.slug}`}
+                    className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                  >
+                    View Campaign
+                  </Link>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>

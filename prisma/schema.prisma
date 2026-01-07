@@ -72,6 +72,10 @@ model Event {
   meetingLocation            String?
   meetingRoom                String?
 
+  // Player count limits
+  minPlayers                 Int?
+  maxPlayers                 Int?
+
   // Legacy fields (kept for backward compatibility)
   isRecurring                Boolean     @default(false)
   recurrencePattern          Json?

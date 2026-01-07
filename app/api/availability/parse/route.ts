@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseAvailabilityText } from "@/lib/ai/availability-parser";
+import { isValidTimezone } from "@/lib/utils/timezones";
+import { badRequest, success, errorResponse, handleApiError } from "@/lib/api/response";
 
 /**
  * Get the current date in the specified timezone
@@ -41,13 +43,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     if (!body.text?.trim()) {
-      return NextResponse.json(
-        { error: "Text is required" },
-        { status: 400 }
-      );
+      return badRequest("Text is required");
     }
 
     const timezone = body.timezone || "UTC";
+
+    // Validate timezone
+    if (!isValidTimezone(timezone)) {
+      return badRequest(`Invalid timezone: ${timezone}`);
+    }
 
     // PREFER client-provided date/day (calculated in their browser with their clock)
     // Fall back to server calculation only if not provided
@@ -63,7 +67,7 @@ export async function POST(request: NextRequest) {
       currentDayInUserTz
     );
 
-    return NextResponse.json(result);
+    return success(result);
   } catch (error) {
     console.error("Error parsing availability:", error);
 
@@ -72,12 +76,14 @@ export async function POST(request: NextRequest) {
 
     // Check for API key issues
     if (message.includes("ANTHROPIC_API_KEY")) {
-      return NextResponse.json(
-        { error: "AI parsing is not configured. Please add your API key." },
-        { status: 503 }
+      return errorResponse(
+        "AI parsing is not configured. Please add your API key.",
+        503,
+        undefined,
+        "SERVICE_UNAVAILABLE"
       );
     }
 
-    return NextResponse.json({ error: message }, { status: 500 });
+    return handleApiError(error, "parse availability");
   }
 }

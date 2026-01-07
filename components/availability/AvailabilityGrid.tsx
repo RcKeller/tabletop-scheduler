@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { format, addDays, startOfWeek, parse } from "date-fns";
+import { format, parse } from "date-fns";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import type { TimeSlot } from "@/lib/types";
+import { generateTimeSlots, getWeekDates, addThirtyMinutes } from "@/lib/utils/time-slots";
 
 interface AvailabilityGridProps {
   availability: TimeSlot[];
@@ -17,45 +18,6 @@ interface AvailabilityGridProps {
   latestTime?: string;
   autoSave?: boolean;
   showLegend?: boolean;
-}
-
-// Generate time slots (30-min intervals for full day)
-function generateTimeSlots(earliest: string, latest: string): string[] {
-  const slots: string[] = [];
-  const is24Hour = earliest === latest;
-
-  // Parse times to minutes from midnight
-  const parseTime = (t: string) => {
-    const [h, m] = t.split(":").map(Number);
-    return h * 60 + m;
-  };
-
-  const startMins = parseTime(earliest);
-  let endMins = parseTime(latest);
-
-  // If 24 hour or latest is before earliest (crosses midnight), adjust
-  if (is24Hour) {
-    endMins = startMins + 24 * 60;
-  } else if (endMins <= startMins) {
-    endMins += 24 * 60; // Crosses midnight
-  }
-
-  for (let mins = startMins; mins < endMins; mins += 30) {
-    const normalizedMins = mins % (24 * 60);
-    const hour = Math.floor(normalizedMins / 60);
-    const minute = normalizedMins % 60;
-    slots.push(
-      `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`
-    );
-  }
-
-  return slots;
-}
-
-// Generate 7 days starting from a date
-function getWeekDates(start?: Date): Date[] {
-  const weekStart = start || startOfWeek(new Date(), { weekStartsOn: 0 });
-  return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 }
 
 export function AvailabilityGrid({

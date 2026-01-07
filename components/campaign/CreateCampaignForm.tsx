@@ -11,16 +11,7 @@ import { SessionLengthSelector } from "./SessionLengthSelector";
 import { DateRangePicker } from "./DateRangePicker";
 import { TimeWindowSelector } from "./TimeWindowSelector";
 import type { GameSystem, MeetingType, PrepUrl } from "@/lib/types";
-
-const MEETING_OPTIONS: { value: MeetingType; label: string }[] = [
-  { value: "DISCORD", label: "Discord" },
-  { value: "ZOOM", label: "Zoom" },
-  { value: "GOOGLE_MEET", label: "Google Meet" },
-  { value: "ROLL20", label: "Roll20" },
-  { value: "FOUNDRY_VTT", label: "Foundry VTT" },
-  { value: "IN_PERSON", label: "In-Person" },
-  { value: "OTHER", label: "Other" },
-];
+import { MEETING_TYPE_CONFIG } from "@/lib/types";
 
 const LINK_TYPE_OPTIONS = [
   { value: "core", label: "Core Rulebook" },
@@ -31,18 +22,19 @@ const LINK_TYPE_OPTIONS = [
   { value: "other", label: "Other" },
 ];
 
-const getMeetingConfig = (type: MeetingType) => {
-  const configs: Record<MeetingType, { locationLabel: string; locationPlaceholder: string; roomLabel: string; roomPlaceholder: string }> = {
-    DISCORD: { locationLabel: "Server Link", locationPlaceholder: "https://discord.gg/...", roomLabel: "Voice Channel", roomPlaceholder: "#voice-chat" },
-    ZOOM: { locationLabel: "Meeting URL", locationPlaceholder: "https://zoom.us/j/...", roomLabel: "Meeting ID", roomPlaceholder: "123 456 7890" },
-    GOOGLE_MEET: { locationLabel: "Meeting URL", locationPlaceholder: "https://meet.google.com/...", roomLabel: "Meeting Code", roomPlaceholder: "abc-defg-hij" },
-    ROLL20: { locationLabel: "Game URL", locationPlaceholder: "https://app.roll20.net/join/...", roomLabel: "Campaign", roomPlaceholder: "Campaign name" },
-    FOUNDRY_VTT: { locationLabel: "Server URL", locationPlaceholder: "https://your-foundry.com", roomLabel: "World", roomPlaceholder: "World name" },
-    IN_PERSON: { locationLabel: "Address", locationPlaceholder: "123 Main St", roomLabel: "Notes", roomPlaceholder: "Ring doorbell" },
-    OTHER: { locationLabel: "Location", locationPlaceholder: "Enter location or URL", roomLabel: "Details", roomPlaceholder: "Additional info" },
+/**
+ * Get meeting type configuration from shared config
+ */
+function getMeetingConfig(type: MeetingType) {
+  const config = MEETING_TYPE_CONFIG.find(c => c.value === type);
+  if (!config) return null;
+  return {
+    locationLabel: config.locationLabel,
+    locationPlaceholder: config.locationPlaceholder,
+    roomLabel: config.roomLabel,
+    roomPlaceholder: config.roomPlaceholder,
   };
-  return configs[type];
-};
+}
 
 export function CreateCampaignForm() {
   const router = useRouter();
@@ -441,7 +433,7 @@ export function CreateCampaignForm() {
               className="mt-2 block w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-zinc-900 transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             >
               <option value="">Select platform...</option>
-              {MEETING_OPTIONS.map(opt => (
+              {MEETING_TYPE_CONFIG.map(opt => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
@@ -450,25 +442,25 @@ export function CreateCampaignForm() {
               <div className="mt-3 space-y-3 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50">
                 <div>
                   <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    {getMeetingConfig(meetingType).locationLabel}
+                    {getMeetingConfig(meetingType)?.locationLabel}
                   </label>
                   <input
                     type="text"
                     value={meetingLocation}
                     onChange={(e) => setMeetingLocation(e.target.value)}
-                    placeholder={getMeetingConfig(meetingType).locationPlaceholder}
+                    placeholder={getMeetingConfig(meetingType)?.locationPlaceholder}
                     className="mt-1 block w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    {getMeetingConfig(meetingType).roomLabel}
+                    {getMeetingConfig(meetingType)?.roomLabel}
                   </label>
                   <input
                     type="text"
                     value={meetingRoom}
                     onChange={(e) => setMeetingRoom(e.target.value)}
-                    placeholder={getMeetingConfig(meetingType).roomPlaceholder}
+                    placeholder={getMeetingConfig(meetingType)?.roomPlaceholder}
                     className="mt-1 block w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
                   />
                 </div>

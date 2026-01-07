@@ -52,6 +52,7 @@ export default async function Page({ params }: Props) {
     earliestTime: event.earliestTime,
     latestTime: event.latestTime,
     sessionLengthMinutes: event.sessionLengthMinutes,
+    customPreSessionInstructions: event.customPreSessionInstructions,
     gameSystem: event.gameSystem ? {
       id: event.gameSystem.id,
       name: event.gameSystem.name,
@@ -62,6 +63,7 @@ export default async function Page({ params }: Props) {
     id: participant.id,
     displayName: participant.displayName,
     isGm: participant.isGm,
+    hasCharacterInfo: !!(participant.characterName || participant.characterClass),
   };
 
   return (

@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { generateSlug } from "@/lib/utils/slug";
-import { MeetingType } from "@/lib/generated/prisma";
+import { MeetingType, CampaignType } from "@/lib/generated/prisma";
+import { badRequest, created, handleApiError } from "@/lib/api/response";
 
 export async function POST(request: NextRequest) {
   try {
@@ -9,19 +10,13 @@ export async function POST(request: NextRequest) {
 
     // Validate required fields
     if (!body.title?.trim()) {
-      return NextResponse.json(
-        { error: "Campaign name is required" },
-        { status: 400 }
-      );
+      return badRequest("Campaign name is required");
     }
 
     // Validate session length
     const sessionLengthMinutes = body.sessionLengthMinutes || 180;
     if (sessionLengthMinutes < 60 || sessionLengthMinutes > 480) {
-      return NextResponse.json(
-        { error: "Session length must be between 1 and 8 hours" },
-        { status: 400 }
-      );
+      return badRequest("Session length must be between 1 and 8 hours");
     }
 
     // Validate date range if provided
@@ -30,27 +25,18 @@ export async function POST(request: NextRequest) {
       const end = new Date(body.endDate);
 
       if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-        return NextResponse.json(
-          { error: "Invalid date format" },
-          { status: 400 }
-        );
+        return badRequest("Invalid date format");
       }
 
       if (end < start) {
-        return NextResponse.json(
-          { error: "End date must be after start date" },
-          { status: 400 }
-        );
+        return badRequest("End date must be after start date");
       }
 
       // Check max 3 months
       const maxEnd = new Date(start);
       maxEnd.setMonth(maxEnd.getMonth() + 3);
       if (end > maxEnd) {
-        return NextResponse.json(
-          { error: "Date range cannot exceed 3 months" },
-          { status: 400 }
-        );
+        return badRequest("Date range cannot exceed 3 months");
       }
     }
 
@@ -60,10 +46,7 @@ export async function POST(request: NextRequest) {
     const latestTime = body.latestTime || "23:30";
 
     if (!timeRegex.test(earliestTime) || !timeRegex.test(latestTime)) {
-      return NextResponse.json(
-        { error: "Invalid time format. Use HH:MM" },
-        { status: 400 }
-      );
+      return badRequest("Invalid time format. Use HH:MM");
     }
 
     // Validate game system exists if provided
@@ -72,10 +55,7 @@ export async function POST(request: NextRequest) {
         where: { id: body.gameSystemId },
       });
       if (!gameSystem) {
-        return NextResponse.json(
-          { error: "Game system not found" },
-          { status: 400 }
-        );
+        return badRequest("Game system not found");
       }
     }
 
@@ -84,12 +64,32 @@ export async function POST(request: NextRequest) {
     if (body.meetingType) {
       const validTypes = Object.values(MeetingType);
       if (!validTypes.includes(body.meetingType as MeetingType)) {
-        return NextResponse.json(
-          { error: "Invalid meeting type" },
-          { status: 400 }
-        );
+        return badRequest("Invalid meeting type");
       }
       meetingType = body.meetingType as MeetingType;
+    }
+
+    // Validate campaign type enum
+    let campaignType: CampaignType = CampaignType.CAMPAIGN;
+    if (body.campaignType) {
+      const validCampaignTypes = Object.values(CampaignType);
+      if (!validCampaignTypes.includes(body.campaignType as CampaignType)) {
+        return badRequest("Invalid campaign type");
+      }
+      campaignType = body.campaignType as CampaignType;
+    }
+
+    // Validate player counts if provided
+    const minPlayers = body.minPlayers ? parseInt(body.minPlayers) : null;
+    const maxPlayers = body.maxPlayers ? parseInt(body.maxPlayers) : null;
+    if (minPlayers !== null && (isNaN(minPlayers) || minPlayers < 1)) {
+      return badRequest("Minimum players must be at least 1");
+    }
+    if (maxPlayers !== null && (isNaN(maxPlayers) || maxPlayers < 1)) {
+      return badRequest("Maximum players must be at least 1");
+    }
+    if (minPlayers !== null && maxPlayers !== null && minPlayers > maxPlayers) {
+      return badRequest("Minimum players cannot exceed maximum players");
     }
 
     const slug = await generateSlug(body.title);
@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
         title: body.title.trim(),
         description: body.description?.trim() || null,
         timezone: body.timezone || "UTC",
+        campaignType,
 
         // Game system
         gameSystemId: body.gameSystemId || null,
@@ -123,6 +124,10 @@ export async function POST(request: NextRequest) {
         meetingLocation: body.meetingLocation?.trim() || null,
         meetingRoom: body.meetingRoom?.trim() || null,
 
+        // Player limits
+        minPlayers,
+        maxPlayers,
+
         // Legacy fields (for backward compatibility)
         isRecurring: body.isRecurring || false,
         recurrencePattern: body.recurrencePattern || null,
@@ -134,12 +139,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(event, { status: 201 });
+    return created(event);
   } catch (error) {
-    console.error("Error creating event:", error);
-    return NextResponse.json(
-      { error: "Failed to create campaign" },
-      { status: 500 }
-    );
+    return handleApiError(error, "create campaign");
   }
 }
