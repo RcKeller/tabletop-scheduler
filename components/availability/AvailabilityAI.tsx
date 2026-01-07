@@ -26,13 +26,20 @@ function formatTime(time: string): string {
   return `${hour - 12}:${minute} PM`;
 }
 
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr + "T00:00:00");
-  return date.toLocaleDateString("en-US", {
+function formatDate(dateStr: string, timezone?: string): string {
+  // Parse the date string as-is (YYYY-MM-DD) without timezone conversion issues
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+
+  // Format using the specified timezone if provided, otherwise local
+  const options: Intl.DateTimeFormatOptions = {
     weekday: "short",
     month: "short",
     day: "numeric",
-  });
+    ...(timezone ? { timeZone: timezone } : {}),
+  };
+
+  return date.toLocaleDateString("en-US", options);
 }
 
 export function AvailabilityAI({
@@ -249,7 +256,7 @@ export function AvailabilityAI({
                       className="flex items-center justify-between px-4 py-2"
                     >
                       <span className="text-sm font-medium text-green-700 dark:text-green-300">
-                        {formatDate(slot.date)}
+                        {formatDate(slot.date, timezone)}
                       </span>
                       <span className="text-sm text-green-600 dark:text-green-400">
                         {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
@@ -279,7 +286,7 @@ export function AvailabilityAI({
                     >
                       <div>
                         <span className="text-sm font-medium text-red-700 dark:text-red-300">
-                          {formatDate(exc.date)}
+                          {formatDate(exc.date, timezone)}
                         </span>
                         {exc.reason && (
                           <span className="ml-2 text-xs text-red-500 dark:text-red-400">

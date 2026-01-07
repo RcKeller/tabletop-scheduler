@@ -97,6 +97,29 @@ Notes:
 - For whole-day exclusions, omit startTime and endTime
 - PREFER additions/exclusions over patterns for partial statements`;
 
+/**
+ * Calculate upcoming dates for each day of the week from a given start date
+ */
+function getUpcomingDates(startDateStr: string): Record<string, string> {
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const result: Record<string, string> = {};
+
+  // Parse the start date
+  const [year, month, day] = startDateStr.split("-").map(Number);
+  const startDate = new Date(year, month - 1, day); // Local date
+  const startDayOfWeek = startDate.getDay();
+
+  for (let i = 0; i < 7; i++) {
+    const dayIndex = (startDayOfWeek + i) % 7;
+    const dayName = dayNames[dayIndex];
+    const futureDate = new Date(year, month - 1, day + i);
+    const dateStr = `${futureDate.getFullYear()}-${String(futureDate.getMonth() + 1).padStart(2, "0")}-${String(futureDate.getDate()).padStart(2, "0")}`;
+    result[dayName] = dateStr;
+  }
+
+  return result;
+}
+
 export async function parseAvailabilityText(
   text: string,
   timezone: string,
@@ -114,6 +137,9 @@ export async function parseAvailabilityText(
   const today = currentDate || new Date().toISOString().split("T")[0];
   const todayDay = currentDay || new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(new Date());
 
+  // Pre-calculate the dates for each upcoming day of the week
+  const upcomingDates = getUpcomingDates(today);
+
   const message = await client.messages.create({
     model: "claude-sonnet-4-20250514",
     max_tokens: 1024,
@@ -122,20 +148,24 @@ export async function parseAvailabilityText(
         role: "user",
         content: `Parse this availability description.
 
-CRITICAL TIMEZONE CONTEXT:
-- User's timezone: ${timezone}
-- Today's date IN THE USER'S TIMEZONE: ${today}
-- Today is: ${todayDay}
+CRITICAL DATE CONTEXT (use these EXACT dates):
+- Timezone: ${timezone}
+- Today is: ${todayDay}, ${today}
 
-When the user says "Wednesday" or "this Wednesday", calculate the date based on THEIR timezone (${timezone}), not UTC.
-For example, if today is ${todayDay} ${today} in ${timezone}:
-- "this Wednesday" means the upcoming Wednesday from ${today}
-- "next Wednesday" means the Wednesday after that
-- "Wednesday the 15th" means specifically the 15th
+UPCOMING DATES (use these when user mentions a day name):
+- Sunday = ${upcomingDates["Sunday"]}
+- Monday = ${upcomingDates["Monday"]}
+- Tuesday = ${upcomingDates["Tuesday"]}
+- Wednesday = ${upcomingDates["Wednesday"]}
+- Thursday = ${upcomingDates["Thursday"]}
+- Friday = ${upcomingDates["Friday"]}
+- Saturday = ${upcomingDates["Saturday"]}
+
+IMPORTANT: When user says "Wednesday", use ${upcomingDates["Wednesday"]}. Do NOT calculate dates yourself - use the dates listed above.
 
 User's input: "${text}"
 
-Remember to respond with ONLY valid JSON.`,
+Respond with ONLY valid JSON.`,
       },
     ],
     system: SYSTEM_PROMPT,
