@@ -2,15 +2,14 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { startOfWeek, parseISO, addDays, format } from "date-fns";
+import { parseISO, eachDayOfInterval, format } from "date-fns";
 import Link from "next/link";
-import { AvailabilityGrid } from "@/components/availability/AvailabilityGrid";
+import { VirtualizedAvailabilityGrid } from "@/components/availability/VirtualizedAvailabilityGrid";
 import { AvailabilityAI } from "@/components/availability/AvailabilityAI";
 import { GeneralAvailabilityEditor } from "@/components/availability/GeneralAvailabilityEditor";
-import { WeekNavigator } from "@/components/navigation/WeekNavigator";
 import { TimezoneAutocomplete } from "@/components/timezone/TimezoneAutocomplete";
 import type { TimeSlot, GeneralAvailability as GeneralAvailabilityType } from "@/lib/types";
-import { expandPatternsForWeek, slotsToKeySet, keySetToSlots } from "@/lib/utils/availability";
+import { expandPatternsToDateRange, slotsToKeySet, keySetToSlots } from "@/lib/utils/availability";
 import { addThirtyMinutes } from "@/lib/utils/time-slots";
 
 interface EventProps {
@@ -77,10 +76,6 @@ export function PlayerAvailabilityPage({
     return event.endDate ? parseISO(event.endDate) : eventStartDate;
   }, [event.endDate, eventStartDate]);
 
-  const [currentWeekStart, setCurrentWeekStart] = useState(() =>
-    startOfWeek(eventStartDate, { weekStartsOn: 0 })
-  );
-
   const playerSlug = participant.displayName.toLowerCase().replace(/\s+/g, "-");
 
   // Load existing availability
@@ -144,10 +139,11 @@ export function PlayerAvailabilityPage({
       // Convert user's selection to a set
       const selectedKeys = slotsToKeySet(slots);
 
-      // Compute what patterns would produce for the current week
-      const patternKeys = expandPatternsForWeek(
+      // Compute what patterns would produce for the full date range
+      const patternKeys = expandPatternsToDateRange(
         generalAvailability,
-        currentWeekStart,
+        eventStartDate,
+        eventEndDate,
         event.earliestTime,
         event.latestTime
       );
@@ -183,43 +179,19 @@ export function PlayerAvailabilityPage({
         }
       }
 
-      // Keep existing specific availability for other weeks
-      const currentWeekDates = new Set<string>();
-      for (let i = 0; i < 7; i++) {
-        currentWeekDates.add(format(addDays(currentWeekStart, i), "yyyy-MM-dd"));
-      }
-
-      const otherWeekSpecific = specificAvailability.filter(
-        s => !currentWeekDates.has(s.date)
-      );
-
-      // Combine additions with other week's specific availability
-      const newSpecificSlots = [
-        ...otherWeekSpecific,
-        ...keySetToSlots(additions),
-      ];
-
-      // Keep exceptions from other weeks
-      const otherWeekExceptions = exceptions.filter(
-        e => !currentWeekDates.has(e.date)
-      );
-
-      // Combine with new exceptions
-      const allExceptions = [...otherWeekExceptions, ...newExceptions];
-
       const res = await fetch(`/api/availability/${participant.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          availability: newSpecificSlots,
-          exceptions: allExceptions,
+          availability: keySetToSlots(additions),
+          exceptions: newExceptions,
         }),
       });
 
       if (res.ok) {
         setEffectiveAvailability(slots);
-        setSpecificAvailability(newSpecificSlots);
-        setExceptions(allExceptions);
+        setSpecificAvailability(keySetToSlots(additions));
+        setExceptions(newExceptions);
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     } catch (error) {
@@ -227,7 +199,7 @@ export function PlayerAvailabilityPage({
     } finally {
       setIsSaving(false);
     }
-  }, [participant.id, generalAvailability, currentWeekStart, event.earliestTime, event.latestTime, specificAvailability, exceptions]);
+  }, [participant.id, generalAvailability, eventStartDate, eventEndDate, event.earliestTime, event.latestTime]);
 
   // Save general availability patterns
   const handleSaveGeneralAvailability = async (patterns: Omit<GeneralAvailabilityType, "id" | "participantId">[]) => {
@@ -503,27 +475,19 @@ export function PlayerAvailabilityPage({
             {/* Method content */}
             <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
               {method === "select" && (
-                <div className="p-2">
-                  <div className="mb-2">
-                    <WeekNavigator
-                      currentWeekStart={currentWeekStart}
-                      eventStartDate={eventStartDate}
-                      eventEndDate={eventEndDate}
-                      onWeekChange={setCurrentWeekStart}
-                    />
-                  </div>
-                  <AvailabilityGrid
-                    availability={effectiveAvailability}
-                    timezone={timezone}
-                    eventTimezone={event.timezone}
-                    onSave={handleAutoSaveAvailability}
-                    isSaving={isSaving}
-                    isLoading={isLoading}
-                    weekStart={currentWeekStart}
+                <div className="p-3">
+                  <VirtualizedAvailabilityGrid
+                    startDate={eventStartDate}
+                    endDate={eventEndDate}
                     earliestTime={event.earliestTime}
                     latestTime={event.latestTime}
+                    mode="edit"
+                    availability={effectiveAvailability}
+                    onSave={handleAutoSaveAvailability}
+                    isSaving={isSaving}
                     autoSave
-                    showLegend={false}
+                    timezone={timezone}
+                    eventTimezone={event.timezone}
                   />
                 </div>
               )}

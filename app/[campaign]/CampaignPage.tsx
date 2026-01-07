@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { startOfWeek, parseISO, format } from "date-fns";
+import { parseISO, format } from "date-fns";
 import { TimezoneAutocomplete } from "@/components/timezone/TimezoneAutocomplete";
 import { JoinEventForm } from "@/components/participant/JoinEventForm";
-import { CombinedHeatmap } from "@/components/heatmap/CombinedHeatmap";
-import { WeekNavigator } from "@/components/navigation/WeekNavigator";
+import { VirtualizedAvailabilityGrid } from "@/components/availability/VirtualizedAvailabilityGrid";
+import { HoverDetailPanel } from "@/components/heatmap/HoverDetailPanel";
 import { PlayerDetailModal } from "@/components/participant/PlayerDetailModal";
 import { CampaignHeader } from "@/components/campaign/CampaignHeader";
 import { Footer } from "@/components/layout/Footer";
@@ -64,9 +64,13 @@ export function CampaignPage({ event }: CampaignPageProps) {
     return event.endDate ? parseISO(event.endDate) : eventStartDate;
   }, [event.endDate, eventStartDate]);
 
-  const [currentWeekStart, setCurrentWeekStart] = useState(() =>
-    startOfWeek(eventStartDate, { weekStartsOn: 0 })
-  );
+  // Hovered slot info for the hover panel
+  const [hoveredSlotInfo, setHoveredSlotInfo] = useState<{
+    date: string;
+    time: string;
+    available: { id: string; name: string }[];
+    unavailable: { id: string; name: string }[];
+  } | null>(null);
 
   // Check for stored participant ID
   useEffect(() => {
@@ -128,25 +132,46 @@ export function CampaignPage({ event }: CampaignPageProps) {
   }, [currentParticipant, event.slug, router]);
 
   // Load heatmap data
-  useEffect(() => {
-    async function loadHeatmapData() {
-      try {
-        const weekStartParam = currentWeekStart.toISOString();
-        const res = await fetch(
-          `/api/events/${event.slug}/heatmap?weekStart=${weekStartParam}`
-        );
-        if (res.ok) {
-          const data = await res.json();
-          setParticipantsWithAvailability(data.participants);
-        }
-      } catch (error) {
-        console.error("Failed to load heatmap data:", error);
-      } finally {
-        setIsLoading(false);
+  const loadHeatmapData = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/events/${event.slug}/heatmap`);
+      if (res.ok) {
+        const data = await res.json();
+        setParticipantsWithAvailability(data.participants);
       }
+    } catch (error) {
+      console.error("Failed to load heatmap data:", error);
+    } finally {
+      setIsLoading(false);
     }
+  }, [event.slug]);
+
+  // Initial load
+  useEffect(() => {
     loadHeatmapData();
-  }, [event.slug, currentWeekStart]);
+  }, [loadHeatmapData]);
+
+  // Refetch when page becomes visible (handles navigation back)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        loadHeatmapData();
+      }
+    };
+
+    // Also handle popstate for back/forward navigation
+    const handlePopState = () => {
+      loadHeatmapData();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [loadHeatmapData]);
 
   const handleJoined = (participant: { id: string; displayName: string; isGm: boolean }) => {
     localStorage.setItem(`participant_${event.id}`, participant.id);
@@ -297,47 +322,77 @@ export function CampaignPage({ event }: CampaignPageProps) {
         {/* Tab Content */}
         {activeTab === "availability" && (
           <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="flex flex-col gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-700 sm:flex-row sm:items-center sm:justify-between">
-              <WeekNavigator
-                currentWeekStart={currentWeekStart}
-                eventStartDate={eventStartDate}
-                eventEndDate={eventEndDate}
-                onWeekChange={setCurrentWeekStart}
-              />
+            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-700">
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Group Availability
+              </span>
               <TimezoneAutocomplete
                 value={timezone}
                 onChange={setTimezone}
               />
             </div>
-            <div className="p-2">
+            <div className="p-3">
               {isLoading ? (
-                <div className="space-y-4">
-                  <div className="flex gap-4">
-                    <div className="flex-1">
-                      <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "300px" }} />
-                    </div>
-                  </div>
-                </div>
+                <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "300px" }} />
               ) : participantsWithAvailability.length === 0 ? (
                 <EmptyHeatmap hasPlayers={participants.length > 0} />
               ) : (
-                <CombinedHeatmap
-                  participants={participantsWithAvailability}
-                  weekStart={currentWeekStart}
-                  earliestTime={event.earliestTime}
-                  latestTime={event.latestTime}
-                  sessionLengthMinutes={event.sessionLengthMinutes}
-                  timezone={timezone}
-                  eventTimezone={event.timezone}
-                  sessionDetails={{
-                    campaignType: event.campaignType,
-                    sessionLengthMinutes: event.sessionLengthMinutes,
-                    meetingType: meetingInfo?.type,
-                    meetingLocation: meetingInfo?.location,
-                    dateRange: formatDateRange(),
-                    timeWindow: `${formatTime(event.earliestTime)} - ${formatTime(event.latestTime)}`,
-                  }}
-                />
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <VirtualizedAvailabilityGrid
+                      startDate={eventStartDate}
+                      endDate={eventEndDate}
+                      earliestTime={event.earliestTime}
+                      latestTime={event.latestTime}
+                      mode="heatmap"
+                      participants={participantsWithAvailability.map(p => ({
+                        id: p.id,
+                        name: p.name,
+                        availability: p.availability,
+                      }))}
+                      onHoverSlot={(date, time, available, unavailable) => {
+                        setHoveredSlotInfo({ date, time, available, unavailable });
+                      }}
+                      onLeaveSlot={() => setHoveredSlotInfo(null)}
+                      timezone={timezone}
+                      eventTimezone={event.timezone}
+                    />
+                  </div>
+                  <div className="w-56 shrink-0">
+                    <div className="sticky top-20 min-h-[200px] rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+                      {hoveredSlotInfo ? (
+                        <HoverDetailPanel
+                          date={hoveredSlotInfo.date}
+                          time={hoveredSlotInfo.time}
+                          availableParticipants={hoveredSlotInfo.available}
+                          unavailableParticipants={hoveredSlotInfo.unavailable}
+                          totalParticipants={participantsWithAvailability.length}
+                        />
+                      ) : (
+                        <div className="p-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                          <p>Hover over a time slot to see who&apos;s available</p>
+                          <div className="mt-4 space-y-2 text-left">
+                            <div className="flex items-center justify-between text-xs">
+                              <span>Session length:</span>
+                              <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                                {event.sessionLengthMinutes >= 60
+                                  ? `${Math.floor(event.sessionLengthMinutes / 60)}h${event.sessionLengthMinutes % 60 > 0 ? ` ${event.sessionLengthMinutes % 60}m` : ""}`
+                                  : `${event.sessionLengthMinutes}m`
+                                }
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                              <span>Time window:</span>
+                              <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                                {formatTime(event.earliestTime)} - {formatTime(event.latestTime)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           </div>

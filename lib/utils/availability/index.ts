@@ -1,1 +1,1 @@
-export { expandPatternsForWeek, slotsToKeySet, keySetToSlots } from "./slot-conversion";
+export { expandPatternsForWeek, expandPatternsToDateRange, slotsToKeySet, keySetToSlots } from "./slot-conversion";

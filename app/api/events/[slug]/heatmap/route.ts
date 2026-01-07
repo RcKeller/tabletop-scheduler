@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { startOfWeek, endOfWeek, format, addDays } from "date-fns";
+import { format, eachDayOfInterval } from "date-fns";
 import { computeEffectiveAvailability } from "@/lib/utils/availability-expander";
 import { generateTimeSlots, addThirtyMinutes } from "@/lib/utils/time-slots";
 
@@ -10,8 +10,6 @@ export async function GET(
 ) {
   try {
     const { slug } = await params;
-    const { searchParams } = new URL(request.url);
-    const weekStartParam = searchParams.get("weekStart");
 
     const event = await prisma.event.findUnique({
       where: { slug },
@@ -30,30 +28,20 @@ export async function GET(
       return NextResponse.json({ error: "Event not found" }, { status: 404 });
     }
 
-    // Determine the week to show
-    let weekStart: Date;
-    if (weekStartParam) {
-      weekStart = startOfWeek(new Date(weekStartParam), { weekStartsOn: 0 });
-    } else if (event.startDate) {
-      weekStart = startOfWeek(event.startDate, { weekStartsOn: 0 });
-    } else {
-      weekStart = startOfWeek(new Date(), { weekStartsOn: 0 });
-    }
+    // Use full event date range (or default to today if not set)
+    const rangeStart = event.startDate || new Date();
+    const rangeEnd = event.endDate || rangeStart;
 
-    const weekEnd = endOfWeek(weekStart, { weekStartsOn: 0 });
-
-    // Generate week dates
-    const weekDates: string[] = [];
-    for (let i = 0; i < 7; i++) {
-      weekDates.push(format(addDays(weekStart, i), "yyyy-MM-dd"));
-    }
+    // Generate all dates in the range
+    const allDates = eachDayOfInterval({ start: rangeStart, end: rangeEnd });
+    const dateStrings = allDates.map(d => format(d, "yyyy-MM-dd"));
 
     // Get time window settings
     const earliestTime = event.earliestTime || "00:00";
     const latestTime = event.latestTime || "23:30";
 
     // Build availability data for each participant
-    // This now combines patterns + specific slots - exceptions
+    // This combines patterns + specific slots - exceptions for the full date range
     const participantsData = event.participants.map((participant) => {
       // Convert database records to the right format
       const patterns = participant.generalAvailability.map((p) => ({
@@ -74,26 +62,21 @@ export async function GET(
         endTime: e.endTime,
       }));
 
-      // Compute effective availability for this week
+      // Compute effective availability for the full date range
       const effectiveAvailability = computeEffectiveAvailability(
         patterns,
         specificSlots,
         exceptions,
-        weekStart,
-        weekEnd,
+        rangeStart,
+        rangeEnd,
         earliestTime,
         latestTime
-      );
-
-      // Filter to only include slots within this week
-      const weekAvailability = effectiveAvailability.filter((slot) =>
-        weekDates.includes(slot.date)
       );
 
       return {
         id: participant.id,
         name: participant.displayName,
-        availability: weekAvailability,
+        availability: effectiveAvailability,
       };
     });
 
@@ -104,7 +87,7 @@ export async function GET(
     const timeSlots = generateTimeSlots(earliestTime, latestTime);
 
     // Initialize all slots
-    for (const date of weekDates) {
+    for (const date of dateStrings) {
       for (const time of timeSlots) {
         const key = `${date}-${time}`;
         heatmapData[key] = { count: 0, participantIds: [] };
@@ -139,8 +122,7 @@ export async function GET(
         latestTime: event.latestTime,
         sessionLengthMinutes: event.sessionLengthMinutes,
       },
-      weekStart: weekStart.toISOString(),
-      weekDates,
+      dates: dateStrings,
       timeSlots,
       participants: participantsData,
       heatmap: heatmapData,

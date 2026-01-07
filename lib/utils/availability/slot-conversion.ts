@@ -1,4 +1,4 @@
-import { addDays, format, getDay } from "date-fns";
+import { addDays, format, getDay, eachDayOfInterval } from "date-fns";
 import { addThirtyMinutes } from "@/lib/utils/time-slots";
 import type { TimeSlot, GeneralAvailability } from "@/lib/types";
 
@@ -98,4 +98,36 @@ export function keySetToSlots(keys: Set<string>): TimeSlot[] {
   }
 
   return result;
+}
+
+/**
+ * Expand general availability patterns to specific slot keys for a date range
+ */
+export function expandPatternsToDateRange(
+  patterns: GeneralAvailability[],
+  startDate: Date,
+  endDate: Date,
+  earliestTime?: string,
+  latestTime?: string
+): Set<string> {
+  const slots = new Set<string>();
+  const allDates = eachDayOfInterval({ start: startDate, end: endDate });
+
+  for (const date of allDates) {
+    const dateStr = format(date, "yyyy-MM-dd");
+    const dayOfWeek = getDay(date);
+
+    const dayPatterns = patterns.filter(p => p.dayOfWeek === dayOfWeek);
+
+    for (const pattern of dayPatterns) {
+      // Expand pattern to 30-min slots
+      let currentTime = pattern.startTime;
+      while (currentTime < pattern.endTime) {
+        slots.add(`${dateStr}-${currentTime}`);
+        currentTime = addThirtyMinutes(currentTime);
+      }
+    }
+  }
+
+  return slots;
 }
