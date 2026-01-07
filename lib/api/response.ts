@@ -99,8 +99,26 @@ export function handleApiError(error: unknown, context: string): NextResponse<Ap
   console.error(`API Error (${context}):`, error);
 
   if (error instanceof Error) {
-    // Check for specific error types
-    if (error.message.includes("not found")) {
+    // Check for Prisma-specific errors
+    const prismaError = error as { code?: string; meta?: { cause?: string } };
+
+    // Handle Prisma error codes
+    if (prismaError.code === "P2025") {
+      // Record not found (for update/delete operations)
+      return notFound(context);
+    }
+    if (prismaError.code === "P2002") {
+      // Unique constraint violation
+      return badRequest("Resource already exists", error.message);
+    }
+    if (prismaError.code === "P2003") {
+      // Foreign key constraint failed
+      return badRequest("Referenced resource not found", error.message);
+    }
+
+    // Check for generic "not found" in message (but not for create operations)
+    if (error.message.includes("Record to update not found") ||
+        error.message.includes("Record to delete not found")) {
       return notFound(context);
     }
     if (error.message.includes("unique constraint")) {
@@ -108,5 +126,6 @@ export function handleApiError(error: unknown, context: string): NextResponse<Ap
     }
   }
 
+  // Return server error with full details for debugging
   return serverError(`Failed to ${context}`, error);
 }
