@@ -155,8 +155,8 @@ const METHOD_LABELS = {
 };
 
 const METHOD_DESCRIPTIONS = {
-  select: "Click and drag to mark when you're free this week",
-  pattern: "Set your typical weekly schedule",
+  select: "Click and drag to mark your availability",
+  pattern: "Set a typical weekly schedule",
   describe: "Tell us in plain English when you're available",
 };
 
@@ -565,13 +565,6 @@ export function PlayerAvailabilityPage({
           </div>
         ) : (
           <div className="space-y-3">
-            {/* Method description */}
-            <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                {METHOD_DESCRIPTIONS[method]}
-              </p>
-            </div>
-
             {/* Method content */}
             <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
               {method === "select" && (

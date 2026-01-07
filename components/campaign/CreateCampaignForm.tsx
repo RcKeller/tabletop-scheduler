@@ -23,16 +23,17 @@ const MEETING_OPTIONS: { value: MeetingType; label: string }[] = [
 ];
 
 const LINK_TYPE_OPTIONS = [
+  { value: "core", label: "Core Rulebook" },
+  { value: "phb", label: "Player's Handbook" },
   { value: "rules", label: "Rules Reference" },
   { value: "character", label: "Character Builder" },
   { value: "wiki", label: "Campaign Wiki" },
-  { value: "discord", label: "Discord Server" },
   { value: "other", label: "Other" },
 ];
 
 const getMeetingConfig = (type: MeetingType) => {
   const configs: Record<MeetingType, { locationLabel: string; locationPlaceholder: string; roomLabel: string; roomPlaceholder: string }> = {
-    DISCORD: { locationLabel: "Server Invite", locationPlaceholder: "https://discord.gg/...", roomLabel: "Voice Channel", roomPlaceholder: "#voice-chat" },
+    DISCORD: { locationLabel: "Server Link", locationPlaceholder: "https://discord.gg/...", roomLabel: "Voice Channel", roomPlaceholder: "#voice-chat" },
     ZOOM: { locationLabel: "Meeting URL", locationPlaceholder: "https://zoom.us/j/...", roomLabel: "Meeting ID", roomPlaceholder: "123 456 7890" },
     GOOGLE_MEET: { locationLabel: "Meeting URL", locationPlaceholder: "https://meet.google.com/...", roomLabel: "Meeting Code", roomPlaceholder: "abc-defg-hij" },
     ROLL20: { locationLabel: "Game URL", locationPlaceholder: "https://app.roll20.net/join/...", roomLabel: "Campaign", roomPlaceholder: "Campaign name" },
@@ -298,17 +299,12 @@ export function CreateCampaignForm() {
 
           {/* Game System Card */}
           <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-            <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
-              Game System
-            </label>
             {!isCreatingGameSystem ? (
-              <div className="mt-2">
                 <GameSystemAutocomplete
                   value={gameSystem}
                   onChange={setGameSystem}
                   onCreateNew={() => setIsCreatingGameSystem(true)}
                 />
-              </div>
             ) : (
               <div className="mt-3 space-y-3 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50">
                 <div>
@@ -343,57 +339,11 @@ export function CreateCampaignForm() {
             )}
           </div>
 
-          {/* Location Card */}
-          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-            <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
-              Meeting Location
-            </label>
-            <select
-              value={meetingType || ""}
-              onChange={(e) => setMeetingType(e.target.value as MeetingType || null)}
-              className="mt-2 block w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-zinc-900 transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-            >
-              <option value="">Select platform...</option>
-              {MEETING_OPTIONS.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-
-            {meetingType && (
-              <div className="mt-3 space-y-3 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50">
-                <div>
-                  <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    {getMeetingConfig(meetingType).locationLabel}
-                  </label>
-                  <input
-                    type="text"
-                    value={meetingLocation}
-                    onChange={(e) => setMeetingLocation(e.target.value)}
-                    placeholder={getMeetingConfig(meetingType).locationPlaceholder}
-                    className="mt-1 block w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    {getMeetingConfig(meetingType).roomLabel}
-                  </label>
-                  <input
-                    type="text"
-                    value={meetingRoom}
-                    onChange={(e) => setMeetingRoom(e.target.value)}
-                    placeholder={getMeetingConfig(meetingType).roomPlaceholder}
-                    className="mt-1 block w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Player Prep Card */}
           <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
             <div className="flex items-center justify-between">
               <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                Player Prep
+                Player Instructions
               </label>
               <label className="flex cursor-pointer items-center gap-2">
                 <span className="text-xs text-zinc-500">
@@ -475,6 +425,52 @@ export function CreateCampaignForm() {
                       ))}
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Location Card */}
+          <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              Meeting Location
+            </label>
+            <select
+              value={meetingType || ""}
+              onChange={(e) => setMeetingType(e.target.value as MeetingType || null)}
+              className="mt-2 block w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-zinc-900 transition-colors focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+            >
+              <option value="">Select platform...</option>
+              {MEETING_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+
+            {meetingType && (
+              <div className="mt-3 space-y-3 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800/50">
+                <div>
+                  <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    {getMeetingConfig(meetingType).locationLabel}
+                  </label>
+                  <input
+                    type="text"
+                    value={meetingLocation}
+                    onChange={(e) => setMeetingLocation(e.target.value)}
+                    placeholder={getMeetingConfig(meetingType).locationPlaceholder}
+                    className="mt-1 block w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    {getMeetingConfig(meetingType).roomLabel}
+                  </label>
+                  <input
+                    type="text"
+                    value={meetingRoom}
+                    onChange={(e) => setMeetingRoom(e.target.value)}
+                    placeholder={getMeetingConfig(meetingType).roomPlaceholder}
+                    className="mt-1 block w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-800"
+                  />
                 </div>
               </div>
             )}

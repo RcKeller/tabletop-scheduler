@@ -270,15 +270,12 @@ export function CampaignPage({ event }: CampaignPageProps) {
 
                   {/* Profile callout for players */}
                   {showProfileCallout && (
-                    <div className="rounded-md bg-blue-50 p-2 dark:bg-blue-900/20">
-                      <p className="text-xs font-medium text-blue-700 dark:text-blue-400">Complete your player info</p>
-                      <button
+                    <button
                         onClick={handleCreateCharacter}
-                        className="mt-1.5 w-full rounded bg-blue-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                        className="w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
                       >
                         Create your Character
                       </button>
-                    </div>
                   )}
 
                   <button
