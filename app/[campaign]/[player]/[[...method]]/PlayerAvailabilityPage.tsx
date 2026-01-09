@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { parseISO, eachDayOfInterval, format } from "date-fns";
 import Link from "next/link";
@@ -11,6 +11,7 @@ import { TimezoneAutocomplete } from "@/components/timezone/TimezoneAutocomplete
 import type { TimeSlot, GeneralAvailability as GeneralAvailabilityType } from "@/lib/types";
 import { expandPatternsToDateRange, slotsToKeySet, keySetToSlots } from "@/lib/utils/availability";
 import { addThirtyMinutes } from "@/lib/utils/time-slots";
+import { utcToLocal, localToUTC } from "@/lib/utils/timezone";
 
 interface EventProps {
   id: string;
@@ -52,13 +53,37 @@ const METHOD_DESCRIPTIONS = {
   describe: "Tell us in plain English when you're available",
 };
 
+interface UndoSnapshot {
+  effectiveAvailability: TimeSlot[];
+  specificAvailability: TimeSlot[];
+  generalAvailability: GeneralAvailabilityType[];
+  exceptions: Array<{ date: string; startTime: string; endTime: string }>;
+  interpretation: string;
+  timestamp: number;
+}
+
 export function PlayerAvailabilityPage({
   event,
   participant,
   method,
 }: PlayerAvailabilityPageProps) {
   const router = useRouter();
-  const [timezone, setTimezone] = useState(event.timezone);
+
+  // Persist timezone globally in localStorage
+  const [timezone, setTimezoneState] = useState(event.timezone);
+
+  // Load timezone from localStorage on mount (after hydration)
+  useEffect(() => {
+    const stored = localStorage.getItem("when2play_timezone");
+    if (stored) {
+      setTimezoneState(stored);
+    }
+  }, []);
+
+  const setTimezone = useCallback((tz: string) => {
+    setTimezoneState(tz);
+    localStorage.setItem("when2play_timezone", tz);
+  }, []);
   const [effectiveAvailability, setEffectiveAvailability] = useState<TimeSlot[]>([]);
   const [specificAvailability, setSpecificAvailability] = useState<TimeSlot[]>([]);
   const [generalAvailability, setGeneralAvailability] = useState<GeneralAvailabilityType[]>([]);
@@ -67,6 +92,28 @@ export function PlayerAvailabilityPage({
   const [isSaving, setIsSaving] = useState(false);
   const [loadKey, setLoadKey] = useState(0);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const hasLoadedOnce = useRef(false);
+
+  // Undo stack for AI changes - stores multiple snapshots
+  const [undoStack, setUndoStack] = useState<UndoSnapshot[]>([]);
+  const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Auto-dismiss undo toasts after 30 seconds
+  useEffect(() => {
+    if (undoStack.length > 0) {
+      if (undoTimeoutRef.current) {
+        clearTimeout(undoTimeoutRef.current);
+      }
+      undoTimeoutRef.current = setTimeout(() => {
+        setUndoStack([]);
+      }, 30000);
+    }
+    return () => {
+      if (undoTimeoutRef.current) {
+        clearTimeout(undoTimeoutRef.current);
+      }
+    };
+  }, [undoStack]);
 
   const eventStartDate = useMemo(() => {
     return event.startDate ? parseISO(event.startDate) : new Date();
@@ -80,13 +127,18 @@ export function PlayerAvailabilityPage({
 
   // Load existing availability
   const loadAvailability = useCallback(async () => {
-    setIsLoading(true);
+    // Only show skeleton on initial load, not on refreshes
+    if (!hasLoadedOnce.current) {
+      setIsLoading(true);
+    }
     try {
       const params = new URLSearchParams();
       if (event.startDate) params.set("startDate", event.startDate.split("T")[0]);
       if (event.endDate) params.set("endDate", event.endDate.split("T")[0]);
       if (event.earliestTime) params.set("earliestTime", event.earliestTime);
       if (event.latestTime) params.set("latestTime", event.latestTime);
+      // Pass user's timezone so API can convert patterns to UTC
+      params.set("timezone", timezone);
 
       const url = `/api/availability/${participant.id}${params.toString() ? `?${params}` : ""}`;
       const res = await fetch(url);
@@ -119,9 +171,10 @@ export function PlayerAvailabilityPage({
     } catch (error) {
       console.error("Failed to load availability:", error);
     } finally {
+      hasLoadedOnce.current = true;
       setIsLoading(false);
     }
-  }, [participant.id, event.startDate, event.endDate, event.earliestTime, event.latestTime]);
+  }, [participant.id, event.startDate, event.endDate, event.earliestTime, event.latestTime, timezone]);
 
   useEffect(() => {
     loadAvailability();
@@ -133,13 +186,25 @@ export function PlayerAvailabilityPage({
   }, [event.id, participant.id]);
 
   // Auto-save for Select Times with smart diff to preserve interoperability
-  const handleAutoSaveAvailability = useCallback(async (slots: TimeSlot[]) => {
+  const handleAutoSaveAvailability = useCallback(async (slotsInUTC: TimeSlot[]) => {
     setIsSaving(true);
     try {
-      // Convert user's selection to a set
-      const selectedKeys = slotsToKeySet(slots);
+      // The grid sends slots in UTC. Convert to local timezone for pattern comparison.
+      // Pattern keys are in local timezone (user's recurring schedule is timezone-local).
+      const slotsInLocal = slotsInUTC.map(slot => {
+        const start = utcToLocal(slot.startTime, slot.date, timezone);
+        const end = utcToLocal(slot.endTime, slot.date, timezone);
+        return {
+          date: start.date,
+          startTime: start.time,
+          endTime: end.time,
+        };
+      });
 
-      // Compute what patterns would produce for the full date range
+      // Convert user's selection to a set (in local timezone)
+      const selectedKeys = slotsToKeySet(slotsInLocal);
+
+      // Compute what patterns would produce for the full date range (also in local timezone)
       const patternKeys = expandPatternsToDateRange(
         generalAvailability,
         eventStartDate,
@@ -179,19 +244,44 @@ export function PlayerAvailabilityPage({
         }
       }
 
+      // Convert additions from local to UTC for API storage
+      const additionsInLocal = keySetToSlots(additions);
+      const additionsInUTC = additionsInLocal.map(slot => {
+        const start = localToUTC(slot.startTime, slot.date, timezone);
+        const end = localToUTC(slot.endTime, slot.date, timezone);
+        return {
+          date: start.date,
+          startTime: start.time,
+          endTime: end.time,
+        };
+      });
+
+      // Convert exceptions from local to UTC for API storage
+      const exceptionsInUTC = newExceptions.map(exc => {
+        const start = localToUTC(exc.startTime, exc.date, timezone);
+        const end = localToUTC(exc.endTime, exc.date, timezone);
+        return {
+          date: start.date,
+          startTime: start.time,
+          endTime: end.time,
+        };
+      });
+
+      // Save to API - all data in UTC
       const res = await fetch(`/api/availability/${participant.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          availability: keySetToSlots(additions),
-          exceptions: newExceptions,
+          availability: additionsInUTC,
+          exceptions: exceptionsInUTC,
         }),
       });
 
       if (res.ok) {
-        setEffectiveAvailability(slots);
-        setSpecificAvailability(keySetToSlots(additions));
-        setExceptions(newExceptions);
+        // Store the UTC version for display (grid expects UTC and converts to local)
+        setEffectiveAvailability(slotsInUTC);
+        setSpecificAvailability(additionsInUTC);
+        setExceptions(exceptionsInUTC);
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     } catch (error) {
@@ -199,7 +289,7 @@ export function PlayerAvailabilityPage({
     } finally {
       setIsSaving(false);
     }
-  }, [participant.id, generalAvailability, eventStartDate, eventEndDate, event.earliestTime, event.latestTime]);
+  }, [participant.id, generalAvailability, eventStartDate, eventEndDate, event.earliestTime, event.latestTime, timezone]);
 
   // Save general availability patterns
   const handleSaveGeneralAvailability = async (patterns: Omit<GeneralAvailabilityType, "id" | "participantId">[]) => {
@@ -252,14 +342,67 @@ export function PlayerAvailabilityPage({
     }
   };
 
+  // Undo a single AI change from the stack
+  const handleAIUndo = useCallback(async (index: number) => {
+    const snapshot = undoStack[index];
+    if (!snapshot) return;
+
+    setIsSaving(true);
+    try {
+      // Restore the snapshot
+      const res = await fetch(`/api/availability/${participant.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          availability: snapshot.specificAvailability,
+          generalAvailability: snapshot.generalAvailability.map(p => ({
+            dayOfWeek: p.dayOfWeek,
+            startTime: p.startTime,
+            endTime: p.endTime,
+          })),
+          exceptions: snapshot.exceptions,
+        }),
+      });
+
+      if (res.ok) {
+        setEffectiveAvailability(snapshot.effectiveAvailability);
+        setSpecificAvailability(snapshot.specificAvailability);
+        setGeneralAvailability(snapshot.generalAvailability);
+        setExceptions(snapshot.exceptions);
+        // Remove this and all newer items from the stack
+        setUndoStack(prev => prev.slice(index + 1));
+      }
+    } catch (error) {
+      console.error("Failed to undo AI changes:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [participant.id, undoStack]);
+
+  // Dismiss a single undo item
+  const handleDismissUndo = useCallback((index: number) => {
+    setUndoStack(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
   // AI applies patterns, additions, exclusions, and routine removals
-  const handleAIApply = async (
+  const handleAIApply = useCallback(async (
     patterns: Omit<GeneralAvailabilityType, "id" | "participantId">[],
     additions: Array<{ date: string; startTime: string; endTime: string }>,
     exclusions: Array<{ date: string; startTime?: string; endTime?: string; reason?: string }>,
     routineRemovals: Array<{ dayOfWeek: number; startTime?: string; endTime?: string }>,
-    mode: "replace" | "adjust"
+    mode: "replace" | "adjust",
+    interpretation: string
   ) => {
+    // Save snapshot for undo BEFORE applying - push to stack
+    const snapshot: UndoSnapshot = {
+      effectiveAvailability: [...effectiveAvailability],
+      specificAvailability: [...specificAvailability],
+      generalAvailability: [...generalAvailability],
+      exceptions: [...exceptions],
+      interpretation,
+      timestamp: Date.now(),
+    };
+
     setIsSaving(true);
     try {
       const body: Record<string, unknown> = {};
@@ -343,31 +486,49 @@ export function PlayerAvailabilityPage({
         }
       }
 
-      // Apply specific date additions
+      // Apply specific date additions - convert from local to UTC
       if (additions.length > 0) {
+        // Convert additions from local timezone to UTC for storage
+        const additionsInUTC = additions.map(slot => {
+          const start = localToUTC(slot.startTime, slot.date, timezone);
+          const end = localToUTC(slot.endTime, slot.date, timezone);
+          return {
+            date: start.date,
+            startTime: start.time,
+            endTime: end.time,
+          };
+        });
+
         if (mode === "adjust") {
+          // effectiveAvailability is already in UTC
           const existingSlots = new Set(
             effectiveAvailability.map(s => `${s.date}|${s.startTime}|${s.endTime}`)
           );
           const newSlots = [
             ...effectiveAvailability,
-            ...additions.filter(a => !existingSlots.has(`${a.date}|${a.startTime}|${a.endTime}`))
+            ...additionsInUTC.filter(a => !existingSlots.has(`${a.date}|${a.startTime}|${a.endTime}`))
           ];
           body.availability = newSlots;
         } else {
-          body.availability = additions;
+          body.availability = additionsInUTC;
         }
       }
 
-      // Apply exclusions (specific date exceptions)
+      // Apply exclusions (specific date exceptions) - convert from local to UTC
       if (exclusions.length > 0) {
-        const exceptions = exclusions.map(exc => ({
-          date: exc.date,
-          startTime: exc.startTime || "00:00",
-          endTime: exc.endTime || "23:59",
-          reason: exc.reason,
-        }));
-        body.exceptions = exceptions;
+        const exceptionsInUTC = exclusions.map(exc => {
+          const startTime = exc.startTime || "00:00";
+          const endTime = exc.endTime || "23:59";
+          const start = localToUTC(startTime, exc.date, timezone);
+          const end = localToUTC(endTime, exc.date, timezone);
+          return {
+            date: start.date,
+            startTime: start.time,
+            endTime: end.time,
+            reason: exc.reason,
+          };
+        });
+        body.exceptions = exceptionsInUTC;
         if (mode === "adjust") {
           body.appendExceptions = true;
         }
@@ -381,6 +542,10 @@ export function PlayerAvailabilityPage({
         });
 
         if (res.ok) {
+          // Add to undo stack AFTER successful save
+          setUndoStack(prev => [snapshot, ...prev].slice(0, 10)); // Keep max 10 undo items
+
+          // Reload to get updated effective availability
           await new Promise(resolve => setTimeout(resolve, 100));
           setLoadKey((k) => k + 1);
         }
@@ -390,7 +555,7 @@ export function PlayerAvailabilityPage({
     } finally {
       setIsSaving(false);
     }
-  };
+  }, [effectiveAvailability, specificAvailability, generalAvailability, exceptions, participant.id, timezone]);
 
   const handleDone = () => {
     router.push(`/${event.slug}`);
@@ -477,6 +642,7 @@ export function PlayerAvailabilityPage({
               {method === "select" && (
                 <div className="p-3">
                   <VirtualizedAvailabilityGrid
+                    key={`grid-${timezone}`}
                     startDate={eventStartDate}
                     endDate={eventEndDate}
                     earliestTime={event.earliestTime}
@@ -487,7 +653,6 @@ export function PlayerAvailabilityPage({
                     isSaving={isSaving}
                     autoSave
                     timezone={timezone}
-                    eventTimezone={event.timezone}
                   />
                 </div>
               )}
@@ -569,6 +734,51 @@ export function PlayerAvailabilityPage({
           </div>
         )}
       </main>
+
+      {/* Fixed position undo toast stack - bottom right */}
+      {undoStack.length > 0 && (
+        <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
+          {undoStack.map((item, index) => (
+            <div
+              key={item.timestamp}
+              className="rounded-lg border border-green-200 bg-white p-3 shadow-lg dark:border-green-800 dark:bg-zinc-900"
+            >
+              <div className="flex items-start gap-3">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+                  <svg className="h-4 w-4 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                    Updated
+                  </p>
+                  <p className="text-xs text-zinc-600 dark:text-zinc-400 line-clamp-2">
+                    {item.interpretation}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    onClick={() => handleAIUndo(index)}
+                    disabled={isSaving}
+                    className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 disabled:opacity-50"
+                  >
+                    Undo
+                  </button>
+                  <button
+                    onClick={() => handleDismissUndo(index)}
+                    className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                  >
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

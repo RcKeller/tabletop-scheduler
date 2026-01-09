@@ -44,7 +44,22 @@ interface CampaignPageProps {
 export function CampaignPage({ event }: CampaignPageProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabType>("info");
-  const [timezone, setTimezone] = useState(event.timezone);
+
+  // Persist timezone globally in localStorage
+  const [timezone, setTimezoneState] = useState(event.timezone);
+
+  // Load timezone from localStorage on mount (after hydration)
+  useEffect(() => {
+    const stored = localStorage.getItem("when2play_timezone");
+    if (stored) {
+      setTimezoneState(stored);
+    }
+  }, []);
+
+  const setTimezone = useCallback((tz: string) => {
+    setTimezoneState(tz);
+    localStorage.setItem("when2play_timezone", tz);
+  }, []);
   const [participantsWithAvailability, setParticipantsWithAvailability] = useState<ParticipantWithAvailability[]>([]);
   const [currentParticipant, setCurrentParticipant] = useState<Participant | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -120,6 +135,40 @@ export function CampaignPage({ event }: CampaignPageProps) {
       setIsAddingPlayer(false);
     }
   }, [newPlayerName, event.slug]);
+
+  // Handle removing a player
+  const handleRemovePlayer = useCallback(async (participantId: string, displayName: string) => {
+    if (!confirm(`Are you sure you want to remove ${displayName} from this campaign? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/participants/${participantId}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        setParticipants((prev) => prev.filter(p => p.id !== participantId));
+        setParticipantsWithAvailability((prev) => prev.filter(p => p.id !== participantId));
+        // Close profile modal if the removed player was being viewed
+        if (selectedParticipant?.id === participantId) {
+          setIsProfileModalOpen(false);
+          setSelectedParticipant(null);
+        }
+        // Clear current participant if removed
+        if (currentParticipant?.id === participantId) {
+          setCurrentParticipant(null);
+          localStorage.removeItem(`participant_${event.id}`);
+        }
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to remove player");
+      }
+    } catch (error) {
+      console.error("Failed to remove player:", error);
+      alert("Failed to remove player");
+    }
+  }, [selectedParticipant, currentParticipant, event.id]);
 
   // Navigate to character edit page for current user
   const handleCreateCharacter = useCallback(() => {
@@ -340,6 +389,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
                 <div className="flex gap-4">
                   <div className="flex-1">
                     <VirtualizedAvailabilityGrid
+                      key={`heatmap-${timezone}`}
                       startDate={eventStartDate}
                       endDate={eventEndDate}
                       earliestTime={event.earliestTime}
@@ -355,7 +405,6 @@ export function CampaignPage({ event }: CampaignPageProps) {
                       }}
                       onLeaveSlot={() => setHoveredSlotInfo(null)}
                       timezone={timezone}
-                      eventTimezone={event.timezone}
                     />
                   </div>
                   <div className="w-56 shrink-0">
@@ -464,55 +513,75 @@ export function CampaignPage({ event }: CampaignPageProps) {
                     const isCurrentUser = currentParticipant?.id === p.id;
 
                     return (
-                      <button
+                      <div
                         key={p.id}
-                        type="button"
-                        onClick={() => handleOpenProfile(p)}
-                        className="flex items-start gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-zinc-600 dark:hover:bg-zinc-750"
+                        className="group relative rounded-lg border border-zinc-200 bg-zinc-50 transition-colors hover:border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-zinc-600 dark:hover:bg-zinc-750"
                       >
-                        {p.characterTokenBase64 ? (
-                          <img
-                            src={p.characterTokenBase64}
-                            alt={p.characterName || p.displayName}
-                            className="h-12 w-12 rounded-full object-cover ring-2 ring-zinc-200 dark:ring-zinc-700"
-                          />
-                        ) : (
-                          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-200 text-lg font-medium text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400">
-                            {p.displayName.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-zinc-900 dark:text-zinc-100">
-                              {p.displayName}
-                            </span>
-                            {p.isGm && (
-                              <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                                GM
+                        <button
+                          type="button"
+                          onClick={() => handleOpenProfile(p)}
+                          className="flex w-full items-start gap-3 p-3 text-left"
+                        >
+                          {p.characterTokenBase64 ? (
+                            <img
+                              src={p.characterTokenBase64}
+                              alt={p.characterName || p.displayName}
+                              className="h-12 w-12 rounded-full object-cover ring-2 ring-zinc-200 dark:ring-zinc-700"
+                            />
+                          ) : (
+                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-200 text-lg font-medium text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400">
+                              {p.displayName.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                                {p.displayName}
                               </span>
+                              {p.isGm && (
+                                <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                                  GM
+                                </span>
+                              )}
+                              {isCurrentUser && (
+                                <span className="text-xs text-zinc-400">(you)</span>
+                              )}
+                            </div>
+                            {p.characterName && (
+                              <p className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400">
+                                {p.characterName}
+                                {p.characterClass && (
+                                  <span className="text-zinc-400 dark:text-zinc-500"> · {p.characterClass}</span>
+                                )}
+                              </p>
                             )}
-                            {isCurrentUser && (
-                              <span className="text-xs text-zinc-400">(you)</span>
+                            {p.notes && (
+                              <p className="mt-1 text-xs text-zinc-500 line-clamp-2">
+                                {p.notes}
+                              </p>
                             )}
                           </div>
-                          {p.characterName && (
-                            <p className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400">
-                              {p.characterName}
-                              {p.characterClass && (
-                                <span className="text-zinc-400 dark:text-zinc-500"> · {p.characterClass}</span>
-                              )}
-                            </p>
-                          )}
-                          {p.notes && (
-                            <p className="mt-1 text-xs text-zinc-500 line-clamp-2">
-                              {p.notes}
-                            </p>
-                          )}
-                        </div>
-                        <svg className="h-5 w-5 shrink-0 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
+                          <svg className="h-5 w-5 shrink-0 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
+                        {/* Remove button - visible on hover */}
+                        {currentParticipant && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemovePlayer(p.id, p.displayName);
+                            }}
+                            className="absolute right-1 top-1 rounded p-1 text-zinc-400 opacity-0 transition-opacity hover:bg-red-100 hover:text-red-600 group-hover:opacity-100 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                            title={`Remove ${p.displayName}`}
+                          >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
                     );
                   })}
                 </div>

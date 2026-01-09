@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { format } from "date-fns";
 import { computeEffectiveAvailability } from "@/lib/utils/availability-expander";
+import { localToUTC } from "@/lib/utils/timezone";
 
 export async function GET(
   request: NextRequest,
@@ -16,6 +17,8 @@ export async function GET(
     const eventEndDate = searchParams.get("endDate");
     const earliestTime = searchParams.get("earliestTime");
     const latestTime = searchParams.get("latestTime");
+    // User's timezone for converting patterns (patterns are stored in user's local timezone)
+    const userTimezone = searchParams.get("timezone") || "UTC";
 
     const [availability, generalAvailability, exceptions, participant] = await Promise.all([
       prisma.availability.findMany({
@@ -68,19 +71,49 @@ export async function GET(
     const eventLatestTime = latestTime || participant?.event?.latestTime;
 
     if (startDate && endDate) {
-      effectiveAvailability = computeEffectiveAvailability(
+      // Compute effective availability
+      // Note: Patterns are in user's local timezone, specific availability and exceptions are in UTC
+      // We need to handle this properly by expanding patterns to UTC
+      const rawEffective = computeEffectiveAvailability(
         generalAvailability.map((p) => ({
           dayOfWeek: p.dayOfWeek,
           startTime: p.startTime,
           endTime: p.endTime,
         })),
-        formattedAvailability,
-        formattedExceptions,
+        [], // Don't mix with specific availability yet (it's in UTC, patterns are local)
+        [], // Don't apply exceptions yet (they're in UTC)
         startDate,
         endDate,
         eventEarliestTime || undefined,
         eventLatestTime || undefined
       );
+
+      // Convert pattern-expanded slots from local timezone to UTC
+      const patternsInUTC = rawEffective.map(slot => {
+        const start = localToUTC(slot.startTime, slot.date, userTimezone);
+        const end = localToUTC(slot.endTime, slot.date, userTimezone);
+        return {
+          date: start.date,
+          startTime: start.time,
+          endTime: end.time,
+        };
+      });
+
+      // Now combine UTC pattern slots with UTC specific availability
+      const allSlots = [...patternsInUTC, ...formattedAvailability];
+
+      // Apply UTC exceptions
+      // Simple implementation: filter out slots that overlap with exceptions
+      effectiveAvailability = allSlots.filter(slot => {
+        return !formattedExceptions.some(exc =>
+          exc.date === slot.date &&
+          exc.startTime < slot.endTime &&
+          exc.endTime > slot.startTime
+        );
+      });
+
+      // Merge overlapping slots (simplified - just use as-is for now)
+      // TODO: Properly merge overlapping slots
     }
 
     return NextResponse.json({

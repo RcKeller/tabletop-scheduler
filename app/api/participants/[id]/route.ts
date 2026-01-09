@@ -105,3 +105,41 @@ export async function PUT(
     );
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+
+    const participant = await prisma.participant.findUnique({
+      where: { id },
+      include: {
+        event: {
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+
+    if (!participant) {
+      return NextResponse.json({ error: "Participant not found" }, { status: 404 });
+    }
+
+    // Delete participant and all related data (cascade delete handles availability, etc.)
+    await prisma.participant.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({ success: true, message: "Participant removed" });
+  } catch (error) {
+    console.error("Error deleting participant:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json(
+      { error: "Failed to remove participant", details: message },
+      { status: 500 }
+    );
+  }
+}

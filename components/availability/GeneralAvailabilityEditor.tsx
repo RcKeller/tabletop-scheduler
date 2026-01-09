@@ -1,15 +1,17 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { format } from "date-fns";
 import type { GeneralAvailability } from "@/lib/types";
+import { utcToLocal } from "@/lib/utils/timezone";
 
 interface GeneralAvailabilityEditorProps {
-  patterns: GeneralAvailability[];
-  timezone: string;
+  patterns: GeneralAvailability[];  // Patterns stored/edited in user's local timezone
+  timezone: string;  // User's display timezone
   onSave: (patterns: Omit<GeneralAvailability, "id" | "participantId">[]) => void;
   isSaving: boolean;
-  eventEarliestTime?: string;
-  eventLatestTime?: string;
+  eventEarliestTime?: string;  // In UTC
+  eventLatestTime?: string;    // In UTC
 }
 
 const DAYS = [
@@ -82,15 +84,28 @@ export function GeneralAvailabilityEditor({
   const [initialized, setInitialized] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
 
+  // Convert UTC event time window to user's local timezone for comparison
+  const localTimeWindow = useMemo(() => {
+    if (!eventEarliestTime || !eventLatestTime) return null;
+    // Use today's date as reference for conversion
+    const refDate = format(new Date(), "yyyy-MM-dd");
+    const localEarliest = utcToLocal(eventEarliestTime, refDate, timezone);
+    const localLatest = utcToLocal(eventLatestTime, refDate, timezone);
+    return {
+      earliest: localEarliest.time,
+      latest: localLatest.time,
+    };
+  }, [eventEarliestTime, eventLatestTime, timezone]);
+
   const entriesOutsideWindow = useMemo(() => {
-    if (!eventEarliestTime || !eventLatestTime) return [];
+    if (!localTimeWindow) return [];
 
     return entries.filter((entry) => {
-      const startInWindow = isTimeInWindow(entry.startTime, eventEarliestTime, eventLatestTime);
-      const endInWindow = isTimeInWindow(entry.endTime, eventEarliestTime, eventLatestTime);
+      const startInWindow = isTimeInWindow(entry.startTime, localTimeWindow.earliest, localTimeWindow.latest);
+      const endInWindow = isTimeInWindow(entry.endTime, localTimeWindow.earliest, localTimeWindow.latest);
       return !startInWindow || !endInWindow;
     });
-  }, [entries, eventEarliestTime, eventLatestTime]);
+  }, [entries, localTimeWindow]);
 
   // Initialize from patterns only (no auto-population)
   useEffect(() => {
@@ -338,14 +353,14 @@ export function GeneralAvailabilityEditor({
       </div>
 
       {/* Warning for times outside campaign window */}
-      {entriesOutsideWindow.length > 0 && eventEarliestTime && eventLatestTime && (
+      {entriesOutsideWindow.length > 0 && localTimeWindow && (
         <div className="rounded-md bg-amber-50 p-3 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
           <div className="flex items-start gap-2">
             <svg className="mt-0.5 h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             <span>
-              Some times are outside this campaign's window ({formatTimeDisplay(eventEarliestTime)} - {formatTimeDisplay(eventLatestTime)}).
+              Some times are outside this campaign's window ({formatTimeDisplay(localTimeWindow.earliest)} - {formatTimeDisplay(localTimeWindow.latest)}).
             </span>
           </div>
         </div>

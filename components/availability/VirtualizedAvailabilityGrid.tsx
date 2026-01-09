@@ -19,6 +19,45 @@ import type {
 } from "ag-grid-community";
 import type { TimeSlot } from "@/lib/types";
 import { generateTimeSlots, addThirtyMinutes } from "@/lib/utils/time-slots";
+import { utcToLocal, localToUTC } from "@/lib/utils/timezone";
+
+/**
+ * Convert availability array from UTC to local timezone for display
+ */
+function convertAvailabilityToLocal(
+  availability: TimeSlot[],
+  timezone: string
+): TimeSlot[] {
+  if (timezone === "UTC") return availability;
+  return availability.map(slot => {
+    const start = utcToLocal(slot.startTime, slot.date, timezone);
+    const end = utcToLocal(slot.endTime, slot.date, timezone);
+    return {
+      date: start.date,
+      startTime: start.time,
+      endTime: end.time,
+    };
+  });
+}
+
+/**
+ * Convert availability array from local timezone to UTC for storage
+ */
+function convertAvailabilityToUTC(
+  availability: TimeSlot[],
+  timezone: string
+): TimeSlot[] {
+  if (timezone === "UTC") return availability;
+  return availability.map(slot => {
+    const start = localToUTC(slot.startTime, slot.date, timezone);
+    const end = localToUTC(slot.endTime, slot.date, timezone);
+    return {
+      date: start.date,
+      startTime: start.time,
+      endTime: end.time,
+    };
+  });
+}
 
 // Register AG Grid modules
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -32,18 +71,17 @@ interface Participant {
 interface VirtualizedAvailabilityGridProps {
   startDate: Date;
   endDate: Date;
-  earliestTime?: string;
-  latestTime?: string;
+  earliestTime?: string;  // Time window start (in UTC)
+  latestTime?: string;    // Time window end (in UTC)
   mode: "edit" | "heatmap";
-  availability?: TimeSlot[];
-  onSave?: (slots: TimeSlot[]) => void;
+  availability?: TimeSlot[];  // Availability data (in UTC)
+  onSave?: (slots: TimeSlot[]) => void;  // Returns UTC times
   isSaving?: boolean;
   autoSave?: boolean;
-  participants?: Participant[];
+  participants?: Participant[];  // Participant availability (in UTC)
   onHoverSlot?: (date: string, time: string, available: Participant[], unavailable: Participant[]) => void;
   onLeaveSlot?: () => void;
-  timezone?: string;
-  eventTimezone?: string;
+  timezone?: string;  // User's display timezone (defaults to UTC)
 }
 
 // Build availability lookup from TimeSlot array
@@ -110,18 +148,27 @@ function getHeatmapBgColor(count: number, total: number, isDark: boolean): strin
   return isDark ? "#27272a" : "#e4e4e7";
 }
 
-// Group dates by week
+// Group dates by week, returning "Week 1", "Week 2", etc.
 function groupDatesByWeek(dates: Date[]): Map<string, Date[]> {
   const groups = new Map<string, Date[]>();
+  const weekStarts = new Map<string, number>(); // weekStartKey -> weekNumber
+  let weekCounter = 1;
 
   for (const date of dates) {
     const weekStart = startOfWeek(date, { weekStartsOn: 0 });
-    const weekKey = format(weekStart, "MMM d");
+    const weekStartKey = format(weekStart, "yyyy-MM-dd");
 
-    if (!groups.has(weekKey)) {
-      groups.set(weekKey, []);
+    if (!weekStarts.has(weekStartKey)) {
+      weekStarts.set(weekStartKey, weekCounter++);
     }
-    groups.get(weekKey)!.push(date);
+
+    const weekNum = weekStarts.get(weekStartKey)!;
+    const weekLabel = `Week ${weekNum}`;
+
+    if (!groups.has(weekLabel)) {
+      groups.set(weekLabel, []);
+    }
+    groups.get(weekLabel)!.push(date);
   }
 
   return groups;
@@ -140,7 +187,27 @@ export function VirtualizedAvailabilityGrid({
   participants = [],
   onHoverSlot,
   onLeaveSlot,
+  timezone = "UTC",
 }: VirtualizedAvailabilityGridProps) {
+  // UTC-first architecture:
+  // - All incoming data (availability, participants, time window) is in UTC
+  // - Convert to user's timezone for display
+  // - Convert back to UTC when saving
+  const userTimezone = timezone;
+
+  // Convert availability from UTC to user's timezone for display
+  const displayAvailability = useMemo(() => {
+    return convertAvailabilityToLocal(availability, userTimezone);
+  }, [availability, userTimezone]);
+
+  // Convert participants' availability from UTC to user's timezone for heatmap
+  const displayParticipants = useMemo(() => {
+    return participants.map(p => ({
+      ...p,
+      availability: convertAvailabilityToLocal(p.availability, userTimezone),
+    }));
+  }, [participants, userTimezone]);
+
   const gridRef = useRef<AgGridReact>(null);
   const gridApiRef = useRef<GridApi | null>(null);
 
@@ -175,7 +242,7 @@ export function VirtualizedAvailabilityGrid({
 
   // Sync selectedSlots when availability prop changes (only if actually different and no pending local changes)
   useEffect(() => {
-    const serialized = serializeAvailability(availability);
+    const serialized = serializeAvailability(displayAvailability);
 
     // If props match our local state, clear the pending flag
     if (serialized === lastAvailabilityRef.current) {
@@ -189,7 +256,7 @@ export function VirtualizedAvailabilityGrid({
     }
 
     lastAvailabilityRef.current = serialized;
-    selectedSlotsRef.current = buildAvailabilitySet(availability);
+    selectedSlotsRef.current = buildAvailabilitySet(displayAvailability);
     // Refresh grid if it exists using requestAnimationFrame for smoother updates
     if (gridApiRef.current) {
       if (refreshFrameRef.current) {
@@ -200,7 +267,7 @@ export function VirtualizedAvailabilityGrid({
         refreshFrameRef.current = null;
       });
     }
-  }, [availability]);
+  }, [displayAvailability]);
 
   // Cleanup animation frame on unmount
   useEffect(() => {
@@ -214,6 +281,21 @@ export function VirtualizedAvailabilityGrid({
     };
   }, []);
 
+  // Convert the time window from UTC to user's timezone for Y-axis display
+  const displayTimeWindow = useMemo(() => {
+    if (userTimezone === "UTC") {
+      return { earliest: earliestTime, latest: latestTime };
+    }
+    // Use the start date as reference for timezone conversion
+    const refDate = format(startDate, "yyyy-MM-dd");
+    const convertedEarliest = utcToLocal(earliestTime, refDate, userTimezone);
+    const convertedLatest = utcToLocal(latestTime, refDate, userTimezone);
+    return {
+      earliest: convertedEarliest.time,
+      latest: convertedLatest.time,
+    };
+  }, [userTimezone, earliestTime, latestTime, startDate]);
+
   // Generate all dates in range
   const allDates = useMemo(() => {
     return eachDayOfInterval({ start: startDate, end: endDate });
@@ -224,18 +306,23 @@ export function VirtualizedAvailabilityGrid({
     return allDates.map(d => format(d, "yyyy-MM-dd"));
   }, [allDates]);
 
-  // Generate time slots
+  // Generate time slots using the converted time window
   const timeSlots = useMemo(
-    () => generateTimeSlots(earliestTime, latestTime),
-    [earliestTime, latestTime]
+    () => generateTimeSlots(displayTimeWindow.earliest, displayTimeWindow.latest),
+    [displayTimeWindow.earliest, displayTimeWindow.latest]
   );
+
+  // Helper to convert user's local timezone slots back to UTC for saving
+  const convertToUTC = useCallback((slots: TimeSlot[]): TimeSlot[] => {
+    return convertAvailabilityToUTC(slots, userTimezone);
+  }, [userTimezone]);
 
   // Build heatmap data
   const heatmapData = useMemo(() => {
     if (mode !== "heatmap") return new Map<string, Set<string>>();
 
     const map = new Map<string, Set<string>>();
-    for (const p of participants) {
+    for (const p of displayParticipants) {
       for (const slot of p.availability) {
         let currentTime = slot.startTime;
         while (currentTime < slot.endTime) {
@@ -247,7 +334,7 @@ export function VirtualizedAvailabilityGrid({
       }
     }
     return map;
-  }, [mode, participants]);
+  }, [mode, displayParticipants]);
 
   // Static row data - doesn't include selection state
   const rowData = useMemo(() => {
@@ -417,7 +504,8 @@ export function VirtualizedAvailabilityGrid({
     if (autoSave && onSave) {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = setTimeout(() => {
-        onSave(newSlots);
+        // Convert from user's local timezone back to UTC before saving
+        onSave(convertToUTC(newSlots));
         // Clear pending flag after save is initiated - allow prop sync after short delay
         // This gives time for the server response to arrive with matching data
         setTimeout(() => {
@@ -428,7 +516,7 @@ export function VirtualizedAvailabilityGrid({
       // If not auto-saving, clear the pending flag immediately
       hasPendingChangesRef.current = false;
     }
-  }, [mode, autoSave, onSave, refreshGrid]);
+  }, [mode, autoSave, onSave, refreshGrid, convertToUTC]);
 
   // Global mouse up listener
   useEffect(() => {
@@ -562,10 +650,10 @@ export function VirtualizedAvailabilityGrid({
   // Grid ready handler
   const onGridReady = useCallback((params: GridReadyEvent) => {
     gridApiRef.current = params.api;
-    // Initialize with current availability
-    selectedSlotsRef.current = buildAvailabilitySet(availability);
-    lastAvailabilityRef.current = serializeAvailability(availability);
-  }, [availability]);
+    // Initialize with current availability (in display timezone)
+    selectedSlotsRef.current = buildAvailabilitySet(displayAvailability);
+    lastAvailabilityRef.current = serializeAvailability(displayAvailability);
+  }, [displayAvailability]);
 
   // AG Grid theme
   const gridTheme = useMemo(() => {
@@ -714,7 +802,7 @@ export function VirtualizedAvailabilityGrid({
           )}
           {!autoSave && onSave && (
             <button
-              onClick={() => onSave(setToTimeSlots(selectedSlotsRef.current))}
+              onClick={() => onSave(convertToUTC(setToTimeSlots(selectedSlotsRef.current)))}
               disabled={isSaving}
               className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >

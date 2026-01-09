@@ -9,7 +9,14 @@
       "Bash(ls:*)",
       "Bash(grep:*)",
       "Bash(find:*)",
-      "Bash(npx prisma db seed)"
+      "Bash(npx prisma db seed)",
+      "Bash(cat:*)",
+      "Bash(docker --version:*)",
+      "Bash(psql:*)",
+      "Bash(brew list:*)",
+      "Bash(brew install:*)",
+      "Bash(brew services start:*)",
+      "Bash(/opt/homebrew/opt/postgresql@16/bin/createdb:*)"
     ]
   }
 }

@@ -2,11 +2,11 @@
 
 import { useState, useMemo, useCallback } from "react";
 import { format, parse } from "date-fns";
-import { formatInTimeZone } from "date-fns-tz";
 import { HoverDetailPanel } from "./HoverDetailPanel";
 import { HeatmapLegend } from "./HeatmapLegend";
 import type { TimeSlot } from "@/lib/types";
 import { generateTimeSlots, getWeekDates } from "@/lib/utils/time-slots";
+import { utcToLocal } from "@/lib/utils/timezone";
 
 interface Participant {
   id: string;
@@ -24,13 +24,12 @@ interface SessionDetails {
 }
 
 interface CombinedHeatmapProps {
-  participants: Participant[];
+  participants: Participant[];  // Availability data is in UTC
   weekStart: Date;
-  earliestTime?: string;
-  latestTime?: string;
+  earliestTime?: string;  // Time window in UTC
+  latestTime?: string;    // Time window in UTC
   sessionLengthMinutes?: number;
-  timezone?: string;
-  eventTimezone?: string;
+  timezone?: string;  // User's display timezone (defaults to UTC)
   sessionDetails?: SessionDetails;
 }
 
@@ -54,10 +53,10 @@ export function CombinedHeatmap({
   earliestTime = "00:00",
   latestTime = "23:30",
   sessionLengthMinutes = 180,
-  timezone,
-  eventTimezone,
+  timezone = "UTC",
   sessionDetails,
 }: CombinedHeatmapProps) {
+  // UTC-first: All incoming data is in UTC, convert to user's timezone for display
   const [hoveredSlot, setHoveredSlot] = useState<{ date: string; time: string } | null>(null);
 
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
@@ -220,22 +219,11 @@ export function CombinedHeatmap({
                   >
                     <div className="flex items-center justify-center p-1 text-xs text-zinc-400 dark:text-zinc-500">
                       {isHourMark && (() => {
-                        // If we have both timezones and they differ, convert the display
-                        if (timezone && eventTimezone && timezone !== eventTimezone) {
-                          // Create a date in the event timezone and format in viewer timezone
-                          const dateStr = format(weekDates[0], "yyyy-MM-dd");
-                          const dateTimeStr = `${dateStr}T${time}:00`;
-                          try {
-                            return formatInTimeZone(
-                              new Date(dateTimeStr),
-                              timezone,
-                              "h a"
-                            );
-                          } catch {
-                            return format(parse(time, "HH:mm", new Date()), "h a");
-                          }
-                        }
-                        return format(parse(time, "HH:mm", new Date()), "h a");
+                        // UTC-first: Convert UTC time to user's timezone for display
+                        const dateStr = format(weekDates[0], "yyyy-MM-dd");
+                        const localTime = utcToLocal(time, dateStr, timezone);
+                        const timeObj = parse(localTime.time, "HH:mm", new Date());
+                        return format(timeObj, "h a");
                       })()}
                     </div>
                     {weekDates.map((date) => {

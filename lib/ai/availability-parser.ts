@@ -65,6 +65,15 @@ Rules:
 - "Weekdays" means Monday through Friday
 - "Weekends" means Saturday and Sunday
 
+OVERNIGHT TIME RANGES - IMPORTANT:
+- If someone says a time range like "2pm-11am" or "10pm-2am", this means overnight (crossing midnight)
+- The endTime will be LESS than startTime for overnight ranges (e.g., startTime: "22:00", endTime: "02:00")
+- "Night shift" or "graveyard shift" typically means overnight hours
+- Examples:
+  - "available 10pm to 2am" -> startTime: "22:00", endTime: "02:00"
+  - "free from 11pm until 6am" -> startTime: "23:00", endTime: "06:00"
+  - "2pm-11am" -> startTime: "14:00", endTime: "11:00" (overnight, implies next day)
+
 DETECTING UNAVAILABILITY - CRITICAL:
 - Look for: "not available", "can't make it", "busy", "unavailable", "have plans", "won't be free", "except", "but not", "never", "don't work for me"
 - If they say "I work 9-5 M-F" -> routineRemovals for Mon-Fri 9-5
