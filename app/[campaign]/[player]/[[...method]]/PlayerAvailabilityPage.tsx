@@ -425,47 +425,38 @@ export function PlayerAvailabilityPage({
           isAvailable: p.isAvailable,
         }));
 
-      // Apply routine removals first (remove days/times from routine)
+      // Apply routine removals - create "Not Available" patterns for blocked times
+      // These will trump any "Available" patterns for the same day/time
       if (routineRemovals.length > 0) {
         for (const removal of routineRemovals) {
+          // First, remove any existing "Not Available" pattern for this day to avoid duplicates
+          updatedPatterns = updatedPatterns.filter(p => {
+            if (p.dayOfWeek !== removal.dayOfWeek) return true;
+            if (p.isAvailable !== false) return true; // Keep available patterns for now
+            // Remove matching unavailable patterns
+            if (!removal.startTime || !removal.endTime) {
+              return false; // Remove all unavailable for this day
+            }
+            // Check for overlap - remove if overlapping
+            return removal.endTime <= p.startTime || removal.startTime >= p.endTime;
+          });
+
+          // Add a "Not Available" pattern for this removal
           if (!removal.startTime || !removal.endTime) {
-            // Remove entire day
-            updatedPatterns = updatedPatterns.filter(p => p.dayOfWeek !== removal.dayOfWeek);
+            // Entire day is not available
+            updatedPatterns.push({
+              dayOfWeek: removal.dayOfWeek,
+              startTime: "00:00",
+              endTime: "23:59",
+              isAvailable: false,
+            });
           } else {
-            // Remove specific time range from that day
-            // This is more complex - we might need to split existing patterns
-            updatedPatterns = updatedPatterns.flatMap(p => {
-              if (p.dayOfWeek !== removal.dayOfWeek) return [p];
-
-              // Check if removal overlaps with this pattern
-              if (removal.endTime! <= p.startTime || removal.startTime! >= p.endTime) {
-                // No overlap
-                return [p];
-              }
-
-              const result: typeof updatedPatterns = [];
-
-              // Part before removal
-              if (p.startTime < removal.startTime!) {
-                result.push({
-                  dayOfWeek: p.dayOfWeek,
-                  startTime: p.startTime,
-                  endTime: removal.startTime!,
-                  isAvailable: p.isAvailable,
-                });
-              }
-
-              // Part after removal
-              if (p.endTime > removal.endTime!) {
-                result.push({
-                  dayOfWeek: p.dayOfWeek,
-                  startTime: removal.endTime!,
-                  endTime: p.endTime,
-                  isAvailable: p.isAvailable,
-                });
-              }
-
-              return result;
+            // Specific time range is not available
+            updatedPatterns.push({
+              dayOfWeek: removal.dayOfWeek,
+              startTime: removal.startTime,
+              endTime: removal.endTime,
+              isAvailable: false,
             });
           }
         }

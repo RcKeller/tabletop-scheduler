@@ -27,6 +27,7 @@ function shouldContinueSlotGeneration(currentTime: string, endTime: string, star
 
 /**
  * Expand general availability patterns to specific slot keys for a week
+ * Only expands patterns where isAvailable !== false
  */
 export function expandPatternsForWeek(
   patterns: GeneralAvailability[],
@@ -42,7 +43,8 @@ export function expandPatternsForWeek(
     const nextDateStr = format(addDays(date, 1), "yyyy-MM-dd");
     const dayOfWeek = getDay(date);
 
-    const dayPatterns = patterns.filter(p => p.dayOfWeek === dayOfWeek);
+    // Only expand available patterns (isAvailable !== false)
+    const dayPatterns = patterns.filter(p => p.dayOfWeek === dayOfWeek && p.isAvailable !== false);
 
     for (const pattern of dayPatterns) {
       // Expand pattern to 30-min slots (handles overnight)
@@ -51,6 +53,11 @@ export function expandPatternsForWeek(
       let passedMidnight = false;
 
       while (shouldContinueSlotGeneration(currentTime, pattern.endTime, pattern.startTime)) {
+        // For non-overnight patterns, stop if we've wrapped past midnight to prevent infinite loop
+        if (!isOvernight && passedMidnight) {
+          break;
+        }
+
         // Use next day's date if we've passed midnight in an overnight pattern
         const slotDate = (isOvernight && passedMidnight) ? nextDateStr : dateStr;
         slots.add(`${slotDate}-${currentTime}`);
@@ -80,6 +87,11 @@ export function slotsToKeySet(slots: TimeSlot[]): Set<string> {
     let passedMidnight = false;
 
     while (shouldContinueSlotGeneration(currentTime, slot.endTime, slot.startTime)) {
+      // For non-overnight slots, stop if we've wrapped past midnight to prevent infinite loop
+      if (!isOvernight && passedMidnight) {
+        break;
+      }
+
       // For overnight slots, use next day's date after midnight
       let slotDate = slot.date;
       if (isOvernight && passedMidnight) {
@@ -156,6 +168,7 @@ export function keySetToSlots(keys: Set<string>): TimeSlot[] {
 /**
  * Expand general availability patterns to specific slot keys for a date range
  * Handles overnight patterns where endTime < startTime
+ * Only expands patterns where isAvailable !== false
  */
 export function expandPatternsToDateRange(
   patterns: GeneralAvailability[],
@@ -172,7 +185,8 @@ export function expandPatternsToDateRange(
     const nextDateStr = format(addDays(date, 1), "yyyy-MM-dd");
     const dayOfWeek = getDay(date);
 
-    const dayPatterns = patterns.filter(p => p.dayOfWeek === dayOfWeek);
+    // Only expand available patterns (isAvailable !== false)
+    const dayPatterns = patterns.filter(p => p.dayOfWeek === dayOfWeek && p.isAvailable !== false);
 
     for (const pattern of dayPatterns) {
       // Expand pattern to 30-min slots (handles overnight)
@@ -181,6 +195,11 @@ export function expandPatternsToDateRange(
       let passedMidnight = false;
 
       while (shouldContinueSlotGeneration(currentTime, pattern.endTime, pattern.startTime)) {
+        // For non-overnight patterns, stop if we've wrapped past midnight to prevent infinite loop
+        if (!isOvernight && passedMidnight) {
+          break;
+        }
+
         // Use next day's date if we've passed midnight in an overnight pattern
         const slotDate = (isOvernight && passedMidnight) ? nextDateStr : dateStr;
         slots.add(`${slotDate}-${currentTime}`);

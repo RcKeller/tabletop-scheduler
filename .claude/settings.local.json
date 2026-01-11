@@ -21,7 +21,9 @@
       "Bash(curl:*)",
       "Bash(python3:*)",
       "Bash(node -e:*)",
-      "Bash(lsof:*)"
+      "Bash(lsof:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run lint:*)"
     ]
   }
 }
