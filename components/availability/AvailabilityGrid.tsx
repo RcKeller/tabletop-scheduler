@@ -79,8 +79,14 @@ export function AvailabilityGrid({
   const availabilityToSlots = useCallback((avail: TimeSlot[]): Set<string> => {
     const slots = new Set<string>();
     for (const slot of avail) {
+      // Skip invalid slots where start >= end
+      if (slot.startTime >= slot.endTime) continue;
+
       let currentTime = slot.startTime;
-      while (currentTime < slot.endTime) {
+      let iterations = 0;
+      const maxIterations = 48; // Max 48 half-hour slots in a day
+
+      while (currentTime < slot.endTime && iterations < maxIterations) {
         slots.add(`${slot.date}-${currentTime}`);
         const [h, m] = currentTime.split(":").map(Number);
         const nextMinute = m + 30;
@@ -89,6 +95,7 @@ export function AvailabilityGrid({
         } else {
           currentTime = `${h.toString().padStart(2, "0")}:30`;
         }
+        iterations++;
       }
     }
     return slots;

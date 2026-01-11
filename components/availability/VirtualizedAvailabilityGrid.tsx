@@ -98,10 +98,17 @@ interface VirtualizedAvailabilityGridProps {
 function buildAvailabilitySet(availability: TimeSlot[]): Set<string> {
   const set = new Set<string>();
   for (const slot of availability) {
+    // Skip invalid slots where start >= end (except for overnight which we don't support here)
+    if (slot.startTime >= slot.endTime) continue;
+
     let currentTime = slot.startTime;
-    while (currentTime < slot.endTime) {
+    let iterations = 0;
+    const maxIterations = 48; // Max 48 half-hour slots in a day
+
+    while (currentTime < slot.endTime && iterations < maxIterations) {
       set.add(`${slot.date}-${currentTime}`);
       currentTime = addThirtyMinutes(currentTime);
+      iterations++;
     }
   }
   return set;
@@ -347,12 +354,19 @@ export function VirtualizedAvailabilityGrid({
     const map = new Map<string, Set<string>>();
     for (const p of displayParticipants) {
       for (const slot of p.availability) {
+        // Skip invalid slots where start >= end
+        if (slot.startTime >= slot.endTime) continue;
+
         let currentTime = slot.startTime;
-        while (currentTime < slot.endTime) {
+        let iterations = 0;
+        const maxIterations = 48; // Max 48 half-hour slots in a day
+
+        while (currentTime < slot.endTime && iterations < maxIterations) {
           const key = `${slot.date}-${currentTime}`;
           if (!map.has(key)) map.set(key, new Set());
           map.get(key)!.add(p.id);
           currentTime = addThirtyMinutes(currentTime);
+          iterations++;
         }
       }
     }

@@ -190,8 +190,14 @@ export async function GET(
     // Fill in availability
     for (const participant of participantsData) {
       for (const slot of participant.availability) {
+        // Skip invalid slots where start >= end
+        if (slot.startTime >= slot.endTime) continue;
+
         let currentTime = slot.startTime;
-        while (currentTime < slot.endTime) {
+        let iterations = 0;
+        const maxIterations = 48; // Max 48 half-hour slots in a day
+
+        while (currentTime < slot.endTime && iterations < maxIterations) {
           const key = `${slot.date}-${currentTime}`;
           if (heatmapData[key]) {
             heatmapData[key].count++;
@@ -200,6 +206,7 @@ export async function GET(
 
           // Increment by 30 minutes
           currentTime = addThirtyMinutes(currentTime);
+          iterations++;
         }
       }
     }

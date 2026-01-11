@@ -71,9 +71,15 @@ export function CombinedHeatmap({
 
     for (const participant of participants) {
       for (const slot of participant.availability) {
+        // Skip invalid slots where start >= end
+        if (slot.startTime >= slot.endTime) continue;
+
         // Expand slot into 30-min intervals
         let currentTime = slot.startTime;
-        while (currentTime < slot.endTime) {
+        let iterations = 0;
+        const maxIterations = 48; // Max 48 half-hour slots in a day
+
+        while (currentTime < slot.endTime && iterations < maxIterations) {
           const key = `${slot.date}-${currentTime}`;
           if (!map.has(key)) {
             map.set(key, new Set());
@@ -82,6 +88,7 @@ export function CombinedHeatmap({
 
           // Increment by 30 minutes
           const [h, m] = currentTime.split(":").map(Number);
+          iterations++;
           const nextMinute = m + 30;
           if (nextMinute >= 60) {
             currentTime = `${(h + 1).toString().padStart(2, "0")}:00`;
