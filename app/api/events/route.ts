@@ -94,52 +94,67 @@ export async function POST(request: NextRequest) {
 
     const slug = await generateSlug(body.title);
 
-    const event = await prisma.event.create({
-      data: {
-        slug,
-        title: body.title.trim(),
-        description: body.description?.trim() || null,
-        timezone: body.timezone || "UTC",
-        campaignType,
+    // Use a transaction to create both event and GM participant
+    const result = await prisma.$transaction(async (tx) => {
+      const event = await tx.event.create({
+        data: {
+          slug,
+          title: body.title.trim(),
+          description: body.description?.trim() || null,
+          timezone: body.timezone || "UTC",
+          campaignType,
 
-        // Game system
-        gameSystemId: body.gameSystemId || null,
+          // Game system
+          gameSystemId: body.gameSystemId || null,
 
-        // Campaign configuration
-        campaignImageBase64: body.campaignImageBase64 || null,
-        sessionLengthMinutes,
-        customPreSessionInstructions: body.customPreSessionInstructions?.trim() || null,
-        playerPrepUrls: body.playerPrepUrls || null,
+          // Campaign configuration
+          campaignImageBase64: body.campaignImageBase64 || null,
+          sessionLengthMinutes,
+          customPreSessionInstructions: body.customPreSessionInstructions?.trim() || null,
+          playerPrepUrls: body.playerPrepUrls || null,
 
-        // Date range
-        startDate: body.startDate ? new Date(body.startDate) : null,
-        endDate: body.endDate ? new Date(body.endDate) : null,
+          // Date range
+          startDate: body.startDate ? new Date(body.startDate) : null,
+          endDate: body.endDate ? new Date(body.endDate) : null,
 
-        // Time window
-        earliestTime,
-        latestTime,
+          // Time window - always 24hr, bounds derived from GM availability
+          earliestTime,
+          latestTime,
 
-        // Meeting configuration
-        meetingType,
-        meetingLocation: body.meetingLocation?.trim() || null,
-        meetingRoom: body.meetingRoom?.trim() || null,
+          // Meeting configuration
+          meetingType,
+          meetingLocation: body.meetingLocation?.trim() || null,
+          meetingRoom: body.meetingRoom?.trim() || null,
 
-        // Player limits
-        minPlayers,
-        maxPlayers,
+          // Player limits
+          minPlayers,
+          maxPlayers,
 
-        // Legacy fields (for backward compatibility)
-        isRecurring: body.isRecurring || false,
-        recurrencePattern: body.recurrencePattern || null,
-        startTime: body.startTime ? new Date(body.startTime) : null,
-        durationMinutes: body.durationMinutes || null,
-      },
-      include: {
-        gameSystem: true,
-      },
+          // Legacy fields (for backward compatibility)
+          isRecurring: body.isRecurring || false,
+          recurrencePattern: body.recurrencePattern || null,
+          startTime: body.startTime ? new Date(body.startTime) : null,
+          durationMinutes: body.durationMinutes || null,
+        },
+        include: {
+          gameSystem: true,
+        },
+      });
+
+      // Auto-create the GM participant
+      const gmParticipant = await tx.participant.create({
+        data: {
+          eventId: event.id,
+          displayName: "Game Master",
+          isGm: true,
+          timezone: body.timezone || "UTC",
+        },
+      });
+
+      return { event, gmParticipant };
     });
 
-    return created(event);
+    return created(result);
   } catch (error) {
     return handleApiError(error, "create campaign");
   }

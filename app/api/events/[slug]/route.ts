@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { MeetingType } from "@/lib/generated/prisma";
 import { badRequest, notFound, success, handleApiError } from "@/lib/api/response";
+import { getGmAvailabilityBounds } from "@/lib/utils/gm-availability";
+import type { GeneralAvailability, TimeSlot } from "@/lib/types";
 
 export async function GET(
   request: NextRequest,
@@ -21,7 +23,45 @@ export async function GET(
       return notFound("Campaign");
     }
 
-    return success(event);
+    // Calculate GM availability bounds for player callouts
+    let gmAvailabilityBounds: { earliest: string | null; latest: string | null } = {
+      earliest: null,
+      latest: null,
+    };
+
+    // Fetch GM participant separately with their availability
+    const gmParticipant = await prisma.participant.findFirst({
+      where: { eventId: event.id, isGm: true },
+      include: {
+        availability: true,
+        generalAvailability: true,
+      },
+    });
+
+    if (gmParticipant) {
+      const patterns = gmParticipant.generalAvailability.map((ga) => ({
+        id: ga.id,
+        participantId: ga.participantId,
+        dayOfWeek: ga.dayOfWeek,
+        startTime: ga.startTime,
+        endTime: ga.endTime,
+        isAvailable: ga.isAvailable,
+      })) as GeneralAvailability[];
+
+      // TimeSlots from specific dates don't have isAvailable - if they exist, they're available
+      const slots = gmParticipant.availability.map((a) => ({
+        date: a.date.toISOString().split("T")[0],
+        startTime: a.startTime,
+        endTime: a.endTime,
+      })) as TimeSlot[];
+
+      gmAvailabilityBounds = getGmAvailabilityBounds(patterns, slots);
+    }
+
+    return success({
+      ...event,
+      gmAvailabilityBounds,
+    });
   } catch (error) {
     return handleApiError(error, "fetch campaign");
   }

@@ -3,9 +3,11 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import type { GameSystem, PrepUrl } from "@/lib/types";
+import type { GameSystem, PrepUrl, MeetingType } from "@/lib/types";
 import { GameSystemAutocomplete } from "@/components/campaign/GameSystemAutocomplete";
 import { GameSystemModal } from "@/components/campaign/GameSystemModal";
+import { SessionLengthSelector } from "@/components/campaign/SessionLengthSelector";
+import { MeetingTypeSelector } from "@/components/campaign/MeetingTypeSelector";
 
 interface EventData {
   id: string;
@@ -14,6 +16,10 @@ interface EventData {
   description: string | null;
   timezone: string;
   campaignType: string;
+  sessionLengthMinutes: number;
+  meetingType: MeetingType | null;
+  meetingLocation: string | null;
+  meetingRoom: string | null;
   customPreSessionInstructions: string | null;
   playerPrepUrls: PrepUrl[] | null;
   minPlayers: number | null;
@@ -40,6 +46,12 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
   const [maxPlayers, setMaxPlayers] = useState<string>(
     event.maxPlayers?.toString() || "6"
   );
+
+  // Session settings (moved from schedule page)
+  const [sessionLengthMinutes, setSessionLengthMinutes] = useState(event.sessionLengthMinutes);
+  const [meetingType, setMeetingType] = useState<MeetingType | null>(event.meetingType);
+  const [meetingLocation, setMeetingLocation] = useState(event.meetingLocation || "");
+  const [meetingRoom, setMeetingRoom] = useState(event.meetingRoom || "");
 
   // Modal state
   const [isCreatingGameSystem, setIsCreatingGameSystem] = useState(false);
@@ -105,6 +117,11 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
         playerPrepUrls: playerPrepUrls.filter((u) => u.label && u.url),
         minPlayers: minPlayers ? parseInt(minPlayers) : 4,
         maxPlayers: maxPlayers ? parseInt(maxPlayers) : 6,
+        // Session settings (moved from schedule page)
+        sessionLengthMinutes,
+        meetingType,
+        meetingLocation: meetingLocation || null,
+        meetingRoom: meetingRoom || null,
       };
 
       const res = await fetch(`/api/events/${event.slug}`, {
@@ -118,8 +135,8 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
         throw new Error(data.error || "Failed to save");
       }
 
-      // Continue to scheduling page
-      router.push(`/${event.slug}/schedule`);
+      // Continue to GM availability page (step 3)
+      router.push(`/${event.slug}/gm-availability`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
@@ -132,7 +149,7 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
       {/* Header */}
       <div className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto max-w-xl px-4 py-6">
-          {/* Step indicator - hyperlinked */}
+          {/* Step indicator - 3 steps */}
           <nav className="mb-4 flex items-center justify-center gap-1.5">
             <Link
               href="/"
@@ -154,23 +171,13 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
             </div>
             <div className="h-px w-6 bg-zinc-300 dark:bg-zinc-700" />
             <Link
-              href={`/${event.slug}/schedule`}
+              href={`/${event.slug}/gm-availability`}
               className="flex items-center gap-1 transition-colors hover:opacity-80"
             >
               <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-200 text-xs font-medium text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400">
                 3
               </div>
-              <span className="text-xs text-zinc-500 dark:text-zinc-400">Schedule</span>
-            </Link>
-            <div className="h-px w-6 bg-zinc-300 dark:bg-zinc-700" />
-            <Link
-              href={`/${event.slug}`}
-              className="flex items-center gap-1 transition-colors hover:opacity-80"
-            >
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-200 text-xs font-medium text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400">
-                4
-              </div>
-              <span className="text-xs text-zinc-500 dark:text-zinc-400">Share</span>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">Availability</span>
             </Link>
           </nav>
 
@@ -256,6 +263,34 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
             </div>
           </div>
 
+          {/* Session Settings (moved from schedule page) */}
+          <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              Session Details
+            </h3>
+            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+              Configure how long sessions are and where you&apos;ll meet
+            </p>
+
+            <div className="mt-4">
+              <SessionLengthSelector
+                value={sessionLengthMinutes}
+                onChange={setSessionLengthMinutes}
+              />
+            </div>
+
+            <div className="my-4 border-t border-zinc-200 dark:border-zinc-700" />
+
+            <MeetingTypeSelector
+              meetingType={meetingType}
+              meetingLocation={meetingLocation}
+              meetingRoom={meetingRoom}
+              onMeetingTypeChange={setMeetingType}
+              onMeetingLocationChange={setMeetingLocation}
+              onMeetingRoomChange={setMeetingRoom}
+            />
+          </div>
+
           {/* Player Instructions */}
           <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
             <label
@@ -334,7 +369,7 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
         {/* Actions */}
         <div className="mt-6 flex items-center justify-between">
           <Link
-            href={`/${event.slug}/schedule`}
+            href={`/${event.slug}/gm-availability`}
             className="text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
           >
             Skip this step

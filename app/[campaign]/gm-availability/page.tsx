@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
-import { notFound } from "next/navigation";
-import { CampaignPage } from "./CampaignPage";
+import { notFound, redirect } from "next/navigation";
+import { GmAvailabilityPage } from "./GmAvailabilityPage";
 
 interface Props {
   params: Promise<{ campaign: string }>;
@@ -14,13 +14,22 @@ export default async function Page({ params }: Props) {
     include: {
       gameSystem: true,
       participants: {
-        orderBy: { createdAt: "asc" },
+        where: { isGm: true },
+        take: 1,
       },
     },
   });
 
   if (!event) {
     notFound();
+  }
+
+  // Find GM participant
+  const gmParticipant = event.participants[0];
+
+  if (!gmParticipant) {
+    // No GM found - redirect to campaign page
+    redirect(`/${slug}`);
   }
 
   // Serialize for client component
@@ -35,30 +44,23 @@ export default async function Page({ params }: Props) {
     earliestTime: event.earliestTime,
     latestTime: event.latestTime,
     sessionLengthMinutes: event.sessionLengthMinutes,
-    campaignType: event.campaignType,
-    meetingType: event.meetingType,
-    meetingLocation: event.meetingLocation,
-    meetingRoom: event.meetingRoom,
-    campaignImageBase64: event.campaignImageBase64,
     customPreSessionInstructions: event.customPreSessionInstructions,
-    minPlayers: event.minPlayers,
-    maxPlayers: event.maxPlayers,
     gameSystem: event.gameSystem ? {
       id: event.gameSystem.id,
       name: event.gameSystem.name,
-      imageBase64: event.gameSystem.imageBase64,
     } : null,
-    participants: event.participants.map(p => ({
-      id: p.id,
-      displayName: p.displayName,
-      isGm: p.isGm,
-      characterName: p.characterName,
-      characterClass: p.characterClass,
-      characterSheetUrl: p.characterSheetUrl,
-      characterTokenBase64: p.characterTokenBase64,
-      notes: p.notes,
-    })),
   };
 
-  return <CampaignPage event={serializedEvent} />;
+  const serializedParticipant = {
+    id: gmParticipant.id,
+    displayName: gmParticipant.displayName,
+    isGm: gmParticipant.isGm,
+  };
+
+  return (
+    <GmAvailabilityPage
+      event={serializedEvent}
+      participant={serializedParticipant}
+    />
+  );
 }

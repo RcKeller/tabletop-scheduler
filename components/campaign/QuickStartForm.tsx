@@ -58,8 +58,10 @@ export function QuickStartForm() {
       }
 
       const data = await res.json();
+      // Store GM participant ID for this campaign
+      localStorage.setItem(`participant_${data.event.id}`, data.gmParticipant.id);
       // Redirect to settings page to configure optional details
-      router.push(`/${data.slug}/settings`);
+      router.push(`/${data.event.slug}/settings`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {

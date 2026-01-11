@@ -12,6 +12,7 @@ import { CampaignHeader } from "@/components/campaign/CampaignHeader";
 import { Footer } from "@/components/layout/Footer";
 import { EmptyPartyList } from "@/components/empty-states/EmptyPartyList";
 import { EmptyHeatmap } from "@/components/empty-states/EmptyHeatmap";
+import { CtaBanner } from "@/components/ui/CtaBanner";
 import type { MeetingType, CampaignType, Participant, ParticipantWithAvailability } from "@/lib/types";
 
 type TabType = "availability" | "party" | "info";
@@ -33,6 +34,8 @@ interface EventProps {
   meetingRoom: string | null;
   campaignImageBase64: string | null;
   customPreSessionInstructions: string | null;
+  minPlayers: number | null;
+  maxPlayers: number | null;
   gameSystem: { id: string; name: string; imageBase64: string | null } | null;
   participants: Participant[];
 }
@@ -261,6 +264,9 @@ export function CampaignPage({ event }: CampaignPageProps) {
 
   const meetingInfo = getMeetingInfo();
   const hasGm = participants.some(p => p.isGm);
+  const playerCount = participants.filter(p => !p.isGm).length;
+  const isAtCapacity = event.maxPlayers !== null && playerCount >= event.maxPlayers;
+  const isOverCapacity = event.maxPlayers !== null && playerCount > event.maxPlayers;
 
   // Check if current participant needs to complete profile
   const showProfileCallout = currentParticipant &&
@@ -338,12 +344,14 @@ export function CampaignPage({ event }: CampaignPageProps) {
                 </button>
               </>
             ) : (
-              <JoinEventForm
-                eventSlug={event.slug}
-                onJoined={handleJoined}
-                hasGm={hasGm}
-                compact
-              />
+              <div data-join-form>
+                <JoinEventForm
+                  eventSlug={event.slug}
+                  onJoined={handleJoined}
+                  hasGm={hasGm}
+                  compact
+                />
+              </div>
             )}
           </div>
         </div>
@@ -673,7 +681,40 @@ export function CampaignPage({ event }: CampaignPageProps) {
             </div>
           </div>
         )}
+        {/* Spacer for fixed CTA banner */}
+        <div className="h-16" />
       </div>
+
+      {/* Contextual CTA Banners */}
+      {currentParticipant?.isGm && playerCount === 0 && (
+        <CtaBanner
+          message="Your campaign is ready! Invite players to join"
+          actionLabel={copiedLink ? "Link Copied!" : "Copy Invite Link"}
+          onAction={handleCopyLink}
+          variant="info"
+        />
+      )}
+
+      {!currentParticipant && isAtCapacity && (
+        <CtaBanner
+          message={`This campaign is at capacity (${playerCount}/${event.maxPlayers} players), but you can still join`}
+          actionLabel="Join Anyway"
+          onAction={() => {
+            // Scroll to join form
+            document.querySelector('[data-join-form]')?.scrollIntoView({ behavior: 'smooth' });
+          }}
+          variant="warning"
+        />
+      )}
+
+      {currentParticipant && !currentParticipant.isGm && showProfileCallout && (
+        <CtaBanner
+          message="Complete your character to be ready for the game"
+          actionLabel="Set Up Character"
+          actionHref={`/${event.slug}/${encodeURIComponent(currentParticipant.displayName.toLowerCase().replace(/\s+/g, "-"))}/character`}
+          variant="info"
+        />
+      )}
 
       <Footer />
 

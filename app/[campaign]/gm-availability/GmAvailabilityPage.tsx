@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { useRouter } from "next/navigation";
-import { parseISO, eachDayOfInterval, format } from "date-fns";
+import { parseISO, format } from "date-fns";
 import Link from "next/link";
 import { VirtualizedAvailabilityGrid } from "@/components/availability/VirtualizedAvailabilityGrid";
 import { AvailabilityAI } from "@/components/availability/AvailabilityAI";
@@ -10,7 +9,6 @@ import { GeneralAvailabilityEditor } from "@/components/availability/GeneralAvai
 import { TimezoneAutocomplete } from "@/components/timezone/TimezoneAutocomplete";
 import { CtaBanner } from "@/components/ui/CtaBanner";
 import type { TimeSlot, GeneralAvailability as GeneralAvailabilityType } from "@/lib/types";
-import { formatTimeDisplay } from "@/lib/utils/gm-availability";
 import { expandPatternsToDateRange, slotsToKeySet, keySetToSlots } from "@/lib/utils/availability";
 import { addThirtyMinutes } from "@/lib/utils/time-slots";
 import { utcToLocal, localToUTC } from "@/lib/utils/timezone";
@@ -34,21 +32,12 @@ interface ParticipantProps {
   id: string;
   displayName: string;
   isGm: boolean;
-  hasCharacterInfo: boolean;
 }
 
-interface GmAvailabilityBounds {
-  earliest: string | null;
-  latest: string | null;
-}
-
-interface PlayerAvailabilityPageProps {
+interface GmAvailabilityPageProps {
   event: EventProps;
   participant: ParticipantProps;
-  method: "select" | "pattern" | "describe";
-  gmAvailabilityBounds: GmAvailabilityBounds;
 }
-
 
 interface UndoSnapshot {
   effectiveAvailability: TimeSlot[];
@@ -59,16 +48,14 @@ interface UndoSnapshot {
   timestamp: number;
 }
 
-export function PlayerAvailabilityPage({
+export function GmAvailabilityPage({
   event,
   participant,
-  gmAvailabilityBounds,
-  // method prop kept for backwards compatibility but no longer used (unified view)
-}: PlayerAvailabilityPageProps) {
-  const router = useRouter();
-
+}: GmAvailabilityPageProps) {
   // Persist timezone globally in localStorage
   const [timezone, setTimezoneState] = useState(event.timezone);
+  const [hasSetAvailability, setHasSetAvailability] = useState(false);
+  const [showCtaBanner, setShowCtaBanner] = useState(false);
 
   // Load timezone from localStorage on mount (after hydration)
   useEffect(() => {
@@ -82,6 +69,7 @@ export function PlayerAvailabilityPage({
     setTimezoneState(tz);
     localStorage.setItem("when2play_timezone", tz);
   }, []);
+
   const [effectiveAvailability, setEffectiveAvailability] = useState<TimeSlot[]>([]);
   const [specificAvailability, setSpecificAvailability] = useState<TimeSlot[]>([]);
   const [generalAvailability, setGeneralAvailability] = useState<GeneralAvailabilityType[]>([]);
@@ -89,10 +77,9 @@ export function PlayerAvailabilityPage({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadKey, setLoadKey] = useState(0);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const hasLoadedOnce = useRef(false);
 
-  // Undo stack for AI changes - stores multiple snapshots
+  // Undo stack for AI changes
   const [undoStack, setUndoStack] = useState<UndoSnapshot[]>([]);
   const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -121,30 +108,26 @@ export function PlayerAvailabilityPage({
 
   const eventEndDate = useMemo(() => {
     if (event.endDate) return parseISO(event.endDate);
-    // Default to 3 months from start
     const end = new Date(eventStartDate);
     end.setMonth(end.getMonth() + 3);
     return end;
   }, [event.endDate, eventStartDate]);
 
-  // String versions for API calls
   const eventStartDateStr = format(eventStartDate, "yyyy-MM-dd");
   const eventEndDateStr = format(eventEndDate, "yyyy-MM-dd");
 
   // Load existing availability
   const loadAvailability = useCallback(async () => {
-    // Only show skeleton on initial load, not on refreshes
     if (!hasLoadedOnce.current) {
       setIsLoading(true);
     }
     try {
       const params = new URLSearchParams();
-      // ALWAYS send date range - these always have values (either from event or defaults)
       params.set("startDate", eventStartDateStr);
       params.set("endDate", eventEndDateStr);
-      if (event.earliestTime) params.set("earliestTime", event.earliestTime);
-      if (event.latestTime) params.set("latestTime", event.latestTime);
-      // Pass user's timezone so API can convert patterns to UTC
+      // Always use 24hr view for GM
+      params.set("earliestTime", "00:00");
+      params.set("latestTime", "23:30");
       params.set("timezone", timezone);
 
       const url = `/api/availability/${participant.id}?${params.toString()}`;
@@ -152,11 +135,6 @@ export function PlayerAvailabilityPage({
 
       if (res.ok) {
         const data = await res.json();
-        console.log("[Frontend] Loaded availability:", {
-          effectiveAvailabilityCount: data.effectiveAvailability?.length,
-          generalAvailabilityCount: data.generalAvailability?.length,
-          firstFewEffective: data.effectiveAvailability?.slice(0, 3),
-        });
         setEffectiveAvailability(
           data.effectiveAvailability.map((a: { date: string; startTime: string; endTime: string }) => ({
             date: a.date,
@@ -179,6 +157,10 @@ export function PlayerAvailabilityPage({
             endTime: e.endTime,
           }))
         );
+
+        // Check if GM has set any availability
+        const hasAvailability = data.effectiveAvailability.length > 0 || data.generalAvailability.length > 0;
+        setHasSetAvailability(hasAvailability);
       }
     } catch (error) {
       console.error("Failed to load availability:", error);
@@ -186,7 +168,7 @@ export function PlayerAvailabilityPage({
       hasLoadedOnce.current = true;
       setIsLoading(false);
     }
-  }, [participant.id, eventStartDateStr, eventEndDateStr, event.earliestTime, event.latestTime, timezone]);
+  }, [participant.id, eventStartDateStr, eventEndDateStr, timezone]);
 
   useEffect(() => {
     loadAvailability();
@@ -197,12 +179,10 @@ export function PlayerAvailabilityPage({
     localStorage.setItem(`participant_${event.id}`, participant.id);
   }, [event.id, participant.id]);
 
-  // Auto-save for Select Times with smart diff to preserve interoperability
+  // Auto-save for Select Times
   const handleAutoSaveAvailability = useCallback(async (slotsInUTC: TimeSlot[]) => {
     setIsSaving(true);
     try {
-      // The grid sends slots in UTC. Convert to local timezone for pattern comparison.
-      // Pattern keys are in local timezone (user's recurring schedule is timezone-local).
       const slotsInLocal = slotsInUTC.map(slot => {
         const start = utcToLocal(slot.startTime, slot.date, timezone);
         const end = utcToLocal(slot.endTime, slot.date, timezone);
@@ -213,19 +193,15 @@ export function PlayerAvailabilityPage({
         };
       });
 
-      // Convert user's selection to a set (in local timezone)
       const selectedKeys = slotsToKeySet(slotsInLocal);
-
-      // Compute what patterns would produce for the full date range (also in local timezone)
       const patternKeys = expandPatternsToDateRange(
         generalAvailability,
         eventStartDate,
         eventEndDate,
-        event.earliestTime,
-        event.latestTime
+        "00:00",
+        "23:30"
       );
 
-      // Find slots that are selected but NOT from patterns (these are additions)
       const additions = new Set<string>();
       for (const key of selectedKeys) {
         if (!patternKeys.has(key)) {
@@ -233,7 +209,6 @@ export function PlayerAvailabilityPage({
         }
       }
 
-      // Find slots that are from patterns but NOT selected (these need exceptions)
       const newExceptions: Array<{ date: string; startTime: string; endTime: string }> = [];
       for (const key of patternKeys) {
         if (!selectedKeys.has(key)) {
@@ -256,7 +231,6 @@ export function PlayerAvailabilityPage({
         }
       }
 
-      // Convert additions from local to UTC for API storage
       const additionsInLocal = keySetToSlots(additions);
       const additionsInUTC = additionsInLocal.map(slot => {
         const start = localToUTC(slot.startTime, slot.date, timezone);
@@ -268,7 +242,6 @@ export function PlayerAvailabilityPage({
         };
       });
 
-      // Convert exceptions from local to UTC for API storage
       const exceptionsInUTC = newExceptions.map(exc => {
         const start = localToUTC(exc.startTime, exc.date, timezone);
         const end = localToUTC(exc.endTime, exc.date, timezone);
@@ -279,7 +252,6 @@ export function PlayerAvailabilityPage({
         };
       });
 
-      // Save to API - all data in UTC, include timezone for storage
       const res = await fetch(`/api/availability/${participant.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -291,10 +263,11 @@ export function PlayerAvailabilityPage({
       });
 
       if (res.ok) {
-        // Store the UTC version for display (grid expects UTC and converts to local)
         setEffectiveAvailability(slotsInUTC);
         setSpecificAvailability(additionsInUTC);
         setExceptions(exceptionsInUTC);
+        setHasSetAvailability(true);
+        setShowCtaBanner(true);
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     } catch (error) {
@@ -302,11 +275,10 @@ export function PlayerAvailabilityPage({
     } finally {
       setIsSaving(false);
     }
-  }, [participant.id, generalAvailability, eventStartDate, eventEndDate, event.earliestTime, event.latestTime, timezone]);
+  }, [participant.id, generalAvailability, eventStartDate, eventEndDate, timezone]);
 
   // Save general availability patterns
   const handleSaveGeneralAvailability = async (patterns: Omit<GeneralAvailabilityType, "id" | "participantId">[]) => {
-    console.log("[Frontend] Saving general availability:", { patterns, timezone });
     setIsSaving(true);
     try {
       const res = await fetch(`/api/availability/${participant.id}`, {
@@ -314,17 +286,16 @@ export function PlayerAvailabilityPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ generalAvailability: patterns, timezone }),
       });
-      console.log("[Frontend] Save response:", res.ok, res.status);
       if (res.ok) {
         setGeneralAvailability(patterns.map((p, i) => ({
           ...p,
           id: `temp-${i}`,
           participantId: participant.id,
         })));
-        console.log("[Frontend] Triggering reload...");
+        setHasSetAvailability(true);
+        setShowCtaBanner(true);
         await new Promise(resolve => setTimeout(resolve, 100));
         setLoadKey((k) => k + 1);
-        setHasUnsavedChanges(false);
       }
     } catch (error) {
       console.error("Failed to save general availability:", error);
@@ -351,6 +322,8 @@ export function PlayerAvailabilityPage({
       });
       setEffectiveAvailability([]);
       setGeneralAvailability([]);
+      setHasSetAvailability(false);
+      setShowCtaBanner(false);
       setLoadKey((k) => k + 1);
     } catch (error) {
       console.error("Failed to reset availability:", error);
@@ -359,14 +332,13 @@ export function PlayerAvailabilityPage({
     }
   };
 
-  // Undo a single AI change from the stack
+  // Undo AI change
   const handleAIUndo = useCallback(async (index: number) => {
     const snapshot = undoStack[index];
     if (!snapshot) return;
 
     setIsSaving(true);
     try {
-      // Restore the snapshot
       const res = await fetch(`/api/availability/${participant.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -387,7 +359,6 @@ export function PlayerAvailabilityPage({
         setSpecificAvailability(snapshot.specificAvailability);
         setGeneralAvailability(snapshot.generalAvailability);
         setExceptions(snapshot.exceptions);
-        // Remove this and all newer items from the stack
         setUndoStack(prev => prev.slice(index + 1));
       }
     } catch (error) {
@@ -397,12 +368,11 @@ export function PlayerAvailabilityPage({
     }
   }, [participant.id, undoStack, timezone]);
 
-  // Dismiss a single undo item
   const handleDismissUndo = useCallback((index: number) => {
     setUndoStack(prev => prev.filter((_, i) => i !== index));
   }, []);
 
-  // AI applies patterns, additions, exclusions, and routine removals
+  // AI applies patterns
   const handleAIApply = useCallback(async (
     patterns: Omit<GeneralAvailabilityType, "id" | "participantId">[],
     additions: Array<{ date: string; startTime: string; endTime: string }>,
@@ -411,7 +381,6 @@ export function PlayerAvailabilityPage({
     mode: "replace" | "adjust",
     interpretation: string
   ) => {
-    // Save snapshot for undo BEFORE applying - push to stack
     const snapshot: UndoSnapshot = {
       effectiveAvailability: [...effectiveAvailability],
       specificAvailability: [...specificAvailability],
@@ -425,7 +394,6 @@ export function PlayerAvailabilityPage({
     try {
       const body: Record<string, unknown> = { timezone };
 
-      // Start with current patterns for merging
       let updatedPatterns: Omit<GeneralAvailabilityType, "id" | "participantId">[] =
         mode === "replace" ? [] : generalAvailability.map(p => ({
           dayOfWeek: p.dayOfWeek,
@@ -435,24 +403,18 @@ export function PlayerAvailabilityPage({
         }));
 
       // Apply routine removals - create "Not Available" patterns for blocked times
-      // These will trump any "Available" patterns for the same day/time
       if (routineRemovals.length > 0) {
         for (const removal of routineRemovals) {
-          // First, remove any existing "Not Available" pattern for this day to avoid duplicates
           updatedPatterns = updatedPatterns.filter(p => {
             if (p.dayOfWeek !== removal.dayOfWeek) return true;
-            if (p.isAvailable !== false) return true; // Keep available patterns for now
-            // Remove matching unavailable patterns
+            if (p.isAvailable !== false) return true;
             if (!removal.startTime || !removal.endTime) {
-              return false; // Remove all unavailable for this day
+              return false;
             }
-            // Check for overlap - remove if overlapping
             return removal.endTime <= p.startTime || removal.startTime >= p.endTime;
           });
 
-          // Add a "Not Available" pattern for this removal
           if (!removal.startTime || !removal.endTime) {
-            // Entire day is not available
             updatedPatterns.push({
               dayOfWeek: removal.dayOfWeek,
               startTime: "00:00",
@@ -460,7 +422,6 @@ export function PlayerAvailabilityPage({
               isAvailable: false,
             });
           } else {
-            // Specific time range is not available
             updatedPatterns.push({
               dayOfWeek: removal.dayOfWeek,
               startTime: removal.startTime,
@@ -473,12 +434,10 @@ export function PlayerAvailabilityPage({
         body.clearSpecificOnPatternSave = false;
       }
 
-      // Apply new patterns (add/replace)
       if (patterns.length > 0) {
         if (mode === "replace") {
           body.generalAvailability = patterns;
         } else {
-          // Merge with existing (or already-modified) patterns
           const basePatterns = body.generalAvailability as typeof updatedPatterns || updatedPatterns;
           const mergedPatterns: Omit<GeneralAvailabilityType, "id" | "participantId">[] = [];
           const daysWithNewPatterns = new Set(patterns.map(p => p.dayOfWeek));
@@ -498,9 +457,7 @@ export function PlayerAvailabilityPage({
         }
       }
 
-      // Apply specific date additions - convert from local to UTC
       if (additions.length > 0) {
-        // Convert additions from local timezone to UTC for storage
         const additionsInUTC = additions.map(slot => {
           const start = localToUTC(slot.startTime, slot.date, timezone);
           const end = localToUTC(slot.endTime, slot.date, timezone);
@@ -512,7 +469,6 @@ export function PlayerAvailabilityPage({
         });
 
         if (mode === "adjust") {
-          // effectiveAvailability is already in UTC
           const existingSlots = new Set(
             effectiveAvailability.map(s => `${s.date}|${s.startTime}|${s.endTime}`)
           );
@@ -526,7 +482,6 @@ export function PlayerAvailabilityPage({
         }
       }
 
-      // Apply exclusions (specific date exceptions) - convert from local to UTC
       if (exclusions.length > 0) {
         const exceptionsInUTC = exclusions.map(exc => {
           const startTime = exc.startTime || "00:00";
@@ -554,10 +509,9 @@ export function PlayerAvailabilityPage({
         });
 
         if (res.ok) {
-          // Add to undo stack AFTER successful save
-          setUndoStack(prev => [snapshot, ...prev].slice(0, 10)); // Keep max 10 undo items
-
-          // Reload to get updated effective availability
+          setUndoStack(prev => [snapshot, ...prev].slice(0, 10));
+          setHasSetAvailability(true);
+          setShowCtaBanner(true);
           await new Promise(resolve => setTimeout(resolve, 100));
           setLoadKey((k) => k + 1);
         }
@@ -569,19 +523,15 @@ export function PlayerAvailabilityPage({
     }
   }, [effectiveAvailability, specificAvailability, generalAvailability, exceptions, participant.id, timezone]);
 
-  const handleDone = () => {
-    router.push(`/${event.slug}`);
-  };
-
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-      {/* Header */}
+    <div className="min-h-screen bg-zinc-50 pb-20 dark:bg-zinc-950">
+      {/* Header with Step Indicator */}
       <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto max-w-5xl px-3 py-2 sm:px-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Link
-                href={`/${event.slug}`}
+                href={`/${event.slug}/settings`}
                 className="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
               >
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -589,9 +539,13 @@ export function PlayerAvailabilityPage({
                 </svg>
               </Link>
               <div>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">{event.title}</p>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                    Step 3 of 3
+                  </span>
+                </div>
                 <h1 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                  {participant.displayName}&apos;s Availability
+                  Your Availability
                 </h1>
               </div>
             </div>
@@ -615,32 +569,32 @@ export function PlayerAvailabilityPage({
           </div>
         ) : (
           <div className="space-y-4">
-            {/* GM Availability Bounds Callout - only for non-GM players */}
-            {!participant.isGm && (gmAvailabilityBounds.earliest || gmAvailabilityBounds.latest) && (
-              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
-                <div className="flex items-center gap-2">
-                  <svg className="h-4 w-4 shrink-0 text-blue-500 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="text-sm text-blue-700 dark:text-blue-300">
-                    GM is available between{" "}
-                    <strong>{gmAvailabilityBounds.earliest ? formatTimeDisplay(gmAvailabilityBounds.earliest) : "—"}</strong>
-                    {" "}and{" "}
-                    <strong>{gmAvailabilityBounds.latest ? formatTimeDisplay(gmAvailabilityBounds.latest) : "—"}</strong>
-                  </span>
+            {/* Info Banner */}
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+              <div className="flex gap-3">
+                <svg className="h-5 w-5 shrink-0 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                    Set your availability as the Game Master
+                  </p>
+                  <p className="mt-1 text-sm text-blue-700 dark:text-blue-300">
+                    Players will see when you&apos;re available and schedule within those times.
+                  </p>
                 </div>
               </div>
-            )}
+            </div>
 
-            {/* Calendar Card - Shows ALL availability (24hr view) */}
+            {/* Calendar Card */}
             <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
                 <div>
                   <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                    Your Availability
+                    Calendar
                   </h2>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                    Click and drag to select when you&apos;re free. This shows all your availability including recurring patterns.
+                    Click and drag to select when you can host games
                   </p>
                 </div>
                 <button
@@ -667,14 +621,14 @@ export function PlayerAvailabilityPage({
               </div>
             </div>
 
-            {/* Recurring Patterns Card - Full width */}
+            {/* Recurring Patterns Card */}
             <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
               <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
                 <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
                   Recurring Schedule
                 </h2>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Set your typical weekly availability — mark times as available or blocked
+                  Set your typical weekly availability
                 </p>
               </div>
               <div className="p-3">
@@ -683,8 +637,6 @@ export function PlayerAvailabilityPage({
                   timezone={timezone}
                   onSave={handleSaveGeneralAvailability}
                   isSaving={isSaving}
-                  eventEarliestTime="00:00"
-                  eventLatestTime="23:30"
                 />
               </div>
             </div>
@@ -707,39 +659,24 @@ export function PlayerAvailabilityPage({
                 />
               </div>
             </div>
-
-            {/* Spacer for fixed CTA banner */}
-            {effectiveAvailability.length > 0 && (
-              <div className="h-16" />
-            )}
           </div>
         )}
       </main>
 
-      {/* Fixed CTA Banner */}
-      {effectiveAvailability.length > 0 && (
-        event.customPreSessionInstructions && !participant.hasCharacterInfo ? (
-          <CtaBanner
-            message="One more step: Set up your character"
-            actionLabel="Set Up Character"
-            actionHref={`/${event.slug}/${encodeURIComponent(participant.displayName.toLowerCase().replace(/\s+/g, "-"))}/character`}
-            secondaryActionLabel="Skip"
-            secondaryActionHref={`/${event.slug}`}
-            variant="info"
-          />
-        ) : (
-          <CtaBanner
-            message="All set! Head back to see everyone's availability"
-            actionLabel="View Campaign"
-            actionHref={`/${event.slug}`}
-            variant="success"
-          />
-        )
+      {/* CTA Banner */}
+      {showCtaBanner && (
+        <CtaBanner
+          variant="success"
+          message="Availability saved! Ready to invite players."
+          actionLabel="Continue to Campaign"
+          actionHref={`/${event.slug}`}
+          onDismiss={() => setShowCtaBanner(false)}
+        />
       )}
 
-      {/* Fixed position undo toast stack - above CTA banner */}
+      {/* Undo Toast Stack */}
       {undoStack.length > 0 && (
-        <div className={`fixed right-4 z-50 flex flex-col gap-2 max-w-sm ${effectiveAvailability.length > 0 ? "bottom-20" : "bottom-4"}`}>
+        <div className="fixed bottom-20 right-4 z-50 flex flex-col gap-2 max-w-sm">
           {undoStack.map((item, index) => (
             <div
               key={item.timestamp}
