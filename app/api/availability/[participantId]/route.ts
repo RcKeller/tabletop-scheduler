@@ -79,61 +79,128 @@ export async function GET(
     });
 
     if (startDate && endDate) {
-      // Compute effective availability
-      // Note: Patterns are in user's local timezone, specific availability and exceptions are in UTC
-      // We need to handle this properly by expanding patterns to UTC
-      // IMPORTANT: Don't pass time window here - patterns are in local time, window is in UTC
-      // We'll clamp after converting to UTC
-      const rawEffective = computeEffectiveAvailability(
-        generalAvailability.map((p) => ({
+      // Separate patterns into available and unavailable
+      const availablePatterns = generalAvailability.filter(p => p.isAvailable !== false);
+      const unavailablePatterns = generalAvailability.filter(p => p.isAvailable === false);
+
+      // Expand AVAILABLE patterns to specific slots
+      const rawAvailable = computeEffectiveAvailability(
+        availablePatterns.map((p) => ({
           dayOfWeek: p.dayOfWeek,
           startTime: p.startTime,
           endTime: p.endTime,
         })),
-        [], // Don't mix with specific availability yet (it's in UTC, patterns are local)
-        [], // Don't apply exceptions yet (they're in UTC)
+        [],
+        [],
         startDate,
         endDate
-        // Don't pass time window - we'll clamp in UTC after conversion
       );
 
-      // Convert pattern-expanded slots from local timezone to UTC
-      const patternsInUTC = rawEffective.map(slot => {
+      // Convert available patterns from local timezone to UTC
+      // Handle slots that cross midnight when converted
+      const availablePatternsInUTC: Array<{ date: string; startTime: string; endTime: string }> = [];
+      for (const slot of rawAvailable) {
         const start = localToUTC(slot.startTime, slot.date, userTimezone);
         const end = localToUTC(slot.endTime, slot.date, userTimezone);
-        return {
-          date: start.date,
-          startTime: start.time,
-          endTime: end.time,
-        };
-      });
 
-      // NOTE: We don't clamp patterns to the event time window here
-      // The grid display layer handles showing only the visible time window
-      // Clamping here was incorrectly filtering out all patterns due to timezone differences
+        if (start.date === end.date) {
+          // Same day - simple case
+          if (start.time < end.time) {
+            availablePatternsInUTC.push({
+              date: start.date,
+              startTime: start.time,
+              endTime: end.time,
+            });
+          }
+        } else {
+          // Slot crosses midnight when converted to UTC - split into two slots
+          // First slot: from start time to end of day
+          availablePatternsInUTC.push({
+            date: start.date,
+            startTime: start.time,
+            endTime: "23:59",
+          });
+          // Second slot: from start of day to end time
+          availablePatternsInUTC.push({
+            date: end.date,
+            startTime: "00:00",
+            endTime: end.time,
+          });
+        }
+      }
 
-      // Now combine UTC pattern slots with UTC specific availability
-      const allSlots = [...patternsInUTC, ...formattedAvailability];
+      // Expand UNAVAILABLE patterns to specific slots (these become recurring blocked times)
+      const rawUnavailable = computeEffectiveAvailability(
+        unavailablePatterns.map((p) => ({
+          dayOfWeek: p.dayOfWeek,
+          startTime: p.startTime,
+          endTime: p.endTime,
+        })),
+        [],
+        [],
+        startDate,
+        endDate
+      );
 
-      // Apply UTC exceptions
-      // Simple implementation: filter out slots that overlap with exceptions
+      // Convert unavailable patterns from local timezone to UTC
+      // Handle slots that cross midnight when converted
+      const blockedPatternsInUTC: Array<{ date: string; startTime: string; endTime: string }> = [];
+      for (const slot of rawUnavailable) {
+        const start = localToUTC(slot.startTime, slot.date, userTimezone);
+        const end = localToUTC(slot.endTime, slot.date, userTimezone);
+
+        if (start.date === end.date) {
+          // Same day - simple case
+          if (start.time < end.time) {
+            blockedPatternsInUTC.push({
+              date: start.date,
+              startTime: start.time,
+              endTime: end.time,
+            });
+          }
+        } else {
+          // Slot crosses midnight when converted to UTC - split into two slots
+          blockedPatternsInUTC.push({
+            date: start.date,
+            startTime: start.time,
+            endTime: "23:59",
+          });
+          blockedPatternsInUTC.push({
+            date: end.date,
+            startTime: "00:00",
+            endTime: end.time,
+          });
+        }
+      }
+
+      // Combine available patterns with specific availability
+      const allSlots = [...availablePatternsInUTC, ...formattedAvailability];
+
+      // Combine stored exceptions with blocked pattern exceptions
+      const allExceptions = [...formattedExceptions, ...blockedPatternsInUTC];
+
+      // Apply ALL exceptions (both stored and from unavailable patterns)
       effectiveAvailability = allSlots.filter(slot => {
-        return !formattedExceptions.some(exc =>
+        return !allExceptions.some(exc =>
           exc.date === slot.date &&
           exc.startTime < slot.endTime &&
           exc.endTime > slot.startTime
         );
       });
 
-      // Merge overlapping slots (simplified - just use as-is for now)
-      // TODO: Properly merge overlapping slots
-
       console.log("[API] Computed effectiveAvailability:", {
-        rawEffectiveCount: rawEffective.length,
-        patternsInUTCCount: patternsInUTC.length,
+        availablePatternsCount: availablePatterns.length,
+        unavailablePatternsCount: unavailablePatterns.length,
+        rawAvailableCount: rawAvailable.length,
+        rawAvailableSample: rawAvailable.slice(0, 5),
+        availablePatternsInUTCCount: availablePatternsInUTC.length,
+        availablePatternsInUTCSample: availablePatternsInUTC.slice(0, 8),
+        blockedPatternsInUTCCount: blockedPatternsInUTC.length,
         specificSlotsCount: formattedAvailability.length,
+        allSlotsCount: allSlots.length,
+        allExceptionsCount: allExceptions.length,
         effectiveAvailabilityCount: effectiveAvailability.length,
-        firstFewSlots: effectiveAvailability.slice(0, 3),
+        firstFewSlots: effectiveAvailability.slice(0, 5),
       });
     }
 
@@ -200,11 +267,12 @@ export async function PUT(
 
       if (body.generalAvailability.length > 0) {
         await prisma.generalAvailability.createMany({
-          data: body.generalAvailability.map((pattern: { dayOfWeek: number; startTime: string; endTime: string }) => ({
+          data: body.generalAvailability.map((pattern: { dayOfWeek: number; startTime: string; endTime: string; isAvailable?: boolean }) => ({
             participantId,
             dayOfWeek: pattern.dayOfWeek,
             startTime: pattern.startTime,
             endTime: pattern.endTime,
+            isAvailable: pattern.isAvailable ?? true,
           })),
         });
       }

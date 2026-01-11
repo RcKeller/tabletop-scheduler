@@ -422,6 +422,7 @@ export function PlayerAvailabilityPage({
           dayOfWeek: p.dayOfWeek,
           startTime: p.startTime,
           endTime: p.endTime,
+          isAvailable: p.isAvailable,
         }));
 
       // Apply routine removals first (remove days/times from routine)
@@ -450,6 +451,7 @@ export function PlayerAvailabilityPage({
                   dayOfWeek: p.dayOfWeek,
                   startTime: p.startTime,
                   endTime: removal.startTime!,
+                  isAvailable: p.isAvailable,
                 });
               }
 
@@ -459,6 +461,7 @@ export function PlayerAvailabilityPage({
                   dayOfWeek: p.dayOfWeek,
                   startTime: removal.endTime!,
                   endTime: p.endTime,
+                  isAvailable: p.isAvailable,
                 });
               }
 
@@ -647,47 +650,44 @@ export function PlayerAvailabilityPage({
               </div>
             </div>
 
-            {/* Recurring & AI Cards - Side by side on desktop, stacked on mobile */}
-            <div className="grid gap-4 md:grid-cols-2">
-              {/* Recurring Patterns Card */}
-              <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-                <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
-                  <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                    Recurring Schedule
-                  </h2>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                    Set your typical weekly availability
-                  </p>
-                </div>
-                <div className="p-3">
-                  <GeneralAvailabilityEditor
-                    patterns={generalAvailability}
-                    timezone={timezone}
-                    onSave={handleSaveGeneralAvailability}
-                    isSaving={isSaving}
-                    eventEarliestTime={event.earliestTime}
-                    eventLatestTime={event.latestTime}
-                  />
-                </div>
+            {/* Recurring Patterns Card - Full width */}
+            <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                  Recurring Schedule
+                </h2>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Set your typical weekly availability — mark times as available or blocked
+                </p>
               </div>
+              <div className="p-3">
+                <GeneralAvailabilityEditor
+                  patterns={generalAvailability}
+                  timezone={timezone}
+                  onSave={handleSaveGeneralAvailability}
+                  isSaving={isSaving}
+                  eventEarliestTime={event.earliestTime}
+                  eventLatestTime={event.latestTime}
+                />
+              </div>
+            </div>
 
-              {/* AI Assistant Card */}
-              <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-                <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
-                  <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                    AI Assistant
-                  </h2>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                    Describe your availability in plain English
-                  </p>
-                </div>
-                <div className="p-3">
-                  <AvailabilityAI
-                    timezone={timezone}
-                    onApply={handleAIApply}
-                    currentPatterns={generalAvailability}
-                  />
-                </div>
+            {/* AI Assistant Card */}
+            <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                  AI Assistant
+                </h2>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Describe your availability in plain English
+                </p>
+              </div>
+              <div className="p-3">
+                <AvailabilityAI
+                  timezone={timezone}
+                  onApply={handleAIApply}
+                  currentPatterns={generalAvailability}
+                />
               </div>
             </div>
 

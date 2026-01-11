@@ -50,6 +50,7 @@ export async function GET(
         dayOfWeek: g.dayOfWeek,
         startTime: g.startTime,
         endTime: g.endTime,
+        isAvailable: g.isAvailable,
       })),
       exceptions: p.exceptions.map((e) => ({
         id: e.id,

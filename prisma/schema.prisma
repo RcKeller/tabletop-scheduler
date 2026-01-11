@@ -125,8 +125,9 @@ model GeneralAvailability {
   dayOfWeek     Int
   startTime     String
   endTime       String
+  isAvailable   Boolean     @default(true)  // true = available, false = blocked/busy
 
-  @@unique([participantId, dayOfWeek, startTime, endTime])
+  @@unique([participantId, dayOfWeek, startTime, endTime, isAvailable])
   @@map("general_availability")
 }
 

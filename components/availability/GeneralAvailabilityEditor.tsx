@@ -6,34 +6,27 @@ import type { GeneralAvailability } from "@/lib/types";
 import { utcToLocal } from "@/lib/utils/timezone";
 
 interface GeneralAvailabilityEditorProps {
-  patterns: GeneralAvailability[];  // Patterns stored/edited in user's local timezone
-  timezone: string;  // User's display timezone
+  patterns: GeneralAvailability[];
+  timezone: string;
   onSave: (patterns: Omit<GeneralAvailability, "id" | "participantId">[]) => void;
   isSaving: boolean;
-  eventEarliestTime?: string;  // In UTC
-  eventLatestTime?: string;    // In UTC
+  eventEarliestTime?: string;
+  eventLatestTime?: string;
 }
 
 const DAYS = [
-  { value: 0, label: "Sunday", short: "Sun" },
-  { value: 1, label: "Monday", short: "Mon" },
-  { value: 2, label: "Tuesday", short: "Tue" },
-  { value: 3, label: "Wednesday", short: "Wed" },
-  { value: 4, label: "Thursday", short: "Thu" },
-  { value: 5, label: "Friday", short: "Fri" },
-  { value: 6, label: "Saturday", short: "Sat" },
+  { value: 0, label: "Sunday", short: "Su" },
+  { value: 1, label: "Monday", short: "Mo" },
+  { value: 2, label: "Tuesday", short: "Tu" },
+  { value: 3, label: "Wednesday", short: "We" },
+  { value: 4, label: "Thursday", short: "Th" },
+  { value: 5, label: "Friday", short: "Fr" },
+  { value: 6, label: "Saturday", short: "Sa" },
 ];
 
 const DAY_PRESETS = [
   { value: "weekdays", label: "Weekdays", days: [1, 2, 3, 4, 5] },
   { value: "weekends", label: "Weekends", days: [0, 6] },
-  { value: "sunday", label: "Sunday", days: [0] },
-  { value: "monday", label: "Monday", days: [1] },
-  { value: "tuesday", label: "Tuesday", days: [2] },
-  { value: "wednesday", label: "Wednesday", days: [3] },
-  { value: "thursday", label: "Thursday", days: [4] },
-  { value: "friday", label: "Friday", days: [5] },
-  { value: "saturday", label: "Saturday", days: [6] },
 ];
 
 const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
@@ -47,12 +40,13 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
   return { value: time, label: display };
 });
 
+// Local entry supports multiple days
 interface PatternEntry {
   id: string;
-  dayOfWeek: number;
+  days: number[]; // Multiple days selected
   startTime: string;
   endTime: string;
-  isAvailable: boolean;  // true = available, false = blocked/busy
+  isAvailable: boolean;
 }
 
 function isTimeInWindow(time: string, earliest: string, latest: string): boolean {
@@ -72,6 +66,50 @@ function isTimeInWindow(time: string, earliest: string, latest: string): boolean
   return timeMins >= earliestMins && timeMins <= latestMins;
 }
 
+// Group patterns by time and availability status into multi-day entries
+function groupPatternsToEntries(patterns: GeneralAvailability[]): PatternEntry[] {
+  const groups = new Map<string, PatternEntry>();
+
+  for (const p of patterns) {
+    const key = `${p.startTime}-${p.endTime}-${p.isAvailable}`;
+    const existing = groups.get(key);
+    if (existing) {
+      if (!existing.days.includes(p.dayOfWeek)) {
+        existing.days.push(p.dayOfWeek);
+        existing.days.sort((a, b) => a - b);
+      }
+    } else {
+      groups.set(key, {
+        id: `entry-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        days: [p.dayOfWeek],
+        startTime: p.startTime,
+        endTime: p.endTime,
+        isAvailable: p.isAvailable ?? true,
+      });
+    }
+  }
+
+  return Array.from(groups.values());
+}
+
+// Expand entries back to individual patterns for saving
+function expandEntriesToPatterns(entries: PatternEntry[]): Omit<GeneralAvailability, "id" | "participantId">[] {
+  const patterns: Omit<GeneralAvailability, "id" | "participantId">[] = [];
+
+  for (const entry of entries) {
+    for (const dayOfWeek of entry.days) {
+      patterns.push({
+        dayOfWeek,
+        startTime: entry.startTime,
+        endTime: entry.endTime,
+        isAvailable: entry.isAvailable,
+      });
+    }
+  }
+
+  return patterns;
+}
+
 export function GeneralAvailabilityEditor({
   patterns,
   timezone,
@@ -82,13 +120,13 @@ export function GeneralAvailabilityEditor({
 }: GeneralAvailabilityEditorProps) {
   const [entries, setEntries] = useState<PatternEntry[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
-  const [initialized, setInitialized] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
+  // Track the last saved patterns to detect external changes
+  const [lastSavedPatterns, setLastSavedPatterns] = useState<string>("");
 
   // Convert UTC event time window to user's local timezone for comparison
   const localTimeWindow = useMemo(() => {
     if (!eventEarliestTime || !eventLatestTime) return null;
-    // Use today's date as reference for conversion
     const refDate = format(new Date(), "yyyy-MM-dd");
     const localEarliest = utcToLocal(eventEarliestTime, refDate, timezone);
     const localLatest = utcToLocal(eventLatestTime, refDate, timezone);
@@ -102,101 +140,97 @@ export function GeneralAvailabilityEditor({
     if (!localTimeWindow) return [];
 
     return entries.filter((entry) => {
-      if (!entry.isAvailable) return false; // Don't warn about "not available" entries
+      if (!entry.isAvailable) return false;
       const startInWindow = isTimeInWindow(entry.startTime, localTimeWindow.earliest, localTimeWindow.latest);
       const endInWindow = isTimeInWindow(entry.endTime, localTimeWindow.earliest, localTimeWindow.latest);
       return !startInWindow || !endInWindow;
     });
   }, [entries, localTimeWindow]);
 
-  // Initialize from patterns only (no auto-population)
+  // Initialize and sync from patterns - only when patterns actually change externally
   useEffect(() => {
-    if (initialized) return;
+    const patternsKey = JSON.stringify(patterns.map(p => ({
+      d: p.dayOfWeek,
+      s: p.startTime,
+      e: p.endTime,
+      a: p.isAvailable
+    })).sort((a, b) => a.d - b.d || a.s.localeCompare(b.s)));
 
-    if (patterns.length > 0) {
-      setEntries(
-        patterns.map((p, i) => ({
-          id: p.id || `entry-${i}`,
-          dayOfWeek: p.dayOfWeek,
-          startTime: p.startTime,
-          endTime: p.endTime,
-          isAvailable: true, // Existing patterns are always "available"
-        }))
-      );
-    } else {
-      setEntries([]);
+    // Only update if patterns changed externally (different from what we last saved)
+    if (patternsKey !== lastSavedPatterns) {
+      setEntries(groupPatternsToEntries(patterns));
+      setLastSavedPatterns(patternsKey);
+      setHasChanges(false);
     }
-    setHasChanges(false);
-    setInitialized(true);
-  }, [patterns, initialized]);
+  }, [patterns, lastSavedPatterns]);
 
-  useEffect(() => {
-    if (patterns.length > 0 && initialized) {
-      const currentIds = new Set(entries.map(e => e.id));
-      const hasNewPatterns = patterns.some(p => !currentIds.has(p.id || ''));
-
-      if (hasNewPatterns) {
-        setEntries(
-          patterns.map((p, i) => ({
-            id: p.id || `entry-${i}`,
-            dayOfWeek: p.dayOfWeek,
-            startTime: p.startTime,
-            endTime: p.endTime,
-            isAvailable: true,
-          }))
-        );
-        setHasChanges(false);
-      }
-    }
-  }, [patterns, initialized, entries]);
-
-  const addEntriesForDays = useCallback((days: number[]) => {
-    const newEntries = days.map((dayOfWeek, i) => ({
-      id: `new-${Date.now()}-${i}`,
-      dayOfWeek,
+  const addEntry = useCallback((days: number[], isAvailable: boolean = true) => {
+    const newEntry: PatternEntry = {
+      id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      days,
       startTime: "17:00",
       endTime: "21:00",
-      isAvailable: true,
-    }));
-    setEntries([...entries, ...newEntries]);
+      isAvailable,
+    };
+    setEntries(prev => [...prev, newEntry]);
     setHasChanges(true);
     setShowAddMenu(false);
-  }, [entries]);
+  }, []);
 
-  const removeEntry = (id: string) => {
-    setEntries(entries.filter((e) => e.id !== id));
+  const removeEntry = useCallback((id: string) => {
+    setEntries(prev => prev.filter((e) => e.id !== id));
     setHasChanges(true);
-  };
+  }, []);
 
-  const updateEntry = (id: string, field: keyof PatternEntry, value: number | string | boolean) => {
-    setEntries(
-      entries.map((e) => (e.id === id ? { ...e, [field]: value } : e))
+  const toggleDay = useCallback((entryId: string, dayValue: number) => {
+    setEntries(prev =>
+      prev.map((e) => {
+        if (e.id !== entryId) return e;
+        const hasDday = e.days.includes(dayValue);
+        let newDays: number[];
+        if (hasDday) {
+          // Remove day (but keep at least one)
+          newDays = e.days.filter(d => d !== dayValue);
+          if (newDays.length === 0) return e; // Don't allow empty
+        } else {
+          // Add day
+          newDays = [...e.days, dayValue].sort((a, b) => a - b);
+        }
+        return { ...e, days: newDays };
+      })
     );
     setHasChanges(true);
-  };
+  }, []);
 
-  const toggleAvailability = (id: string) => {
-    setEntries(
-      entries.map((e) => (e.id === id ? { ...e, isAvailable: !e.isAvailable } : e))
+  const updateEntry = useCallback((id: string, field: "startTime" | "endTime", value: string) => {
+    setEntries(prev =>
+      prev.map((e) => (e.id === id ? { ...e, [field]: value } : e))
     );
     setHasChanges(true);
-  };
+  }, []);
 
-  const handleSave = () => {
-    // Only save "available" entries as patterns
-    // "Not available" entries are not saved (they represent blocked times)
-    const patternsToSave = entries
-      .filter(e => e.isAvailable)
-      .map((e) => ({
-        dayOfWeek: e.dayOfWeek,
-        startTime: e.startTime,
-        endTime: e.endTime,
-      }));
+  const toggleAvailability = useCallback((id: string) => {
+    setEntries(prev =>
+      prev.map((e) => (e.id === id ? { ...e, isAvailable: !e.isAvailable } : e))
+    );
+    setHasChanges(true);
+  }, []);
+
+  const handleSave = useCallback(() => {
+    const patternsToSave = expandEntriesToPatterns(entries);
+
+    // Update lastSavedPatterns to match what we're saving
+    const patternsKey = JSON.stringify(patternsToSave.map(p => ({
+      d: p.dayOfWeek,
+      s: p.startTime,
+      e: p.endTime,
+      a: p.isAvailable
+    })).sort((a, b) => a.d - b.d || a.s.localeCompare(b.s)));
+    setLastSavedPatterns(patternsKey);
+
     onSave(patternsToSave);
-    // Remove "not available" entries after save since they're not persisted
-    setEntries(entries.filter(e => e.isAvailable));
     setHasChanges(false);
-  };
+  }, [entries, onSave]);
 
   const formatTimeDisplay = (time: string) => {
     const [h, m] = time.split(":").map(Number);
@@ -205,18 +239,31 @@ export function GeneralAvailabilityEditor({
     return `${hour}:${m.toString().padStart(2, "0")} ${ampm}`;
   };
 
+  const formatDaysLabel = (days: number[]) => {
+    if (days.length === 5 && [1, 2, 3, 4, 5].every(d => days.includes(d))) {
+      return "Weekdays";
+    }
+    if (days.length === 2 && days.includes(0) && days.includes(6)) {
+      return "Weekends";
+    }
+    if (days.length === 7) {
+      return "Every day";
+    }
+    return days.map(d => DAYS[d].short).join(", ");
+  };
+
   return (
     <div className="space-y-3">
       {entries.length === 0 ? (
-        <div className="rounded-lg border-2 border-dashed border-zinc-300 p-6 text-center dark:border-zinc-700">
-          <svg className="mx-auto h-8 w-8 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="rounded-lg border-2 border-dashed border-zinc-300 p-8 text-center dark:border-zinc-700">
+          <svg className="mx-auto h-10 w-10 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
-          <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-            No weekly availability set yet
+          <p className="mt-3 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+            No recurring schedule set
           </p>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-            Add times when you're typically free each week
+          <p className="mt-1 text-xs text-zinc-500">
+            Add times when you're typically available or unavailable each week
           </p>
         </div>
       ) : (
@@ -224,95 +271,103 @@ export function GeneralAvailabilityEditor({
           {entries.map((entry) => (
             <div
               key={entry.id}
-              className={`flex flex-wrap items-center gap-2 rounded-lg border p-2.5 transition-colors ${
+              className={`rounded-lg border p-3 transition-colors ${
                 entry.isAvailable
-                  ? "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30"
-                  : "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30"
+                  ? "border-green-200 bg-green-50/50 dark:border-green-900/50 dark:bg-green-950/20"
+                  : "border-red-200 bg-red-50/50 dark:border-red-900/50 dark:bg-red-950/20"
               }`}
             >
-              {/* Available/Not Available Toggle Badge */}
-              <button
-                onClick={() => toggleAvailability(entry.id)}
-                className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
-                  entry.isAvailable
-                    ? "bg-green-500 text-white hover:bg-green-600"
-                    : "bg-red-500 text-white hover:bg-red-600"
-                }`}
-                title={entry.isAvailable ? "Click to mark as Not Available" : "Click to mark as Available"}
-              >
-                {entry.isAvailable ? (
-                  <>
-                    <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                    Available
-                  </>
-                ) : (
-                  <>
-                    <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                    </svg>
-                    Busy
-                  </>
-                )}
-              </button>
+              {/* Row 1: Toggle + Days label + Delete */}
+              <div className="flex items-center gap-3">
+                {/* Available/Not Available Toggle */}
+                <button
+                  onClick={() => toggleAvailability(entry.id)}
+                  className={`flex-shrink-0 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                    entry.isAvailable
+                      ? "bg-green-500 text-white hover:bg-green-600"
+                      : "bg-red-500 text-white hover:bg-red-600"
+                  }`}
+                  title={entry.isAvailable ? "Click to mark as Not Available" : "Click to mark as Available"}
+                >
+                  {entry.isAvailable ? "Available" : "Not Available"}
+                </button>
 
-              <select
-                value={entry.dayOfWeek}
-                onChange={(e) => updateEntry(entry.id, "dayOfWeek", parseInt(e.target.value))}
-                className="rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-700"
-              >
-                {DAYS.map((day) => (
-                  <option key={day.value} value={day.value}>
-                    {day.label}
-                  </option>
-                ))}
-              </select>
+                {/* Days label */}
+                <span className="flex-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  {formatDaysLabel(entry.days)}
+                </span>
 
-              <select
-                value={entry.startTime}
-                onChange={(e) => updateEntry(entry.id, "startTime", e.target.value)}
-                className="rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-700"
-              >
-                {TIME_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                {/* Delete Button */}
+                <button
+                  onClick={() => removeEntry(entry.id)}
+                  className="flex-shrink-0 rounded p-1.5 text-zinc-400 transition-colors hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                  title="Delete this schedule"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
 
-              <span className="text-sm text-zinc-400">to</span>
+              {/* Row 2: Day Selection Checkboxes */}
+              <div className="mt-2 flex flex-wrap gap-1">
+                {DAYS.map((day) => {
+                  const isSelected = entry.days.includes(day.value);
+                  return (
+                    <button
+                      key={day.value}
+                      onClick={() => toggleDay(entry.id, day.value)}
+                      className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                        isSelected
+                          ? entry.isAvailable
+                            ? "bg-green-600 text-white"
+                            : "bg-red-600 text-white"
+                          : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                      }`}
+                      title={isSelected ? `Remove ${day.label}` : `Add ${day.label}`}
+                    >
+                      {day.short}
+                    </button>
+                  );
+                })}
+              </div>
 
-              <select
-                value={entry.endTime}
-                onChange={(e) => updateEntry(entry.id, "endTime", e.target.value)}
-                className="rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-700"
-              >
-                {TIME_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+              {/* Row 3: Time Selection */}
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">From</span>
+                <select
+                  value={entry.startTime}
+                  onChange={(e) => updateEntry(entry.id, "startTime", e.target.value)}
+                  className="rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+                >
+                  {TIME_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
 
-              {/* Delete Button */}
-              <button
-                onClick={() => removeEntry(entry.id)}
-                className="ml-auto flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-100 dark:text-red-400 dark:hover:bg-red-900/30"
-                title="Delete this time slot"
-              >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-                Delete
-              </button>
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">to</span>
+
+                <select
+                  value={entry.endTime}
+                  onChange={(e) => updateEntry(entry.id, "endTime", e.target.value)}
+                  className="rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+                >
+                  {TIME_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           ))}
         </div>
       )}
 
       {/* Add availability dropdown + Save button */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3 pt-1">
         <div className="relative">
           <button
             onClick={() => setShowAddMenu(!showAddMenu)}
@@ -330,35 +385,56 @@ export function GeneralAvailabilityEditor({
                 className="fixed inset-0 z-10"
                 onClick={() => setShowAddMenu(false)}
               />
-              <div className="absolute left-0 top-full z-20 mt-1 w-52 rounded-lg border border-zinc-200 bg-white py-1 shadow-xl dark:border-zinc-700 dark:bg-zinc-800">
+              <div className="absolute left-0 top-full z-20 mt-1 w-56 rounded-lg border border-zinc-200 bg-white py-1 shadow-xl dark:border-zinc-700 dark:bg-zinc-800">
                 <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                  Quick add
+                  Available times
                 </div>
-                {DAY_PRESETS.slice(0, 2).map((preset) => (
+                {DAY_PRESETS.map((preset) => (
                   <button
                     key={preset.value}
-                    onClick={() => addEntriesForDays(preset.days)}
+                    onClick={() => addEntry(preset.days, true)}
                     className="flex w-full items-center justify-between px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700"
                   >
                     <span className="font-medium">{preset.label}</span>
-                    <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400">
+                    <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700 dark:bg-green-900/30 dark:text-green-400">
                       {preset.days.length} days
                     </span>
                   </button>
                 ))}
+                <button
+                  onClick={() => addEntry([0, 1, 2, 3, 4, 5, 6], true)}
+                  className="flex w-full items-center justify-between px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                >
+                  <span className="font-medium">Every day</span>
+                  <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                    7 days
+                  </span>
+                </button>
                 <div className="my-1 border-t border-zinc-100 dark:border-zinc-700" />
                 <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                  Individual days
+                  Blocked times
                 </div>
-                {DAY_PRESETS.slice(2).map((preset) => (
+                {DAY_PRESETS.map((preset) => (
                   <button
-                    key={preset.value}
-                    onClick={() => addEntriesForDays(preset.days)}
-                    className="block w-full px-3 py-1.5 text-left text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    key={`blocked-${preset.value}`}
+                    onClick={() => addEntry(preset.days, false)}
+                    className="flex w-full items-center justify-between px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700"
                   >
-                    {preset.label}
+                    <span className="font-medium">{preset.label}</span>
+                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                      blocked
+                    </span>
                   </button>
                 ))}
+                <button
+                  onClick={() => addEntry([0, 1, 2, 3, 4, 5, 6], false)}
+                  className="flex w-full items-center justify-between px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                >
+                  <span className="font-medium">Every day</span>
+                  <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                    blocked
+                  </span>
+                </button>
               </div>
             </>
           )}
@@ -383,26 +459,12 @@ export function GeneralAvailabilityEditor({
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
-                {entries.filter(e => e.isAvailable).length === 0 ? "Clear Schedule" : "Save Schedule"}
+                Save Schedule
               </>
             )}
           </button>
         )}
       </div>
-
-      {/* Info about "Busy" entries */}
-      {entries.some(e => !e.isAvailable) && (
-        <div className="rounded-md bg-blue-50 p-2.5 text-xs text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
-          <div className="flex items-start gap-2">
-            <svg className="mt-0.5 h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>
-              "Busy" slots won't be saved. To block recurring times, delete the slot instead.
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* Warning for times outside campaign window */}
       {entriesOutsideWindow.length > 0 && localTimeWindow && (

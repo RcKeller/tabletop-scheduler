@@ -13,6 +13,7 @@ export interface GeneralAvailability {
   dayOfWeek: number; // 0=Sun, 1=Mon, etc.
   startTime: string; // HH:MM
   endTime: string; // HH:MM
+  isAvailable: boolean; // true = available, false = blocked/busy
 }
 
 export interface AvailabilityException {

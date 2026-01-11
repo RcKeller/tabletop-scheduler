@@ -85,8 +85,14 @@ export function AvailabilityAI({
       }
 
       // Apply the changes - parent handles undo stack
+      // AI-parsed patterns represent times when user IS available, so isAvailable: true
+      const patternsWithAvailability = result.patterns.map(p => ({
+        ...p,
+        isAvailable: true,
+      }));
+
       onApply(
-        result.patterns,
+        patternsWithAvailability,
         result.additions,
         result.exclusions,
         result.routineRemovals || [],

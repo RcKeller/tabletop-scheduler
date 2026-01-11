@@ -156,6 +156,7 @@ export function AvailabilitySection({
           dayOfWeek: p.dayOfWeek,
           startTime: p.startTime,
           endTime: p.endTime,
+          isAvailable: p.isAvailable,
         }));
 
       // Apply routine removals first (remove days/times from routine)
@@ -181,6 +182,7 @@ export function AvailabilitySection({
                   dayOfWeek: p.dayOfWeek,
                   startTime: p.startTime,
                   endTime: removal.startTime!,
+                  isAvailable: p.isAvailable,
                 });
               }
 
@@ -189,6 +191,7 @@ export function AvailabilitySection({
                   dayOfWeek: p.dayOfWeek,
                   startTime: removal.endTime!,
                   endTime: p.endTime,
+                  isAvailable: p.isAvailable,
                 });
               }
 

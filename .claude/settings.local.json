@@ -19,7 +19,8 @@
       "Bash(/opt/homebrew/opt/postgresql@16/bin/createdb:*)",
       "Bash(pkill:*)",
       "Bash(curl:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(node -e:*)"
     ]
   }
 }

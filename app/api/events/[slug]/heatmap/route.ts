@@ -47,12 +47,22 @@ export async function GET(
     const participantsData = event.participants.map((participant) => {
       const participantTimezone = participant.timezone || "UTC";
 
-      // Convert database records to the right format
-      const patterns = participant.generalAvailability.map((p) => ({
-        dayOfWeek: p.dayOfWeek,
-        startTime: p.startTime,
-        endTime: p.endTime,
-      }));
+      // Separate patterns into available and unavailable (blocked times)
+      const availablePatterns = participant.generalAvailability
+        .filter((p) => p.isAvailable !== false)
+        .map((p) => ({
+          dayOfWeek: p.dayOfWeek,
+          startTime: p.startTime,
+          endTime: p.endTime,
+        }));
+
+      const unavailablePatterns = participant.generalAvailability
+        .filter((p) => p.isAvailable === false)
+        .map((p) => ({
+          dayOfWeek: p.dayOfWeek,
+          startTime: p.startTime,
+          endTime: p.endTime,
+        }));
 
       // Specific slots are already in UTC
       const specificSlots = participant.availability.map((a) => ({
@@ -68,35 +78,90 @@ export async function GET(
         endTime: e.endTime,
       }));
 
-      // Expand patterns to specific slots (patterns are in local timezone)
-      // IMPORTANT: Don't pass time window here - patterns are in local time, window is in UTC
-      // We'll clamp after converting to UTC
-      const expandedPatterns = expandPatternsToSlots(
-        patterns,
+      // Expand AVAILABLE patterns to specific slots (patterns are in local timezone)
+      const expandedAvailablePatterns = expandPatternsToSlots(
+        availablePatterns,
         rangeStart,
         rangeEnd
-        // Don't pass time window - we'll clamp in UTC after conversion
       );
 
-      // Convert expanded patterns from participant's local timezone to UTC
-      const patternsInUTC = expandedPatterns.map(slot => {
+      // Convert expanded available patterns from participant's local timezone to UTC
+      // Handle slots that cross midnight when converted
+      const availablePatternsInUTC: Array<{ date: string; startTime: string; endTime: string }> = [];
+      for (const slot of expandedAvailablePatterns) {
         const start = localToUTC(slot.startTime, slot.date, participantTimezone);
         const end = localToUTC(slot.endTime, slot.date, participantTimezone);
-        return {
-          date: start.date,
-          startTime: start.time,
-          endTime: end.time,
-        };
-      });
 
-      // NOTE: We don't clamp patterns to the event time window here
-      // The heatmap display layer handles showing only the visible time window
+        if (start.date === end.date) {
+          // Same day - simple case
+          if (start.time < end.time) {
+            availablePatternsInUTC.push({
+              date: start.date,
+              startTime: start.time,
+              endTime: end.time,
+            });
+          }
+        } else {
+          // Slot crosses midnight when converted to UTC - split into two slots
+          availablePatternsInUTC.push({
+            date: start.date,
+            startTime: start.time,
+            endTime: "23:59",
+          });
+          availablePatternsInUTC.push({
+            date: end.date,
+            startTime: "00:00",
+            endTime: end.time,
+          });
+        }
+      }
 
-      // Combine UTC patterns with UTC specific slots
-      const allSlots = [...patternsInUTC, ...specificSlots];
+      // Expand UNAVAILABLE patterns to specific slots (these become recurring blocked times)
+      const expandedUnavailablePatterns = expandPatternsToSlots(
+        unavailablePatterns,
+        rangeStart,
+        rangeEnd
+      );
 
-      // Apply UTC exceptions
-      const effectiveSlots = applyExceptions(allSlots, exceptions);
+      // Convert unavailable patterns from participant's local timezone to UTC
+      // Handle slots that cross midnight when converted
+      const blockedPatternsInUTC: Array<{ date: string; startTime: string; endTime: string }> = [];
+      for (const slot of expandedUnavailablePatterns) {
+        const start = localToUTC(slot.startTime, slot.date, participantTimezone);
+        const end = localToUTC(slot.endTime, slot.date, participantTimezone);
+
+        if (start.date === end.date) {
+          // Same day - simple case
+          if (start.time < end.time) {
+            blockedPatternsInUTC.push({
+              date: start.date,
+              startTime: start.time,
+              endTime: end.time,
+            });
+          }
+        } else {
+          // Slot crosses midnight when converted to UTC - split into two slots
+          blockedPatternsInUTC.push({
+            date: start.date,
+            startTime: start.time,
+            endTime: "23:59",
+          });
+          blockedPatternsInUTC.push({
+            date: end.date,
+            startTime: "00:00",
+            endTime: end.time,
+          });
+        }
+      }
+
+      // Combine UTC available patterns with UTC specific slots
+      const allSlots = [...availablePatternsInUTC, ...specificSlots];
+
+      // Combine stored exceptions with blocked pattern exceptions
+      const allExceptions = [...exceptions, ...blockedPatternsInUTC];
+
+      // Apply ALL exceptions (both stored and from unavailable patterns)
+      const effectiveSlots = applyExceptions(allSlots, allExceptions);
 
       // Merge overlapping slots
       const effectiveAvailability = mergeOverlappingSlots(effectiveSlots);
