@@ -143,7 +143,8 @@ export function AvailabilitySection({
     additions: Array<{ date: string; startTime: string; endTime: string }>,
     exclusions: Array<{ date: string; startTime?: string; endTime?: string; reason?: string }>,
     routineRemovals: Array<{ dayOfWeek: number; startTime?: string; endTime?: string }>,
-    mode: "replace" | "adjust"
+    mode: "replace" | "adjust",
+    _interpretation?: string // Unused but kept for type compatibility with AvailabilityAI
   ) => {
     setIsSaving(true);
     try {

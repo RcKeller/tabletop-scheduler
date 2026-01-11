@@ -47,12 +47,14 @@ IMPORTANT: The user likely already has some availability set. Your job is to par
 Your job is to:
 1. Parse the user's availability/unavailability text
 2. Identify if they're describing:
-   - Recurring weekly patterns (e.g., "available evenings Mon-Fri") -> patterns
-   - Specific date additions (e.g., "also free Sunday January 12th") -> additions
-   - Specific date unavailability (e.g., "busy on January 15th") -> exclusions
-   - RECURRING unavailability (e.g., "not available on mondays", "can't do weekends") -> routineRemovals
+   - Recurring weekly patterns (e.g., "free evenings Mon-Fri", "weekends work", "available saturdays after 2pm") -> patterns
+   - Specific date additions with actual dates (e.g., "also free Sunday January 12th", "available the 15th") -> additions
+   - Specific date unavailability (e.g., "busy on January 15th", "can't make it this Thursday") -> exclusions
+   - RECURRING unavailability (e.g., "never available on mondays", "can't do weekends", "I work 9-5 weekdays") -> routineRemovals
 3. Convert times to 24-hour format (HH:MM)
 4. Convert relative dates to actual dates
+
+CRITICAL: If user mentions days of the week WITHOUT a specific date, use patterns. If they mention a specific date or "this/next Thursday", use additions or exclusions.
 
 Rules:
 - dayOfWeek uses 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday
@@ -116,14 +118,24 @@ Respond ONLY with valid JSON in this format:
 }
 
 Notes:
-- patterns: recurring weekly availability - ONLY populate if user is defining/changing their weekly schedule
-- additions: specific one-time dates to ADD availability (empty array if none)
+- patterns: USE THIS for any recurring weekly availability! If user mentions days of week (Mon, Tue, weekdays, weekends, etc.) without a specific date, put it in patterns
+  - "free weekday evenings" -> patterns with Mon-Fri entries
+  - "available saturdays" -> patterns with Saturday entry
+  - "I can do 6pm-10pm on weekdays" -> patterns with Mon-Fri entries
+- additions: ONLY for specific one-time dates with actual dates mentioned (empty array if none)
+  - "also free this Sunday" -> additions (specific date)
+  - "available January 15th" -> additions (specific date)
 - exclusions: specific dates when NOT available (empty array if none) - use for ONE-TIME unavailability
+  - "not available 2-3pm on Saturday the 12th" -> exclusions with date and time range
+  - "busy this Thursday afternoon" -> exclusions
+  - "can't make the 15th" -> exclusions (whole day, omit times)
 - routineRemovals: days to REMOVE from weekly routine (empty array if none) - use for RECURRING unavailability
+  - "not available mondays" -> routineRemovals
+  - "I work 9-5 weekdays" -> routineRemovals for Mon-Fri 9-5
   - For whole-day removal, just provide dayOfWeek
   - For partial removal, also provide startTime and endTime (e.g., "no mornings on Monday")
 - For whole-day exclusions, omit startTime and endTime
-- PREFER routineRemovals for recurring unavailability, exclusions for one-time dates`;
+- PREFER patterns for recurring availability, routineRemovals for recurring unavailability, additions/exclusions for one-time dates`;
 
 /**
  * Calculate upcoming dates for each day of the week from a given start date
