@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { format, eachDayOfInterval } from "date-fns";
-import { computeEffectiveAvailability } from "@/lib/utils/availability-expander";
+import { expandPatternsToSlots, mergeOverlappingSlots, applyExceptions } from "@/lib/utils/availability-expander";
 import { generateTimeSlots, addThirtyMinutes } from "@/lib/utils/time-slots";
+import { localToUTC } from "@/lib/utils/timezone";
 
 export async function GET(
   request: NextRequest,
@@ -42,7 +43,10 @@ export async function GET(
 
     // Build availability data for each participant
     // This combines patterns + specific slots - exceptions for the full date range
+    // IMPORTANT: Patterns are stored in participant's local timezone, specific slots and exceptions are in UTC
     const participantsData = event.participants.map((participant) => {
+      const participantTimezone = participant.timezone || "UTC";
+
       // Convert database records to the right format
       const patterns = participant.generalAvailability.map((p) => ({
         dayOfWeek: p.dayOfWeek,
@@ -50,28 +54,52 @@ export async function GET(
         endTime: p.endTime,
       }));
 
+      // Specific slots are already in UTC
       const specificSlots = participant.availability.map((a) => ({
         date: format(a.date, "yyyy-MM-dd"),
         startTime: a.startTime,
         endTime: a.endTime,
       }));
 
+      // Exceptions are already in UTC
       const exceptions = participant.exceptions.map((e) => ({
         date: format(e.date, "yyyy-MM-dd"),
         startTime: e.startTime,
         endTime: e.endTime,
       }));
 
-      // Compute effective availability for the full date range
-      const effectiveAvailability = computeEffectiveAvailability(
+      // Expand patterns to specific slots (patterns are in local timezone)
+      // IMPORTANT: Don't pass time window here - patterns are in local time, window is in UTC
+      // We'll clamp after converting to UTC
+      const expandedPatterns = expandPatternsToSlots(
         patterns,
-        specificSlots,
-        exceptions,
         rangeStart,
-        rangeEnd,
-        earliestTime,
-        latestTime
+        rangeEnd
+        // Don't pass time window - we'll clamp in UTC after conversion
       );
+
+      // Convert expanded patterns from participant's local timezone to UTC
+      const patternsInUTC = expandedPatterns.map(slot => {
+        const start = localToUTC(slot.startTime, slot.date, participantTimezone);
+        const end = localToUTC(slot.endTime, slot.date, participantTimezone);
+        return {
+          date: start.date,
+          startTime: start.time,
+          endTime: end.time,
+        };
+      });
+
+      // NOTE: We don't clamp patterns to the event time window here
+      // The heatmap display layer handles showing only the visible time window
+
+      // Combine UTC patterns with UTC specific slots
+      const allSlots = [...patternsInUTC, ...specificSlots];
+
+      // Apply UTC exceptions
+      const effectiveSlots = applyExceptions(allSlots, exceptions);
+
+      // Merge overlapping slots
+      const effectiveAvailability = mergeOverlappingSlots(effectiveSlots);
 
       return {
         id: participant.id,

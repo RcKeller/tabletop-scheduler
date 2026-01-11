@@ -70,10 +70,20 @@ export async function GET(
     const eventEarliestTime = earliestTime || participant?.event?.earliestTime;
     const eventLatestTime = latestTime || participant?.event?.latestTime;
 
+    console.log("[API] Computing effectiveAvailability:", {
+      startDate,
+      endDate,
+      userTimezone,
+      patternsCount: generalAvailability.length,
+      patterns: generalAvailability.map(p => ({ dayOfWeek: p.dayOfWeek, startTime: p.startTime, endTime: p.endTime })),
+    });
+
     if (startDate && endDate) {
       // Compute effective availability
       // Note: Patterns are in user's local timezone, specific availability and exceptions are in UTC
       // We need to handle this properly by expanding patterns to UTC
+      // IMPORTANT: Don't pass time window here - patterns are in local time, window is in UTC
+      // We'll clamp after converting to UTC
       const rawEffective = computeEffectiveAvailability(
         generalAvailability.map((p) => ({
           dayOfWeek: p.dayOfWeek,
@@ -83,9 +93,8 @@ export async function GET(
         [], // Don't mix with specific availability yet (it's in UTC, patterns are local)
         [], // Don't apply exceptions yet (they're in UTC)
         startDate,
-        endDate,
-        eventEarliestTime || undefined,
-        eventLatestTime || undefined
+        endDate
+        // Don't pass time window - we'll clamp in UTC after conversion
       );
 
       // Convert pattern-expanded slots from local timezone to UTC
@@ -98,6 +107,10 @@ export async function GET(
           endTime: end.time,
         };
       });
+
+      // NOTE: We don't clamp patterns to the event time window here
+      // The grid display layer handles showing only the visible time window
+      // Clamping here was incorrectly filtering out all patterns due to timezone differences
 
       // Now combine UTC pattern slots with UTC specific availability
       const allSlots = [...patternsInUTC, ...formattedAvailability];
@@ -114,6 +127,14 @@ export async function GET(
 
       // Merge overlapping slots (simplified - just use as-is for now)
       // TODO: Properly merge overlapping slots
+
+      console.log("[API] Computed effectiveAvailability:", {
+        rawEffectiveCount: rawEffective.length,
+        patternsInUTCCount: patternsInUTC.length,
+        specificSlotsCount: formattedAvailability.length,
+        effectiveAvailabilityCount: effectiveAvailability.length,
+        firstFewSlots: effectiveAvailability.slice(0, 3),
+      });
     }
 
     return NextResponse.json({
@@ -144,6 +165,14 @@ export async function PUT(
   try {
     const { participantId } = await params;
     const body = await request.json();
+
+    // Update participant's timezone if provided
+    if (body.timezone) {
+      await prisma.participant.update({
+        where: { id: participantId },
+        data: { timezone: body.timezone },
+      });
+    }
 
     // Handle event-specific availability
     if (body.availability !== undefined) {

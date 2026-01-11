@@ -41,17 +41,6 @@ interface PlayerAvailabilityPageProps {
   method: "select" | "pattern" | "describe";
 }
 
-const METHOD_LABELS = {
-  select: "Calendar",
-  pattern: "Recurring",
-  describe: "AI Assistant",
-};
-
-const METHOD_DESCRIPTIONS = {
-  select: "Click and drag to mark your availability",
-  pattern: "Set a typical weekly schedule",
-  describe: "Tell us in plain English when you're available",
-};
 
 interface UndoSnapshot {
   effectiveAvailability: TimeSlot[];
@@ -65,7 +54,7 @@ interface UndoSnapshot {
 export function PlayerAvailabilityPage({
   event,
   participant,
-  method,
+  // method prop kept for backwards compatibility but no longer used (unified view)
 }: PlayerAvailabilityPageProps) {
   const router = useRouter();
 
@@ -115,15 +104,23 @@ export function PlayerAvailabilityPage({
     };
   }, [undoStack]);
 
+  // Always compute a date range - default to today + 3 months if event has no dates
   const eventStartDate = useMemo(() => {
-    return event.startDate ? parseISO(event.startDate) : new Date();
+    if (event.startDate) return parseISO(event.startDate);
+    return new Date();
   }, [event.startDate]);
 
   const eventEndDate = useMemo(() => {
-    return event.endDate ? parseISO(event.endDate) : eventStartDate;
+    if (event.endDate) return parseISO(event.endDate);
+    // Default to 3 months from start
+    const end = new Date(eventStartDate);
+    end.setMonth(end.getMonth() + 3);
+    return end;
   }, [event.endDate, eventStartDate]);
 
-  const playerSlug = participant.displayName.toLowerCase().replace(/\s+/g, "-");
+  // String versions for API calls
+  const eventStartDateStr = format(eventStartDate, "yyyy-MM-dd");
+  const eventEndDateStr = format(eventEndDate, "yyyy-MM-dd");
 
   // Load existing availability
   const loadAvailability = useCallback(async () => {
@@ -133,18 +130,24 @@ export function PlayerAvailabilityPage({
     }
     try {
       const params = new URLSearchParams();
-      if (event.startDate) params.set("startDate", event.startDate.split("T")[0]);
-      if (event.endDate) params.set("endDate", event.endDate.split("T")[0]);
+      // ALWAYS send date range - these always have values (either from event or defaults)
+      params.set("startDate", eventStartDateStr);
+      params.set("endDate", eventEndDateStr);
       if (event.earliestTime) params.set("earliestTime", event.earliestTime);
       if (event.latestTime) params.set("latestTime", event.latestTime);
       // Pass user's timezone so API can convert patterns to UTC
       params.set("timezone", timezone);
 
-      const url = `/api/availability/${participant.id}${params.toString() ? `?${params}` : ""}`;
+      const url = `/api/availability/${participant.id}?${params.toString()}`;
       const res = await fetch(url);
 
       if (res.ok) {
         const data = await res.json();
+        console.log("[Frontend] Loaded availability:", {
+          effectiveAvailabilityCount: data.effectiveAvailability?.length,
+          generalAvailabilityCount: data.generalAvailability?.length,
+          firstFewEffective: data.effectiveAvailability?.slice(0, 3),
+        });
         setEffectiveAvailability(
           data.effectiveAvailability.map((a: { date: string; startTime: string; endTime: string }) => ({
             date: a.date,
@@ -174,7 +177,7 @@ export function PlayerAvailabilityPage({
       hasLoadedOnce.current = true;
       setIsLoading(false);
     }
-  }, [participant.id, event.startDate, event.endDate, event.earliestTime, event.latestTime, timezone]);
+  }, [participant.id, eventStartDateStr, eventEndDateStr, event.earliestTime, event.latestTime, timezone]);
 
   useEffect(() => {
     loadAvailability();
@@ -267,13 +270,14 @@ export function PlayerAvailabilityPage({
         };
       });
 
-      // Save to API - all data in UTC
+      // Save to API - all data in UTC, include timezone for storage
       const res = await fetch(`/api/availability/${participant.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           availability: additionsInUTC,
           exceptions: exceptionsInUTC,
+          timezone,
         }),
       });
 
@@ -293,19 +297,22 @@ export function PlayerAvailabilityPage({
 
   // Save general availability patterns
   const handleSaveGeneralAvailability = async (patterns: Omit<GeneralAvailabilityType, "id" | "participantId">[]) => {
+    console.log("[Frontend] Saving general availability:", { patterns, timezone });
     setIsSaving(true);
     try {
       const res = await fetch(`/api/availability/${participant.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ generalAvailability: patterns }),
+        body: JSON.stringify({ generalAvailability: patterns, timezone }),
       });
+      console.log("[Frontend] Save response:", res.ok, res.status);
       if (res.ok) {
         setGeneralAvailability(patterns.map((p, i) => ({
           ...p,
           id: `temp-${i}`,
           participantId: participant.id,
         })));
+        console.log("[Frontend] Triggering reload...");
         await new Promise(resolve => setTimeout(resolve, 100));
         setLoadKey((k) => k + 1);
         setHasUnsavedChanges(false);
@@ -330,6 +337,7 @@ export function PlayerAvailabilityPage({
           availability: [],
           generalAvailability: [],
           exceptions: [],
+          timezone,
         }),
       });
       setEffectiveAvailability([]);
@@ -361,6 +369,7 @@ export function PlayerAvailabilityPage({
             endTime: p.endTime,
           })),
           exceptions: snapshot.exceptions,
+          timezone,
         }),
       });
 
@@ -377,7 +386,7 @@ export function PlayerAvailabilityPage({
     } finally {
       setIsSaving(false);
     }
-  }, [participant.id, undoStack]);
+  }, [participant.id, undoStack, timezone]);
 
   // Dismiss a single undo item
   const handleDismissUndo = useCallback((index: number) => {
@@ -405,7 +414,7 @@ export function PlayerAvailabilityPage({
 
     setIsSaving(true);
     try {
-      const body: Record<string, unknown> = {};
+      const body: Record<string, unknown> = { timezone };
 
       // Start with current patterns for merging
       let updatedPatterns: Omit<GeneralAvailabilityType, "id" | "participantId">[] =
@@ -564,8 +573,8 @@ export function PlayerAvailabilityPage({
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       {/* Header */}
-      <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto max-w-4xl px-3 py-2">
+      <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="mx-auto max-w-5xl px-3 py-2 sm:px-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Link
@@ -585,79 +594,71 @@ export function PlayerAvailabilityPage({
             </div>
             <div className="flex items-center gap-2">
               {isSaving && (
-                <span className="text-xs text-zinc-500">Saving...</span>
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">Saving...</span>
               )}
-              <button
-                onClick={handleReset}
-                className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              >
-                Clear All
-              </button>
+              <TimezoneAutocomplete value={timezone} onChange={setTimezone} />
             </div>
           </div>
         </div>
       </header>
 
-      {/* Method Selection */}
-      <div className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto max-w-4xl px-3 py-2">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-zinc-50 p-1 dark:border-zinc-700 dark:bg-zinc-800">
-              {(["select", "pattern", "describe"] as const).map((m) => (
-                <Link
-                  key={m}
-                  href={`/${event.slug}/${playerSlug}${m === "select" ? "" : `/${m}`}`}
-                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                    method === m
-                      ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100"
-                      : "text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
-                  }`}
-                >
-                  {METHOD_LABELS[m]}
-                </Link>
-              ))}
-            </div>
-            <TimezoneAutocomplete value={timezone} onChange={setTimezone} />
-          </div>
-        </div>
-      </div>
-
       {/* Main Content */}
-      <main className="mx-auto max-w-4xl px-3 py-3">
+      <main className="mx-auto max-w-5xl px-3 py-4 sm:px-4">
         {isLoading ? (
-          <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="space-y-3">
-              {/* Skeleton for grid */}
+          <div className="space-y-4">
+            <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "300px" }} />
-              <div className="flex justify-between">
-                <div className="h-8 w-32 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
-                <div className="h-8 w-24 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800" />
-              </div>
             </div>
           </div>
         ) : (
-          <div className="space-y-3">
-            {/* Method content */}
+          <div className="space-y-4">
+            {/* Calendar Card - Shows ALL availability */}
             <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-              {method === "select" && (
-                <div className="p-3">
-                  <VirtualizedAvailabilityGrid
-                    key={`grid-${timezone}`}
-                    startDate={eventStartDate}
-                    endDate={eventEndDate}
-                    earliestTime={event.earliestTime}
-                    latestTime={event.latestTime}
-                    mode="edit"
-                    availability={effectiveAvailability}
-                    onSave={handleAutoSaveAvailability}
-                    isSaving={isSaving}
-                    autoSave
-                    timezone={timezone}
-                  />
+              <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+                <div>
+                  <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    Your Availability
+                  </h2>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Click and drag to select when you&apos;re free. This shows all your availability including recurring patterns.
+                  </p>
                 </div>
-              )}
+                <button
+                  onClick={handleReset}
+                  className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                >
+                  Clear All
+                </button>
+              </div>
+              <div className="p-2 sm:p-3">
+                <VirtualizedAvailabilityGrid
+                  key={`grid-${timezone}`}
+                  startDate={eventStartDate}
+                  endDate={eventEndDate}
+                  earliestTime={event.earliestTime}
+                  latestTime={event.latestTime}
+                  mode="edit"
+                  availability={effectiveAvailability}
+                  onSave={handleAutoSaveAvailability}
+                  isSaving={isSaving}
+                  autoSave
+                  timezone={timezone}
+                />
+              </div>
+            </div>
 
-              {method === "pattern" && (
+            {/* Recurring & AI Cards - Side by side on desktop, stacked on mobile */}
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Recurring Patterns Card */}
+              <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+                  <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    Recurring Schedule
+                  </h2>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Set your typical weekly availability
+                  </p>
+                </div>
                 <div className="p-3">
                   <GeneralAvailabilityEditor
                     patterns={generalAvailability}
@@ -668,9 +669,18 @@ export function PlayerAvailabilityPage({
                     eventLatestTime={event.latestTime}
                   />
                 </div>
-              )}
+              </div>
 
-              {method === "describe" && (
+              {/* AI Assistant Card */}
+              <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+                  <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    AI Assistant
+                  </h2>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Describe your availability in plain English
+                  </p>
+                </div>
                 <div className="p-3">
                   <AvailabilityAI
                     timezone={timezone}
@@ -678,14 +688,14 @@ export function PlayerAvailabilityPage({
                     currentPatterns={generalAvailability}
                   />
                 </div>
-              )}
+              </div>
             </div>
 
-            {/* Next Step CTA - only show after availability has been set */}
+            {/* Next Step CTA */}
             {effectiveAvailability.length > 0 && (
               event.customPreSessionInstructions && !participant.hasCharacterInfo ? (
                 <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-900/20">
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <h3 className="text-sm font-medium text-purple-900 dark:text-purple-100">
                         One more step: Set up your character
@@ -712,7 +722,7 @@ export function PlayerAvailabilityPage({
                 </div>
               ) : (
                 <div className="rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800 dark:bg-green-900/20">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <h3 className="text-sm font-medium text-green-900 dark:text-green-100">
                         All set!
@@ -723,7 +733,7 @@ export function PlayerAvailabilityPage({
                     </div>
                     <Link
                       href={`/${event.slug}`}
-                      className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+                      className="rounded-md bg-green-600 px-4 py-2 text-center text-sm font-medium text-white hover:bg-green-700"
                     >
                       View Campaign
                     </Link>

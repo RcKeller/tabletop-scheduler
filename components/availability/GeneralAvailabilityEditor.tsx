@@ -52,6 +52,7 @@ interface PatternEntry {
   dayOfWeek: number;
   startTime: string;
   endTime: string;
+  isAvailable: boolean;  // true = available, false = blocked/busy
 }
 
 function isTimeInWindow(time: string, earliest: string, latest: string): boolean {
@@ -101,6 +102,7 @@ export function GeneralAvailabilityEditor({
     if (!localTimeWindow) return [];
 
     return entries.filter((entry) => {
+      if (!entry.isAvailable) return false; // Don't warn about "not available" entries
       const startInWindow = isTimeInWindow(entry.startTime, localTimeWindow.earliest, localTimeWindow.latest);
       const endInWindow = isTimeInWindow(entry.endTime, localTimeWindow.earliest, localTimeWindow.latest);
       return !startInWindow || !endInWindow;
@@ -118,6 +120,7 @@ export function GeneralAvailabilityEditor({
           dayOfWeek: p.dayOfWeek,
           startTime: p.startTime,
           endTime: p.endTime,
+          isAvailable: true, // Existing patterns are always "available"
         }))
       );
     } else {
@@ -139,6 +142,7 @@ export function GeneralAvailabilityEditor({
             dayOfWeek: p.dayOfWeek,
             startTime: p.startTime,
             endTime: p.endTime,
+            isAvailable: true,
           }))
         );
         setHasChanges(false);
@@ -152,6 +156,7 @@ export function GeneralAvailabilityEditor({
       dayOfWeek,
       startTime: "17:00",
       endTime: "21:00",
+      isAvailable: true,
     }));
     setEntries([...entries, ...newEntries]);
     setHasChanges(true);
@@ -163,20 +168,33 @@ export function GeneralAvailabilityEditor({
     setHasChanges(true);
   };
 
-  const updateEntry = (id: string, field: keyof PatternEntry, value: number | string) => {
+  const updateEntry = (id: string, field: keyof PatternEntry, value: number | string | boolean) => {
     setEntries(
       entries.map((e) => (e.id === id ? { ...e, [field]: value } : e))
     );
     setHasChanges(true);
   };
 
+  const toggleAvailability = (id: string) => {
+    setEntries(
+      entries.map((e) => (e.id === id ? { ...e, isAvailable: !e.isAvailable } : e))
+    );
+    setHasChanges(true);
+  };
+
   const handleSave = () => {
-    const patternsToSave = entries.map((e) => ({
-      dayOfWeek: e.dayOfWeek,
-      startTime: e.startTime,
-      endTime: e.endTime,
-    }));
+    // Only save "available" entries as patterns
+    // "Not available" entries are not saved (they represent blocked times)
+    const patternsToSave = entries
+      .filter(e => e.isAvailable)
+      .map((e) => ({
+        dayOfWeek: e.dayOfWeek,
+        startTime: e.startTime,
+        endTime: e.endTime,
+      }));
     onSave(patternsToSave);
+    // Remove "not available" entries after save since they're not persisted
+    setEntries(entries.filter(e => e.isAvailable));
     setHasChanges(false);
   };
 
@@ -187,21 +205,8 @@ export function GeneralAvailabilityEditor({
     return `${hour}:${m.toString().padStart(2, "0")} ${ampm}`;
   };
 
-  // Group entries by time range for cleaner display
-  const groupedEntries = useMemo(() => {
-    const groups = new Map<string, PatternEntry[]>();
-    for (const entry of entries) {
-      const key = `${entry.startTime}-${entry.endTime}`;
-      if (!groups.has(key)) {
-        groups.set(key, []);
-      }
-      groups.get(key)!.push(entry);
-    }
-    return groups;
-  }, [entries]);
-
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {entries.length === 0 ? (
         <div className="rounded-lg border-2 border-dashed border-zinc-300 p-6 text-center dark:border-zinc-700">
           <svg className="mx-auto h-8 w-8 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -219,8 +224,39 @@ export function GeneralAvailabilityEditor({
           {entries.map((entry) => (
             <div
               key={entry.id}
-              className="flex flex-wrap items-center gap-2 rounded-md bg-zinc-50 p-2 dark:bg-zinc-800"
+              className={`flex flex-wrap items-center gap-2 rounded-lg border p-2.5 transition-colors ${
+                entry.isAvailable
+                  ? "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30"
+                  : "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30"
+              }`}
             >
+              {/* Available/Not Available Toggle Badge */}
+              <button
+                onClick={() => toggleAvailability(entry.id)}
+                className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
+                  entry.isAvailable
+                    ? "bg-green-500 text-white hover:bg-green-600"
+                    : "bg-red-500 text-white hover:bg-red-600"
+                }`}
+                title={entry.isAvailable ? "Click to mark as Not Available" : "Click to mark as Available"}
+              >
+                {entry.isAvailable ? (
+                  <>
+                    <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                    Available
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                    Busy
+                  </>
+                )}
+              </button>
+
               <select
                 value={entry.dayOfWeek}
                 onChange={(e) => updateEntry(entry.id, "dayOfWeek", parseInt(e.target.value))}
@@ -245,7 +281,7 @@ export function GeneralAvailabilityEditor({
                 ))}
               </select>
 
-              <span className="text-sm text-zinc-400">-</span>
+              <span className="text-sm text-zinc-400">to</span>
 
               <select
                 value={entry.endTime}
@@ -259,28 +295,30 @@ export function GeneralAvailabilityEditor({
                 ))}
               </select>
 
+              {/* Delete Button */}
               <button
                 onClick={() => removeEntry(entry.id)}
-                className="ml-auto rounded p-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-600 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-                aria-label="Remove"
+                className="ml-auto flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-100 dark:text-red-400 dark:hover:bg-red-900/30"
+                title="Delete this time slot"
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
+                Delete
               </button>
             </div>
           ))}
         </div>
       )}
 
-      {/* Add availability dropdown */}
-      <div className="flex items-center gap-3">
+      {/* Add availability dropdown + Save button */}
+      <div className="flex flex-wrap items-center gap-3">
         <div className="relative">
           <button
             onClick={() => setShowAddMenu(!showAddMenu)}
-            className="flex items-center gap-2 rounded-lg border-2 border-dashed border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-600 transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-blue-500 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
+            className="flex items-center gap-2 rounded-lg border-2 border-dashed border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-600 transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:border-blue-500 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
           >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
             Add Time Slot
@@ -326,11 +364,11 @@ export function GeneralAvailabilityEditor({
           )}
         </div>
 
-        {entries.length > 0 && hasChanges && (
+        {hasChanges && (
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isSaving ? (
               <>
@@ -345,16 +383,30 @@ export function GeneralAvailabilityEditor({
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
-                Save Schedule
+                {entries.filter(e => e.isAvailable).length === 0 ? "Clear Schedule" : "Save Schedule"}
               </>
             )}
           </button>
         )}
       </div>
 
+      {/* Info about "Busy" entries */}
+      {entries.some(e => !e.isAvailable) && (
+        <div className="rounded-md bg-blue-50 p-2.5 text-xs text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
+          <div className="flex items-start gap-2">
+            <svg className="mt-0.5 h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>
+              "Busy" slots won't be saved. To block recurring times, delete the slot instead.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Warning for times outside campaign window */}
       {entriesOutsideWindow.length > 0 && localTimeWindow && (
-        <div className="rounded-md bg-amber-50 p-3 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
+        <div className="rounded-md bg-amber-50 p-2.5 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
           <div className="flex items-start gap-2">
             <svg className="mt-0.5 h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -365,7 +417,6 @@ export function GeneralAvailabilityEditor({
           </div>
         </div>
       )}
-
     </div>
   );
 }

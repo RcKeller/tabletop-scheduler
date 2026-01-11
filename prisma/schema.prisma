@@ -91,6 +91,7 @@ model Participant {
   event                 Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
   displayName           String
   isGm                  Boolean                @default(false)
+  timezone              String                 @default("UTC")
   characterName         String?
   characterClass        String?
   characterSheetUrl     String?

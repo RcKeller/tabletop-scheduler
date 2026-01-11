@@ -28,8 +28,13 @@ function convertAvailabilityToLocal(
   availability: TimeSlot[],
   timezone: string
 ): TimeSlot[] {
+  console.log("[Grid] convertAvailabilityToLocal:", {
+    inputCount: availability.length,
+    timezone,
+    firstSlot: availability[0],
+  });
   if (timezone === "UTC") return availability;
-  return availability.map(slot => {
+  const result = availability.map(slot => {
     const start = utcToLocal(slot.startTime, slot.date, timezone);
     const end = utcToLocal(slot.endTime, slot.date, timezone);
     return {
@@ -38,6 +43,11 @@ function convertAvailabilityToLocal(
       endTime: end.time,
     };
   });
+  console.log("[Grid] convertAvailabilityToLocal result:", {
+    outputCount: result.length,
+    firstSlot: result[0],
+  });
+  return result;
 }
 
 /**
@@ -244,6 +254,14 @@ export function VirtualizedAvailabilityGrid({
   useEffect(() => {
     const serialized = serializeAvailability(displayAvailability);
 
+    console.log("[Grid] Sync check:", {
+      displayAvailabilityCount: displayAvailability.length,
+      serializedLength: serialized.length,
+      lastAvailabilityLength: lastAvailabilityRef.current.length,
+      hasPendingChanges: hasPendingChangesRef.current,
+      isMatch: serialized === lastAvailabilityRef.current,
+    });
+
     // If props match our local state, clear the pending flag
     if (serialized === lastAvailabilityRef.current) {
       hasPendingChangesRef.current = false;
@@ -252,9 +270,13 @@ export function VirtualizedAvailabilityGrid({
 
     // Don't sync from props if we have pending local changes (prevents flash during rapid edits)
     if (hasPendingChangesRef.current) {
+      console.log("[Grid] Skipping sync - pending changes");
       return;
     }
 
+    console.log("[Grid] Updating selectedSlots:", {
+      newSlotsCount: buildAvailabilitySet(displayAvailability).size,
+    });
     lastAvailabilityRef.current = serialized;
     selectedSlotsRef.current = buildAvailabilitySet(displayAvailability);
     // Refresh grid if it exists using requestAnimationFrame for smoother updates
@@ -282,6 +304,7 @@ export function VirtualizedAvailabilityGrid({
   }, []);
 
   // Convert the time window from UTC to user's timezone for Y-axis display
+  // UTC-first architecture: event time window is stored in UTC, displayed in local
   const displayTimeWindow = useMemo(() => {
     if (userTimezone === "UTC") {
       return { earliest: earliestTime, latest: latestTime };

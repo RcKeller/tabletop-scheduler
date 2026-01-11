@@ -8,47 +8,139 @@ When2Play is a scheduling application for tabletop RPG groups (D&D, Pathfinder, 
 
 ## Timezone Handling
 
-### Core Principle: UTC-First Architecture
+### CRITICAL: UTC-First Architecture
 
-**All times stored in the database are in UTC.** The frontend converts to/from the user's local timezone for display and input.
+> **RULE: ALL times in the database are in UTC. NO EXCEPTIONS.**
+>
+> The ONLY place local timezone exists is in the UI display layer.
+> When writing code, if you're not sure whether a time is UTC or local, it's UTC.
 
-### Why UTC-First?
+### The Golden Rules
 
-1. **Single source of truth** - No ambiguity about what timezone a stored time represents
-2. **Consistency** - All components use the same data format
-3. **Simplicity** - Conversion logic is centralized in utility functions
-4. **Multi-timezone support** - Users in different timezones see correct local times
+1. **Database = UTC ONLY** - Every time stored is UTC
+2. **API requests/responses = UTC** - All times sent to/from APIs are UTC
+3. **Frontend display = Local** - Convert UTC → Local only for showing to users
+4. **Frontend input = Convert immediately** - User inputs local time → convert to UTC before sending to API
+
+### Why This Matters
+
+Without strict UTC discipline:
+- User in NYC sets "5pm" (stored as "17:00")
+- User in Manila sees "5pm" but it's actually 5am their time
+- Scheduling becomes impossible across timezones
+
+With UTC:
+- User in NYC sets "5pm" → converted to "22:00 UTC" (winter) → stored
+- User in Manila sees "6am" (correct local equivalent)
+- Everyone sees the SAME moment in time, displayed in their local timezone
 
 ### Data Flow
 
 ```
 USER INPUT (local timezone)
     │
-    ▼
-┌─────────────────────┐
-│  localToUTC()       │ ← Convert before saving to API
-└─────────────────────┘
+    ├─── User types "5:00 PM" in Manila (UTC+8)
     │
     ▼
-┌─────────────────────┐
-│  API / Database     │ ← All times stored in UTC
-└─────────────────────┘
+┌─────────────────────────────────────────┐
+│  localToUTC("17:00", "2026-01-15", tz)  │
+│  Result: { date: "2026-01-15", time: "09:00" }
+└─────────────────────────────────────────┘
     │
     ▼
-┌─────────────────────┐
-│  utcToLocal()       │ ← Convert when displaying to user
-└─────────────────────┘
+┌─────────────────────────────────────────┐
+│  API / Database                          │
+│  Stored: date=2026-01-15, time=09:00    │  ← ALWAYS UTC
+└─────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────┐
+│  utcToLocal("09:00", "2026-01-15", tz)  │
+│  Result: { date: "2026-01-15", time: "17:00" }
+└─────────────────────────────────────────┘
     │
     ▼
 USER DISPLAY (local timezone)
+    │
+    └─── User sees "5:00 PM" in their timezone
 ```
 
-### Implementation Details
+### Database Storage - ALL UTC
 
-#### Utility Functions (`lib/utils/timezone.ts`)
+| Table.Field | Format | Timezone | Notes |
+|-------------|--------|----------|-------|
+| `Availability.date` | Date | **UTC** | Specific date availability |
+| `Availability.startTime` | "HH:MM" | **UTC** | |
+| `Availability.endTime` | "HH:MM" | **UTC** | |
+| `AvailabilityException.date` | Date | **UTC** | Blocked times |
+| `AvailabilityException.startTime` | "HH:MM" | **UTC** | |
+| `AvailabilityException.endTime` | "HH:MM" | **UTC** | |
+| `Event.startDate` | Date | **UTC** | Campaign date range |
+| `Event.endDate` | Date | **UTC** | |
+| `Event.earliestTime` | "HH:MM" | **UTC** | Daily time window |
+| `Event.latestTime` | "HH:MM" | **UTC** | |
+| `GeneralAvailability.dayOfWeek` | 0-6 | **Local context** | See note below |
+| `GeneralAvailability.startTime` | "HH:MM" | **Local context** | See note below |
+| `GeneralAvailability.endTime` | "HH:MM" | **Local context** | See note below |
+
+#### Special Case: GeneralAvailability (Recurring Patterns)
+
+Recurring patterns are stored in the user's local timezone context because:
+
+1. "Monday 5pm" means Monday evening in the user's life
+2. Converting dayOfWeek to UTC could shift the day (Monday 1am Manila = Sunday 5pm UTC)
+3. This would confuse users - they'd see "Sunday" for what they think of as "Monday"
+
+**How it works:**
+- Pattern stored: `{ dayOfWeek: 1 (Monday), startTime: "17:00", endTime: "21:00" }`
+- This means "Every Monday 5-9pm in the user's timezone"
+- When expanded to specific dates, the API converts to UTC:
+  - Find Monday Jan 13, 2026
+  - Create slot: "2026-01-13 17:00-21:00" (local)
+  - Convert to UTC: "2026-01-13 09:00-13:00" (for UTC+8 user)
+
+**IMPORTANT:** The `timezone` query parameter MUST be passed to the availability API so patterns can be correctly converted to UTC during expansion.
+
+### API Contracts - ALL UTC
+
+**GET /api/availability/[participantId]?timezone=X**
+- Query param `timezone`: User's timezone (required for pattern expansion)
+- Returns: `effectiveAvailability` - ALL times in UTC
+
+**PUT /api/availability/[participantId]**
+- Body `availability`: Array with times in **UTC**
+- Body `exceptions`: Array with times in **UTC**
+- Body `generalAvailability`: Array with times in **local context** (for recurring patterns)
+- Body `timezone`: User's timezone (stored for heatmap calculations)
+
+**GET /api/events/[slug]**
+- Returns: `earliestTime`, `latestTime` in **UTC**
+
+**GET /api/events/[slug]/heatmap**
+- Returns: All availability data in **UTC**
+- Heatmap calculations done in UTC
+
+### Frontend Components
+
+| Component | Receives | Displays | Sends |
+|-----------|----------|----------|-------|
+| VirtualizedAvailabilityGrid | UTC | Local (converted) | UTC |
+| CombinedHeatmap | UTC | Local (converted) | N/A |
+| GeneralAvailabilityEditor | Local patterns | Local | Local patterns |
+| TimeWindowSelector | UTC | Local (converted) | UTC |
+
+### Common Bugs to Avoid
+
+1. **Comparing UTC times with local times** - Always convert to same timezone first
+2. **Forgetting to pass timezone param** - Pattern expansion needs user's timezone
+3. **Double-converting** - If data is already UTC, don't convert again
+4. **Storing local times** - Never store local times in the database (except GeneralAvailability)
+5. **Displaying UTC directly** - Always convert to local before showing to users
+
+### Timezone Utility Functions (`lib/utils/timezone.ts`)
 
 ```typescript
-// Convert user input to UTC for storage
+// Convert user's local input to UTC for storage
 localToUTC(time: string, date: string, fromTz: string): { date: string; time: string }
 
 // Convert UTC to user's timezone for display
@@ -58,41 +150,6 @@ utcToLocal(time: string, date: string, toTz: string): { date: string; time: stri
 getBrowserTimezone(): string
 ```
 
-#### Database Storage
-
-| Field | Format | Timezone |
-|-------|--------|----------|
-| `Availability.date` | Date | UTC |
-| `Availability.startTime` | "HH:MM" | UTC |
-| `Availability.endTime` | "HH:MM" | UTC |
-| `Event.earliestTime` | "HH:MM" | UTC |
-| `Event.latestTime` | "HH:MM" | UTC |
-| `Event.startDate` | Date | UTC |
-| `Event.endDate` | Date | UTC |
-
-#### API Contracts
-
-All API endpoints that accept or return time data work with UTC:
-
-**GET /api/availability/[participantId]**
-- Returns: `availability`, `effectiveAvailability` - all times in UTC
-
-**PUT /api/availability/[participantId]**
-- Expects: `availability` array with times in UTC
-
-**GET /api/events/[slug]**
-- Returns: `earliestTime`, `latestTime` in UTC
-
-#### Frontend Components
-
-| Component | On Load | On Save |
-|-----------|---------|---------|
-| VirtualizedAvailabilityGrid | UTC → Local | Local → UTC |
-| CombinedHeatmap | UTC → Local | N/A (read-only) |
-| GeneralAvailabilityEditor | Local (patterns) | Local (patterns)* |
-
-*Note: GeneralAvailability patterns (recurring weekly times) are stored in the user's local timezone because they represent "every Monday at 6pm in my timezone". When patterns are expanded to specific dates, the API converts them to UTC using the user's timezone passed as a query parameter.
-
 ### User Timezone Selection
 
 1. **Default**: Browser's timezone via `Intl.DateTimeFormat().resolvedOptions().timeZone`
@@ -100,11 +157,19 @@ All API endpoints that accept or return time data work with UTC:
 3. **Persistence**: Stored in `localStorage` key `when2play_timezone`
 4. **Scope**: Per-user, applies globally to all campaigns
 
-### Timezone Selector Behavior
+### Debugging Timezone Issues
 
-- Changing timezone immediately updates all displayed times
-- Grid re-renders with new timezone context (via React key)
-- No data migration needed - just display conversion changes
+When debugging, add console logs showing:
+```javascript
+console.log("[Component] Data received:", {
+  rawValue: time,
+  timezone: userTimezone,
+  isUTC: "yes/no/unknown",
+  afterConversion: convertedTime
+});
+```
+
+Always ask: "Is this time in UTC or local?" If you can't answer, trace it back to the source.
 
 ---
 
