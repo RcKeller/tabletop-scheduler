@@ -39,7 +39,7 @@ export function EmptyHeatmap({ hasPlayers, className = "" }: EmptyHeatmapProps) 
             key={i}
             className="aspect-square rounded bg-zinc-100 dark:bg-zinc-800"
             style={{
-              opacity: 0.3 + Math.random() * 0.3,
+              opacity: 0.3 + ((i * 7 + 3) % 10) * 0.03,
             }}
           />
         ))}

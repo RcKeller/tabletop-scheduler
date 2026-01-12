@@ -8,6 +8,7 @@ import { AvailabilityAI } from "@/components/availability/AvailabilityAI";
 import { GeneralAvailabilityEditor } from "@/components/availability/GeneralAvailabilityEditor";
 import { TimezoneAutocomplete } from "@/components/timezone/TimezoneAutocomplete";
 import { CtaBanner } from "@/components/ui/CtaBanner";
+import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import type { TimeSlot, GeneralAvailability as GeneralAvailabilityType } from "@/lib/types";
 import { expandPatternsToDateRange, slotsToKeySet, keySetToSlots } from "@/lib/utils/availability";
 import { addThirtyMinutes } from "@/lib/utils/time-slots";
@@ -55,7 +56,6 @@ export function GmAvailabilityPage({
   // Persist timezone globally in localStorage
   // Default to event.timezone for SSR, then update client-side
   const [timezone, setTimezoneState] = useState(event.timezone);
-  const [hasSetAvailability, setHasSetAvailability] = useState(false);
   const [showCtaBanner, setShowCtaBanner] = useState(false);
 
   // Load timezone from localStorage on mount, or default to browser timezone
@@ -83,6 +83,7 @@ export function GmAvailabilityPage({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadKey, setLoadKey] = useState(0);
+  const [showClearModal, setShowClearModal] = useState(false);
   const hasLoadedOnce = useRef(false);
 
   // Undo stack for AI changes
@@ -164,10 +165,7 @@ export function GmAvailabilityPage({
           }))
         );
 
-        // Check if GM has set any availability
-        const hasAvailability = data.effectiveAvailability.length > 0 || data.generalAvailability.length > 0;
-        setHasSetAvailability(hasAvailability);
-      }
+              }
     } catch (error) {
       console.error("Failed to load availability:", error);
     } finally {
@@ -272,8 +270,7 @@ export function GmAvailabilityPage({
         setEffectiveAvailability(slotsInUTC);
         setSpecificAvailability(additionsInUTC);
         setExceptions(exceptionsInUTC);
-        setHasSetAvailability(true);
-        setShowCtaBanner(true);
+                setShowCtaBanner(true);
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     } catch (error) {
@@ -298,8 +295,7 @@ export function GmAvailabilityPage({
           id: `temp-${i}`,
           participantId: participant.id,
         })));
-        setHasSetAvailability(true);
-        setShowCtaBanner(true);
+                setShowCtaBanner(true);
         await new Promise(resolve => setTimeout(resolve, 100));
         setLoadKey((k) => k + 1);
       }
@@ -310,10 +306,14 @@ export function GmAvailabilityPage({
     }
   };
 
-  // Handle reset
-  const handleReset = async () => {
-    if (!confirm("Are you sure you want to clear all your availability?")) return;
+  // Handle reset - show confirmation modal
+  const handleReset = () => {
+    setShowClearModal(true);
+  };
 
+  // Execute clear after confirmation
+  const executeClear = async () => {
+    setShowClearModal(false);
     setIsSaving(true);
     try {
       await fetch(`/api/availability/${participant.id}`, {
@@ -328,8 +328,7 @@ export function GmAvailabilityPage({
       });
       setEffectiveAvailability([]);
       setGeneralAvailability([]);
-      setHasSetAvailability(false);
-      setShowCtaBanner(false);
+            setShowCtaBanner(false);
       setLoadKey((k) => k + 1);
     } catch (error) {
       console.error("Failed to reset availability:", error);
@@ -516,8 +515,7 @@ export function GmAvailabilityPage({
 
         if (res.ok) {
           setUndoStack(prev => [snapshot, ...prev].slice(0, 10));
-          setHasSetAvailability(true);
-          setShowCtaBanner(true);
+                    setShowCtaBanner(true);
           await new Promise(resolve => setTimeout(resolve, 100));
           setLoadKey((k) => k + 1);
         }
@@ -679,6 +677,17 @@ export function GmAvailabilityPage({
           onDismiss={() => setShowCtaBanner(false)}
         />
       )}
+
+      {/* Clear Availability Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showClearModal}
+        onClose={() => setShowClearModal(false)}
+        onConfirm={executeClear}
+        title="Clear Availability"
+        message="Are you sure you want to clear all your availability? This cannot be undone."
+        confirmLabel="Clear All"
+        variant="danger"
+      />
 
       {/* Undo Toast Stack */}
       {undoStack.length > 0 && (

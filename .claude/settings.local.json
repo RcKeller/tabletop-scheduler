@@ -23,7 +23,18 @@
       "Bash(node -e:*)",
       "Bash(lsof:*)",
       "Bash(npx tsc:*)",
-      "Bash(npm run lint:*)"
+      "Bash(npm run lint:*)",
+      "Bash(for:*)",
+      "Bash(do basename \"$f\")",
+      "Bash(done)",
+      "Bash(timeout 15 npm run dev:*)",
+      "Bash(git -C /Users/dev/tabletop-scheduler status --short)",
+      "Bash(npx prisma migrate diff:*)",
+      "Bash(git -C /Users/dev/tabletop-scheduler diff HEAD -- prisma/schema.prisma)",
+      "Bash(git -C /Users/dev/tabletop-scheduler show HEAD:prisma/schema.prisma)",
+      "Bash(git -C /Users/dev/tabletop-scheduler log --oneline -5)",
+      "Bash(git -C /Users/dev/tabletop-scheduler diff HEAD~1 -- prisma/schema.prisma)",
+      "Bash(git add:*)"
     ]
   }
 }

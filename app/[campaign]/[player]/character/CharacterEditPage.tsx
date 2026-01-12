@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CharacterForm } from "@/components/participant/CharacterForm";
-import { PartyList } from "@/components/participant/PartyList";
 import { Footer } from "@/components/layout/Footer";
 
 interface Participant {
