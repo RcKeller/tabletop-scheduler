@@ -160,12 +160,119 @@ function formatGmtOffset(offset: number): string {
   return `GMT${sign}${Math.floor(offset)}:${minutes.toString().padStart(2, "0")}`;
 }
 
-// Format timezone for display with GMT offset
+// Format timezone for display with GMT offset and abbreviation
 function formatTimezoneWithOffset(tz: string): string {
   const offset = getUtcOffset(tz);
   const gmtStr = formatGmtOffset(offset);
+  const abbr = getTimezoneAbbreviation(tz);
   const readable = tz.replace(/_/g, " ").replace(/\//g, " / ");
+  if (abbr && abbr !== gmtStr) {
+    return `(${gmtStr}) ${readable} [${abbr}]`;
+  }
   return `(${gmtStr}) ${readable}`;
+}
+
+// Cache for timezone abbreviations
+const abbreviationCache = new Map<string, string>();
+
+// Get the current timezone abbreviation (e.g., "PST", "EST") for a timezone
+function getTimezoneAbbreviation(tz: string): string {
+  const cached = abbreviationCache.get(tz);
+  if (cached !== undefined) return cached;
+
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      timeZoneName: "short",
+    });
+    const parts = formatter.formatToParts(new Date());
+    const abbr = parts.find(p => p.type === "timeZoneName")?.value || "";
+    abbreviationCache.set(tz, abbr);
+    return abbr;
+  } catch {
+    abbreviationCache.set(tz, "");
+    return "";
+  }
+}
+
+// Get the long timezone name (e.g., "Pacific Standard Time")
+function getTimezoneLongName(tz: string): string {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      timeZoneName: "long",
+    });
+    const parts = formatter.formatToParts(new Date());
+    return parts.find(p => p.type === "timeZoneName")?.value || "";
+  } catch {
+    return "";
+  }
+}
+
+// Extract searchable terms from a timezone ID
+function getSearchTerms(tz: string): string[] {
+  const terms: string[] = [];
+
+  // Add the full timezone ID
+  terms.push(tz.toLowerCase());
+
+  // Add each part of the path (e.g., "America", "Los_Angeles")
+  const parts = tz.split("/");
+  for (const part of parts) {
+    terms.push(part.toLowerCase());
+    // Also add without underscores
+    terms.push(part.replace(/_/g, " ").toLowerCase());
+    // Add individual words
+    for (const word of part.split("_")) {
+      if (word.length > 2) {
+        terms.push(word.toLowerCase());
+      }
+    }
+  }
+
+  // Add the abbreviation (PST, EST, etc.)
+  const abbr = getTimezoneAbbreviation(tz);
+  if (abbr) {
+    terms.push(abbr.toLowerCase());
+  }
+
+  // Add the long name
+  const longName = getTimezoneLongName(tz);
+  if (longName) {
+    terms.push(longName.toLowerCase());
+    // Add individual words from long name
+    for (const word of longName.split(" ")) {
+      if (word.length > 2) {
+        terms.push(word.toLowerCase());
+      }
+    }
+  }
+
+  return [...new Set(terms)]; // Remove duplicates
+}
+
+// Build search index for all timezones
+let searchIndex: Map<string, Set<string>> | null = null;
+function getSearchIndex(): Map<string, Set<string>> {
+  if (searchIndex) return searchIndex;
+
+  searchIndex = new Map();
+  const allTz = getAllTimezones();
+
+  for (const tz of allTz) {
+    const terms = getSearchTerms(tz);
+    for (const term of terms) {
+      // Add all prefixes for partial matching
+      for (let i = 1; i <= term.length; i++) {
+        const prefix = term.slice(0, i);
+        const existing = searchIndex.get(prefix) || new Set();
+        existing.add(tz);
+        searchIndex.set(prefix, existing);
+      }
+    }
+  }
+
+  return searchIndex;
 }
 
 // Pre-compute and sort all timezones by GMT offset
@@ -200,32 +307,44 @@ export function TimezoneAutocomplete({
   // Get all timezones sorted by GMT offset
   const allTimezones = useMemo(() => getSortedTimezones(), []);
 
-  // Filter timezones based on search - show ALL matches
+  // Get search index (built once, cached)
+  const index = useMemo(() => getSearchIndex(), []);
+
+  // Filter timezones based on search using the index
   const filteredTimezones = useMemo(() => {
     if (!search.trim()) {
       // Show ALL timezones when no search, sorted by GMT
       return allTimezones;
     }
 
-    const searchLower = search.toLowerCase();
-    const searchNormalized = searchLower.replace(/[^a-z0-9]/g, "");
+    const searchLower = search.toLowerCase().trim();
 
+    // Use the search index for fast prefix matching
+    const matches = index.get(searchLower);
+    if (matches && matches.size > 0) {
+      // Sort matches by GMT offset
+      return Array.from(matches).sort((a, b) => {
+        const offsetA = getUtcOffset(a);
+        const offsetB = getUtcOffset(b);
+        if (offsetA !== offsetB) return offsetA - offsetB;
+        return a.localeCompare(b);
+      });
+    }
+
+    // Fallback to includes search for partial matches not in index
     return allTimezones.filter((tz) => {
       const tzLower = tz.toLowerCase();
-      const tzNormalized = tzLower.replace(/[^a-z0-9]/g, "");
+      const abbr = getTimezoneAbbreviation(tz).toLowerCase();
       const offset = getUtcOffset(tz);
       const gmtStr = formatGmtOffset(offset).toLowerCase();
 
-      // Match against timezone name, normalized version, or GMT offset
       return (
         tzLower.includes(searchLower) ||
-        tzNormalized.includes(searchNormalized) ||
-        gmtStr.includes(searchLower) ||
-        // Also match city names without region
-        tz.split("/").pop()?.toLowerCase().includes(searchLower)
+        abbr.includes(searchLower) ||
+        gmtStr.includes(searchLower)
       );
     });
-  }, [search, allTimezones]);
+  }, [search, allTimezones, index]);
 
   useEffect(() => {
     setMounted(true);

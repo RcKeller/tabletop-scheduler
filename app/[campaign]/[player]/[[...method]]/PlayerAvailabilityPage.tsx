@@ -13,7 +13,7 @@ import type { TimeSlot, GeneralAvailability as GeneralAvailabilityType } from "@
 import { formatTimeDisplay } from "@/lib/utils/gm-availability";
 import { expandPatternsToDateRange, slotsToKeySet, keySetToSlots } from "@/lib/utils/availability";
 import { addThirtyMinutes } from "@/lib/utils/time-slots";
-import { utcToLocal, localToUTC } from "@/lib/utils/timezone";
+import { utcToLocal, localToUTC, convertDateTime } from "@/lib/utils/timezone";
 
 interface EventProps {
   id: string;
@@ -40,6 +40,7 @@ interface ParticipantProps {
 interface GmAvailabilityBounds {
   earliest: string | null;
   latest: string | null;
+  gmTimezone: string | null;
 }
 
 interface PlayerAvailabilityPageProps {
@@ -82,6 +83,31 @@ export function PlayerAvailabilityPage({
     setTimezoneState(tz);
     localStorage.setItem("when2play_timezone", tz);
   }, []);
+
+  // Convert GM availability bounds from GM's timezone to user's timezone
+  const convertedGmBounds = useMemo(() => {
+    if (!gmAvailabilityBounds.earliest && !gmAvailabilityBounds.latest) {
+      return { earliest: null, latest: null };
+    }
+    const gmTz = gmAvailabilityBounds.gmTimezone || "UTC";
+    // Use today as reference date for timezone conversion
+    const refDate = format(new Date(), "yyyy-MM-dd");
+
+    let earliest: string | null = null;
+    let latest: string | null = null;
+
+    if (gmAvailabilityBounds.earliest) {
+      const converted = convertDateTime(gmAvailabilityBounds.earliest, refDate, gmTz, timezone);
+      earliest = converted.time;
+    }
+    if (gmAvailabilityBounds.latest) {
+      const converted = convertDateTime(gmAvailabilityBounds.latest, refDate, gmTz, timezone);
+      latest = converted.time;
+    }
+
+    return { earliest, latest };
+  }, [gmAvailabilityBounds, timezone]);
+
   const [effectiveAvailability, setEffectiveAvailability] = useState<TimeSlot[]>([]);
   const [specificAvailability, setSpecificAvailability] = useState<TimeSlot[]>([]);
   const [generalAvailability, setGeneralAvailability] = useState<GeneralAvailabilityType[]>([]);
@@ -616,7 +642,7 @@ export function PlayerAvailabilityPage({
         ) : (
           <div className="space-y-4">
             {/* GM Availability Bounds Callout - only for non-GM players */}
-            {!participant.isGm && (gmAvailabilityBounds.earliest || gmAvailabilityBounds.latest) && (
+            {!participant.isGm && (convertedGmBounds.earliest || convertedGmBounds.latest) && (
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
                 <div className="flex items-center gap-2">
                   <svg className="h-4 w-4 shrink-0 text-blue-500 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -624,9 +650,9 @@ export function PlayerAvailabilityPage({
                   </svg>
                   <span className="text-sm text-blue-700 dark:text-blue-300">
                     GM is available between{" "}
-                    <strong>{gmAvailabilityBounds.earliest ? formatTimeDisplay(gmAvailabilityBounds.earliest) : "—"}</strong>
+                    <strong>{convertedGmBounds.earliest ? formatTimeDisplay(convertedGmBounds.earliest) : "—"}</strong>
                     {" "}and{" "}
-                    <strong>{gmAvailabilityBounds.latest ? formatTimeDisplay(gmAvailabilityBounds.latest) : "—"}</strong>
+                    <strong>{convertedGmBounds.latest ? formatTimeDisplay(convertedGmBounds.latest) : "—"}</strong>
                   </span>
                 </div>
               </div>
@@ -655,8 +681,8 @@ export function PlayerAvailabilityPage({
                   key={`grid-${timezone}`}
                   startDate={eventStartDate}
                   endDate={eventEndDate}
-                  earliestTime="00:00"
-                  latestTime="23:30"
+                  earliestTime={!participant.isGm && convertedGmBounds.earliest ? convertedGmBounds.earliest : "00:00"}
+                  latestTime={!participant.isGm && convertedGmBounds.latest ? convertedGmBounds.latest : "23:30"}
                   mode="edit"
                   availability={effectiveAvailability}
                   onSave={handleAutoSaveAvailability}
@@ -683,8 +709,8 @@ export function PlayerAvailabilityPage({
                   timezone={timezone}
                   onSave={handleSaveGeneralAvailability}
                   isSaving={isSaving}
-                  eventEarliestTime="00:00"
-                  eventLatestTime="23:30"
+                  eventEarliestTime={!participant.isGm && convertedGmBounds.earliest ? convertedGmBounds.earliest : "00:00"}
+                  eventLatestTime={!participant.isGm && convertedGmBounds.latest ? convertedGmBounds.latest : "23:30"}
                 />
               </div>
             </div>

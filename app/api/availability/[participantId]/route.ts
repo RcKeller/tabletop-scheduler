@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { format } from "date-fns";
-import { computeEffectiveAvailability } from "@/lib/utils/availability-expander";
+import { expandPatternsToSlots, mergeOverlappingSlots } from "@/lib/utils/availability-expander";
 import { localToUTC } from "@/lib/utils/timezone";
+import { computeEffectiveAvailabilityWithPriority } from "@/lib/utils/availability-priority";
 
 export async function GET(
   request: NextRequest,
@@ -83,122 +84,74 @@ export async function GET(
       const availablePatterns = generalAvailability.filter(p => p.isAvailable !== false);
       const unavailablePatterns = generalAvailability.filter(p => p.isAvailable === false);
 
-      // Expand AVAILABLE patterns to specific slots
-      const rawAvailable = computeEffectiveAvailability(
-        availablePatterns.map((p) => ({
-          dayOfWeek: p.dayOfWeek,
-          startTime: p.startTime,
-          endTime: p.endTime,
-        })),
-        [],
-        [],
-        startDate,
-        endDate
-      );
-
-      // Convert available patterns from local timezone to UTC
-      // Handle slots that cross midnight when converted
-      const availablePatternsInUTC: Array<{ date: string; startTime: string; endTime: string }> = [];
-      for (const slot of rawAvailable) {
-        const start = localToUTC(slot.startTime, slot.date, userTimezone);
-        const end = localToUTC(slot.endTime, slot.date, userTimezone);
-
-        if (start.date === end.date) {
-          // Same day - simple case
-          if (start.time < end.time) {
-            availablePatternsInUTC.push({
-              date: start.date,
-              startTime: start.time,
-              endTime: end.time,
-            });
-          }
-        } else {
-          // Slot crosses midnight when converted to UTC - split into two slots
-          // First slot: from start time to end of day
-          availablePatternsInUTC.push({
-            date: start.date,
-            startTime: start.time,
-            endTime: "23:59",
-          });
-          // Second slot: from start of day to end time
-          availablePatternsInUTC.push({
-            date: end.date,
-            startTime: "00:00",
-            endTime: end.time,
-          });
-        }
-      }
-
-      // Expand UNAVAILABLE patterns to specific slots (these become recurring blocked times)
-      const rawUnavailable = computeEffectiveAvailability(
-        unavailablePatterns.map((p) => ({
-          dayOfWeek: p.dayOfWeek,
-          startTime: p.startTime,
-          endTime: p.endTime,
-        })),
-        [],
-        [],
-        startDate,
-        endDate
-      );
-
-      // Convert unavailable patterns from local timezone to UTC
-      // Handle slots that cross midnight when converted
-      const blockedPatternsInUTC: Array<{ date: string; startTime: string; endTime: string }> = [];
-      for (const slot of rawUnavailable) {
-        const start = localToUTC(slot.startTime, slot.date, userTimezone);
-        const end = localToUTC(slot.endTime, slot.date, userTimezone);
-
-        if (start.date === end.date) {
-          // Same day - simple case
-          if (start.time < end.time) {
-            blockedPatternsInUTC.push({
-              date: start.date,
-              startTime: start.time,
-              endTime: end.time,
-            });
-          }
-        } else {
-          // Slot crosses midnight when converted to UTC - split into two slots
-          blockedPatternsInUTC.push({
-            date: start.date,
-            startTime: start.time,
-            endTime: "23:59",
-          });
-          blockedPatternsInUTC.push({
-            date: end.date,
-            startTime: "00:00",
-            endTime: end.time,
-          });
-        }
-      }
-
-      // Combine available patterns with specific availability
-      const allSlots = [...availablePatternsInUTC, ...formattedAvailability];
-
-      // Combine stored exceptions with blocked pattern exceptions
-      const allExceptions = [...formattedExceptions, ...blockedPatternsInUTC];
-
-      // Apply ALL exceptions (both stored and from unavailable patterns)
-      effectiveAvailability = allSlots.filter(slot => {
-        return !allExceptions.some(exc =>
-          exc.date === slot.date &&
-          exc.startTime < slot.endTime &&
-          exc.endTime > slot.startTime
+      // Helper to expand patterns and convert to UTC
+      const expandAndConvertToUTC = (patterns: typeof availablePatterns) => {
+        const expanded = expandPatternsToSlots(
+          patterns.map((p) => ({
+            dayOfWeek: p.dayOfWeek,
+            startTime: p.startTime,
+            endTime: p.endTime,
+          })),
+          startDate,
+          endDate
         );
-      });
 
-      console.log("[API] Computed effectiveAvailability:", {
+        // Convert from local timezone to UTC
+        const inUTC: Array<{ date: string; startTime: string; endTime: string }> = [];
+        for (const slot of expanded) {
+          const start = localToUTC(slot.startTime, slot.date, userTimezone);
+          const end = localToUTC(slot.endTime, slot.date, userTimezone);
+
+          if (start.date === end.date) {
+            if (start.time < end.time) {
+              inUTC.push({
+                date: start.date,
+                startTime: start.time,
+                endTime: end.time,
+              });
+            }
+          } else {
+            // Slot crosses midnight when converted to UTC - split into two slots
+            inUTC.push({
+              date: start.date,
+              startTime: start.time,
+              endTime: "23:59",
+            });
+            inUTC.push({
+              date: end.date,
+              startTime: "00:00",
+              endTime: end.time,
+            });
+          }
+        }
+        return inUTC;
+      };
+
+      // Expand available and unavailable patterns
+      const availablePatternsInUTC = expandAndConvertToUTC(availablePatterns);
+      const unavailablePatternsInUTC = expandAndConvertToUTC(unavailablePatterns);
+
+      // Use the new priority-based algorithm:
+      // Priority: Manual (specific slots) > Unavailable patterns > Available patterns
+      // Manual additions = specific availability entries
+      // Manual removals = specific exceptions
+      effectiveAvailability = computeEffectiveAvailabilityWithPriority(
+        availablePatternsInUTC,           // Base availability from patterns
+        unavailablePatternsInUTC,         // Blocked times from patterns
+        formattedAvailability.map(a => ({ date: a.date, startTime: a.startTime, endTime: a.endTime })), // Manual additions
+        formattedExceptions.map(e => ({ date: e.date, startTime: e.startTime, endTime: e.endTime }))   // Manual removals
+      );
+
+      // Merge overlapping slots in the result
+      effectiveAvailability = mergeOverlappingSlots(effectiveAvailability);
+
+      console.log("[API] Computed effectiveAvailability with priority:", {
         availablePatternsCount: availablePatterns.length,
         unavailablePatternsCount: unavailablePatterns.length,
-        rawAvailableCount: rawAvailable.length,
-        rawAvailableSample: rawAvailable.slice(0, 5),
         availablePatternsInUTCCount: availablePatternsInUTC.length,
-        availablePatternsInUTCSample: availablePatternsInUTC.slice(0, 8),
-        blockedPatternsInUTCCount: blockedPatternsInUTC.length,
-        specificSlotsCount: formattedAvailability.length,
-        allSlotsCount: allSlots.length,
-        allExceptionsCount: allExceptions.length,
+        unavailablePatternsInUTCCount: unavailablePatternsInUTC.length,
+        manualAdditionsCount: formattedAvailability.length,
+        manualRemovalsCount: formattedExceptions.length,
         effectiveAvailabilityCount: effectiveAvailability.length,
         firstFewSlots: effectiveAvailability.slice(0, 5),
       });

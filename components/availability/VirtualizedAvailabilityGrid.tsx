@@ -23,50 +23,94 @@ import { utcToLocal, localToUTC } from "@/lib/utils/timezone";
 
 /**
  * Convert availability array from UTC to local timezone for display
+ * Handles slots that cross midnight when converted (splits them into two slots)
  */
 function convertAvailabilityToLocal(
   availability: TimeSlot[],
   timezone: string
 ): TimeSlot[] {
-  console.log("[Grid] convertAvailabilityToLocal:", {
-    inputCount: availability.length,
-    timezone,
-    firstSlot: availability[0],
-  });
   if (timezone === "UTC") return availability;
-  const result = availability.map(slot => {
+
+  const result: TimeSlot[] = [];
+
+  for (const slot of availability) {
     const start = utcToLocal(slot.startTime, slot.date, timezone);
     const end = utcToLocal(slot.endTime, slot.date, timezone);
-    return {
-      date: start.date,
-      startTime: start.time,
-      endTime: end.time,
-    };
-  });
-  console.log("[Grid] convertAvailabilityToLocal result:", {
-    outputCount: result.length,
-    firstSlot: result[0],
-  });
+
+    if (start.date === end.date) {
+      // Same day - simple case
+      if (start.time < end.time) {
+        result.push({
+          date: start.date,
+          startTime: start.time,
+          endTime: end.time,
+        });
+      }
+    } else {
+      // Slot crosses midnight when converted to local - split into two slots
+      // First part: from start time to midnight on start date
+      result.push({
+        date: start.date,
+        startTime: start.time,
+        endTime: "23:59",
+      });
+      // Second part: from midnight to end time on end date
+      if (end.time > "00:00") {
+        result.push({
+          date: end.date,
+          startTime: "00:00",
+          endTime: end.time,
+        });
+      }
+    }
+  }
+
   return result;
 }
 
 /**
  * Convert availability array from local timezone to UTC for storage
+ * Handles slots that cross midnight when converted (splits them into two slots)
  */
 function convertAvailabilityToUTC(
   availability: TimeSlot[],
   timezone: string
 ): TimeSlot[] {
   if (timezone === "UTC") return availability;
-  return availability.map(slot => {
+
+  const result: TimeSlot[] = [];
+
+  for (const slot of availability) {
     const start = localToUTC(slot.startTime, slot.date, timezone);
     const end = localToUTC(slot.endTime, slot.date, timezone);
-    return {
-      date: start.date,
-      startTime: start.time,
-      endTime: end.time,
-    };
-  });
+
+    if (start.date === end.date) {
+      // Same day - simple case
+      if (start.time < end.time) {
+        result.push({
+          date: start.date,
+          startTime: start.time,
+          endTime: end.time,
+        });
+      }
+    } else {
+      // Slot crosses midnight when converted to UTC - split into two slots
+      result.push({
+        date: start.date,
+        startTime: start.time,
+        endTime: "23:59",
+      });
+      if (end.time > "00:00") {
+        result.push({
+          date: end.date,
+          startTime: "00:00",
+          endTime: end.time,
+        });
+      }
+    }
+  }
+
+  return result;
 }
 
 // Register AG Grid modules
@@ -312,19 +356,12 @@ export function VirtualizedAvailabilityGrid({
 
   // Convert the time window from UTC to user's timezone for Y-axis display
   // UTC-first architecture: event time window is stored in UTC, displayed in local
+  // Time window (earliestTime/latestTime) are display preferences, NOT UTC times
+  // They represent what hours to show on the grid in the user's local timezone
+  // No conversion needed - use as-is
   const displayTimeWindow = useMemo(() => {
-    if (userTimezone === "UTC") {
-      return { earliest: earliestTime, latest: latestTime };
-    }
-    // Use the start date as reference for timezone conversion
-    const refDate = format(startDate, "yyyy-MM-dd");
-    const convertedEarliest = utcToLocal(earliestTime, refDate, userTimezone);
-    const convertedLatest = utcToLocal(latestTime, refDate, userTimezone);
-    return {
-      earliest: convertedEarliest.time,
-      latest: convertedLatest.time,
-    };
-  }, [userTimezone, earliestTime, latestTime, startDate]);
+    return { earliest: earliestTime, latest: latestTime };
+  }, [earliestTime, latestTime]);
 
   // Generate all dates in range
   const allDates = useMemo(() => {

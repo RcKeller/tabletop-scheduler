@@ -15,7 +15,7 @@ import { EmptyHeatmap } from "@/components/empty-states/EmptyHeatmap";
 import { CtaBanner } from "@/components/ui/CtaBanner";
 import type { MeetingType, CampaignType, Participant, ParticipantWithAvailability } from "@/lib/types";
 
-type TabType = "availability" | "party" | "info";
+// Tabs removed - all content now stacked vertically
 
 interface EventProps {
   id: string;
@@ -46,7 +46,6 @@ interface CampaignPageProps {
 
 export function CampaignPage({ event }: CampaignPageProps) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabType>("info");
 
   // Persist timezone globally in localStorage
   const [timezone, setTimezoneState] = useState(event.timezone);
@@ -281,12 +280,6 @@ export function CampaignPage({ event }: CampaignPageProps) {
     return `${format(start, "MMM d")} - ${format(end, "MMM d, yyyy")}`;
   };
 
-  const tabs: { id: TabType; label: string; count?: number }[] = [
-    { id: "info", label: "Details" },
-    { id: "party", label: "Party", count: participants.length },
-    { id: "availability", label: "Availability" },
-  ];
-
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       {/* Hero Section with Campaign Image */}
@@ -299,180 +292,214 @@ export function CampaignPage({ event }: CampaignPageProps) {
         shareLabel={copiedLink ? "Copied!" : "Share"}
       />
 
-      {/* Main Content - Centered single column */}
-      <div className="mx-auto max-w-5xl px-4 py-4">
-        {/* Quick Actions Bar */}
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-          {currentParticipant ? (
-            <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+      {/* Main Content - Centered single column, all sections stacked */}
+      <div className="mx-auto max-w-5xl px-4 py-4 space-y-4">
+        {/* Join Form for non-registered users */}
+        {!currentParticipant && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <svg className="h-5 w-5 shrink-0 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
                 </svg>
+                <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                  {isAtCapacity
+                    ? `Campaign at capacity (${playerCount}/${event.maxPlayers}), but you can still join`
+                    : "Join this campaign to set your availability"
+                  }
+                </span>
               </div>
-              <div>
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                  {currentParticipant.displayName}
-                </p>
-                <p className="text-xs text-zinc-500">
-                  {currentParticipant.isGm ? "Game Master" : "Player"}
-                </p>
-              </div>
+              <JoinEventForm
+                eventSlug={event.slug}
+                onJoined={handleJoined}
+                hasGm={hasGm}
+                compact
+              />
             </div>
-          ) : (
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              Join to set your availability
-            </p>
+          </div>
+        )}
+
+        {/* Current User Status Bar - only show if logged in (simplified) */}
+        {currentParticipant && (
+          <div className="flex items-center gap-3 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                {currentParticipant.displayName}
+              </p>
+              <p className="text-xs text-zinc-500">
+                {currentParticipant.isGm ? "Game Master" : "Player"}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Campaign Details Section */}
+        <div className="space-y-4">
+          {/* Description */}
+          {event.description && (
+            <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+              <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                About this {event.campaignType === "ONESHOT" ? "Game" : "Campaign"}
+              </h3>
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                {event.description}
+              </p>
+            </div>
           )}
 
-          <div className="flex items-center gap-2">
-            {currentParticipant ? (
-              <>
-                {showProfileCallout && (
-                  <button
-                    onClick={handleCreateCharacter}
-                    className="rounded-md bg-purple-100 px-3 py-1.5 text-sm font-medium text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:hover:bg-purple-900/50"
-                  >
-                    Create Character
-                  </button>
-                )}
-                <button
-                  onClick={handleEditAvailability}
-                  className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-                >
-                  Edit Availability
-                </button>
-              </>
+          {/* Session Details */}
+          <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <h3 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              Session Details
+            </h3>
+            <dl className="grid gap-3 text-sm sm:grid-cols-2">
+              {event.gameSystem && (
+                <div>
+                  <dt className="text-zinc-500 dark:text-zinc-400">Game System</dt>
+                  <dd className="font-medium text-zinc-900 dark:text-zinc-100">{event.gameSystem.name}</dd>
+                </div>
+              )}
+              <div>
+                <dt className="text-zinc-500 dark:text-zinc-400">Session Length</dt>
+                <dd className="font-medium text-zinc-900 dark:text-zinc-100">
+                  {event.sessionLengthMinutes >= 60
+                    ? `${Math.floor(event.sessionLengthMinutes / 60)}h ${event.sessionLengthMinutes % 60 > 0 ? `${event.sessionLengthMinutes % 60}m` : ""}`
+                    : `${event.sessionLengthMinutes}m`}
+                </dd>
+              </div>
+              {formatDateRange() && (
+                <div>
+                  <dt className="text-zinc-500 dark:text-zinc-400">Date Range</dt>
+                  <dd className="font-medium text-zinc-900 dark:text-zinc-100">{formatDateRange()}</dd>
+                </div>
+              )}
+              <div>
+                <dt className="text-zinc-500 dark:text-zinc-400">Time Window</dt>
+                <dd className="font-medium text-zinc-900 dark:text-zinc-100">
+                  {formatTime(event.earliestTime)} - {formatTime(event.latestTime)}
+                </dd>
+              </div>
+              {meetingInfo && (
+                <>
+                  <div>
+                    <dt className="text-zinc-500 dark:text-zinc-400">Platform</dt>
+                    <dd className="font-medium text-zinc-900 dark:text-zinc-100">{meetingInfo.type}</dd>
+                  </div>
+                  {meetingInfo.location && (
+                    <div>
+                      <dt className="text-zinc-500 dark:text-zinc-400">Location</dt>
+                      <dd className="font-medium text-zinc-900 dark:text-zinc-100">{meetingInfo.location}</dd>
+                    </div>
+                  )}
+                </>
+              )}
+            </dl>
+          </div>
+
+          {/* Before You Play - moved to bottom of details */}
+          {event.customPreSessionInstructions && (
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/50 dark:bg-blue-900/20">
+              <div className="flex items-start gap-3">
+                <svg className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <h3 className="text-sm font-semibold text-blue-800 dark:text-blue-300">
+                    Before You Play
+                  </h3>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-blue-700 dark:text-blue-300/80">
+                    {event.customPreSessionInstructions}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Group Availability Section - responsive (hide sidebar on mobile) */}
+        <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-700">
+            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              Group Availability
+            </span>
+            <TimezoneAutocomplete
+              value={timezone}
+              onChange={setTimezone}
+            />
+          </div>
+          <div className="p-3">
+            {isLoading ? (
+              <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "300px" }} />
+            ) : participantsWithAvailability.length === 0 ? (
+              <EmptyHeatmap hasPlayers={participants.length > 0} />
             ) : (
-              <div data-join-form>
-                <JoinEventForm
-                  eventSlug={event.slug}
-                  onJoined={handleJoined}
-                  hasGm={hasGm}
-                  compact
-                />
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <VirtualizedAvailabilityGrid
+                    key={`heatmap-${timezone}`}
+                    startDate={eventStartDate}
+                    endDate={eventEndDate}
+                    earliestTime={event.earliestTime}
+                    latestTime={event.latestTime}
+                    mode="heatmap"
+                    participants={participantsWithAvailability.map(p => ({
+                      id: p.id,
+                      name: p.name,
+                      availability: p.availability,
+                    }))}
+                    onHoverSlot={(date, time, available, unavailable) => {
+                      setHoveredSlotInfo({ date, time, available, unavailable });
+                    }}
+                    onLeaveSlot={() => setHoveredSlotInfo(null)}
+                    timezone={timezone}
+                  />
+                </div>
+                {/* Hover detail panel - hidden on mobile */}
+                <div className="hidden w-56 shrink-0 md:block">
+                  <div className="sticky top-20 min-h-[200px] rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+                    {hoveredSlotInfo ? (
+                      <HoverDetailPanel
+                        date={hoveredSlotInfo.date}
+                        time={hoveredSlotInfo.time}
+                        availableParticipants={hoveredSlotInfo.available}
+                        unavailableParticipants={hoveredSlotInfo.unavailable}
+                        totalParticipants={participantsWithAvailability.length}
+                      />
+                    ) : (
+                      <div className="p-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                        <p>Hover over a time slot to see who&apos;s available</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="mb-4 flex gap-1 rounded-lg border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                activeTab === tab.id
-                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100"
-                  : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
-              }`}
-            >
-              {tab.label}
-              {tab.count !== undefined && (
-                <span className="ml-1.5 text-xs text-zinc-400">({tab.count})</span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* Tab Content */}
-        {activeTab === "availability" && (
-          <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-700">
-              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Group Availability
-              </span>
-              <TimezoneAutocomplete
-                value={timezone}
-                onChange={setTimezone}
-              />
-            </div>
-            <div className="p-3">
-              {isLoading ? (
-                <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "300px" }} />
-              ) : participantsWithAvailability.length === 0 ? (
-                <EmptyHeatmap hasPlayers={participants.length > 0} />
-              ) : (
-                <div className="flex gap-4">
-                  <div className="flex-1">
-                    <VirtualizedAvailabilityGrid
-                      key={`heatmap-${timezone}`}
-                      startDate={eventStartDate}
-                      endDate={eventEndDate}
-                      earliestTime={event.earliestTime}
-                      latestTime={event.latestTime}
-                      mode="heatmap"
-                      participants={participantsWithAvailability.map(p => ({
-                        id: p.id,
-                        name: p.name,
-                        availability: p.availability,
-                      }))}
-                      onHoverSlot={(date, time, available, unavailable) => {
-                        setHoveredSlotInfo({ date, time, available, unavailable });
-                      }}
-                      onLeaveSlot={() => setHoveredSlotInfo(null)}
-                      timezone={timezone}
-                    />
-                  </div>
-                  <div className="w-56 shrink-0">
-                    <div className="sticky top-20 min-h-[200px] rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
-                      {hoveredSlotInfo ? (
-                        <HoverDetailPanel
-                          date={hoveredSlotInfo.date}
-                          time={hoveredSlotInfo.time}
-                          availableParticipants={hoveredSlotInfo.available}
-                          unavailableParticipants={hoveredSlotInfo.unavailable}
-                          totalParticipants={participantsWithAvailability.length}
-                        />
-                      ) : (
-                        <div className="p-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                          <p>Hover over a time slot to see who&apos;s available</p>
-                          <div className="mt-4 space-y-2 text-left">
-                            <div className="flex items-center justify-between text-xs">
-                              <span>Session length:</span>
-                              <span className="font-medium text-zinc-700 dark:text-zinc-300">
-                                {event.sessionLengthMinutes >= 60
-                                  ? `${Math.floor(event.sessionLengthMinutes / 60)}h${event.sessionLengthMinutes % 60 > 0 ? ` ${event.sessionLengthMinutes % 60}m` : ""}`
-                                  : `${event.sessionLengthMinutes}m`
-                                }
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between text-xs">
-                              <span>Time window:</span>
-                              <span className="font-medium text-zinc-700 dark:text-zinc-300">
-                                {formatTime(event.earliestTime)} - {formatTime(event.latestTime)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+        {/* Party Members Section */}
+        <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
+            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              Party Members ({participants.length})
+            </h2>
+            {currentParticipant && !showAddPlayer && (
+              <button
+                onClick={() => setShowAddPlayer(true)}
+                className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+              >
+                + Add Player
+              </button>
+            )}
           </div>
-        )}
 
-        {activeTab === "party" && (
-          <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
-              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                Party Members
-              </h2>
-              {currentParticipant && !showAddPlayer && (
-                <button
-                  onClick={() => setShowAddPlayer(true)}
-                  className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
-                >
-                  + Add Player
-                </button>
-              )}
-            </div>
-
-            <div className="p-4">
-              {/* Add Player Form */}
+          <div className="p-4">
+            {/* Add Player Form */}
               {showAddPlayer && (
                 <div className="mb-4 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800">
                   <p className="mb-2 text-sm text-zinc-600 dark:text-zinc-400">
@@ -594,124 +621,40 @@ export function CampaignPage({ event }: CampaignPageProps) {
                   })}
                 </div>
               )}
-            </div>
           </div>
-        )}
+        </div>
 
-        {activeTab === "info" && (
-          <div className="space-y-4">
-            {/* Description */}
-            {event.description && (
-              <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-                <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                  About this {event.campaignType === "ONESHOT" ? "Game" : "Campaign"}
-                </h3>
-                <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                  {event.description}
-                </p>
-              </div>
-            )}
-
-            {/* Pre-session Instructions */}
-            {event.customPreSessionInstructions && (
-              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/50 dark:bg-blue-900/20">
-                <div className="flex items-start gap-3">
-                  <svg className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <div>
-                    <h3 className="text-sm font-semibold text-blue-800 dark:text-blue-300">
-                      Before You Play
-                    </h3>
-                    <p className="mt-1 whitespace-pre-wrap text-sm text-blue-700 dark:text-blue-300/80">
-                      {event.customPreSessionInstructions}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Session Details */}
-            <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              <h3 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                Session Details
-              </h3>
-              <dl className="grid gap-3 text-sm sm:grid-cols-2">
-                {event.gameSystem && (
-                  <div>
-                    <dt className="text-zinc-500 dark:text-zinc-400">Game System</dt>
-                    <dd className="font-medium text-zinc-900 dark:text-zinc-100">{event.gameSystem.name}</dd>
-                  </div>
-                )}
-                <div>
-                  <dt className="text-zinc-500 dark:text-zinc-400">Session Length</dt>
-                  <dd className="font-medium text-zinc-900 dark:text-zinc-100">
-                    {event.sessionLengthMinutes >= 60
-                      ? `${Math.floor(event.sessionLengthMinutes / 60)}h ${event.sessionLengthMinutes % 60 > 0 ? `${event.sessionLengthMinutes % 60}m` : ""}`
-                      : `${event.sessionLengthMinutes}m`}
-                  </dd>
-                </div>
-                {formatDateRange() && (
-                  <div>
-                    <dt className="text-zinc-500 dark:text-zinc-400">Date Range</dt>
-                    <dd className="font-medium text-zinc-900 dark:text-zinc-100">{formatDateRange()}</dd>
-                  </div>
-                )}
-                <div>
-                  <dt className="text-zinc-500 dark:text-zinc-400">Time Window</dt>
-                  <dd className="font-medium text-zinc-900 dark:text-zinc-100">
-                    {formatTime(event.earliestTime)} - {formatTime(event.latestTime)}
-                  </dd>
-                </div>
-                {meetingInfo && (
-                  <>
-                    <div>
-                      <dt className="text-zinc-500 dark:text-zinc-400">Platform</dt>
-                      <dd className="font-medium text-zinc-900 dark:text-zinc-100">{meetingInfo.type}</dd>
-                    </div>
-                    {meetingInfo.location && (
-                      <div>
-                        <dt className="text-zinc-500 dark:text-zinc-400">Location</dt>
-                        <dd className="font-medium text-zinc-900 dark:text-zinc-100">{meetingInfo.location}</dd>
-                      </div>
-                    )}
-                  </>
-                )}
-              </dl>
-            </div>
-          </div>
-        )}
         {/* Spacer for fixed CTA banner */}
         <div className="h-16" />
       </div>
 
       {/* Contextual CTA Banners */}
+      {/* GM invite CTA - highest priority for GMs with no players */}
       {currentParticipant?.isGm && playerCount === 0 && (
         <CtaBanner
           message="Your campaign is ready! Invite players to join"
           actionLabel={copiedLink ? "Link Copied!" : "Copy Invite Link"}
           onAction={handleCopyLink}
+          secondaryActionLabel="Edit Availability"
+          secondaryActionHref={`/${event.slug}/${encodeURIComponent(currentParticipant.displayName.toLowerCase().replace(/\s+/g, "-"))}`}
           variant="info"
         />
       )}
 
-      {!currentParticipant && isAtCapacity && (
+      {/* Edit Availability CTA for registered users (with character as secondary if needed) */}
+      {currentParticipant && !(currentParticipant.isGm && playerCount === 0) && (
         <CtaBanner
-          message={`This campaign is at capacity (${playerCount}/${event.maxPlayers} players), but you can still join`}
-          actionLabel="Join Anyway"
-          onAction={() => {
-            // Scroll to join form
-            document.querySelector('[data-join-form]')?.scrollIntoView({ behavior: 'smooth' });
-          }}
-          variant="warning"
-        />
-      )}
-
-      {currentParticipant && !currentParticipant.isGm && showProfileCallout && (
-        <CtaBanner
-          message="Complete your character to be ready for the game"
-          actionLabel="Set Up Character"
-          actionHref={`/${event.slug}/${encodeURIComponent(currentParticipant.displayName.toLowerCase().replace(/\s+/g, "-"))}/character`}
+          message={showProfileCallout
+            ? "Set your availability and create your character"
+            : "Update your availability for the campaign"
+          }
+          actionLabel="Edit Availability"
+          actionHref={`/${event.slug}/${encodeURIComponent(currentParticipant.displayName.toLowerCase().replace(/\s+/g, "-"))}`}
+          secondaryActionLabel={showProfileCallout ? "Set Up Character" : undefined}
+          secondaryActionHref={showProfileCallout
+            ? `/${event.slug}/${encodeURIComponent(currentParticipant.displayName.toLowerCase().replace(/\s+/g, "-"))}/character`
+            : undefined
+          }
           variant="info"
         />
       )}

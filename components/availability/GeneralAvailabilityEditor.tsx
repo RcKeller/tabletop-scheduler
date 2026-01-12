@@ -29,16 +29,33 @@ const DAY_PRESETS = [
   { value: "weekends", label: "Weekends", days: [0, 6] },
 ];
 
-const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
+// Generate time options from 00:00 to 23:30 for start times
+const TIME_OPTIONS_START = Array.from({ length: 48 }, (_, i) => {
   const hour = Math.floor(i / 2);
   const minute = (i % 2) * 30;
   const time = `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`;
-  const display = hour === 0 ? "12:00 AM" :
-    hour < 12 ? `${hour}:${minute.toString().padStart(2, "0")} AM` :
-    hour === 12 ? `12:${minute.toString().padStart(2, "0")} PM` :
-    `${hour - 12}:${minute.toString().padStart(2, "0")} PM`;
+  const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+  const ampm = hour < 12 ? "AM" : "PM";
+  const display = `${hour12}:${minute.toString().padStart(2, "0")} ${ampm}`;
   return { value: time, label: display };
 });
+
+// Generate time options from 00:30 to 24:00 for end times (includes midnight as 24:00)
+const TIME_OPTIONS_END = [
+  ...Array.from({ length: 47 }, (_, i) => {
+    const hour = Math.floor((i + 1) / 2);
+    const minute = ((i + 1) % 2) * 30;
+    const time = `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`;
+    const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+    const ampm = hour < 12 ? "AM" : "PM";
+    const display = `${hour12}:${minute.toString().padStart(2, "0")} ${ampm}`;
+    return { value: time, label: display };
+  }),
+  { value: "24:00", label: "12:00 AM (midnight)" },
+];
+
+// Combined options for backwards compatibility (used where overnight isn't supported yet)
+const TIME_OPTIONS = TIME_OPTIONS_START;
 
 // Local entry supports multiple days
 interface PatternEntry {
@@ -340,7 +357,7 @@ export function GeneralAvailabilityEditor({
                   onChange={(e) => updateEntry(entry.id, "startTime", e.target.value)}
                   className="rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-800"
                 >
-                  {TIME_OPTIONS.map((opt) => (
+                  {TIME_OPTIONS_START.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
                     </option>
@@ -354,7 +371,7 @@ export function GeneralAvailabilityEditor({
                   onChange={(e) => updateEntry(entry.id, "endTime", e.target.value)}
                   className="rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-800"
                 >
-                  {TIME_OPTIONS.map((opt) => (
+                  {TIME_OPTIONS_END.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
                     </option>
