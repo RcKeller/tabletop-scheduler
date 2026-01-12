@@ -1,10 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { format, eachDayOfInterval } from "date-fns";
+import { format, eachDayOfInterval, isValid } from "date-fns";
 import { expandPatternsToSlots, mergeOverlappingSlots } from "@/lib/utils/availability-expander";
 import { generateTimeSlots, addThirtyMinutes } from "@/lib/utils/time-slots";
 import { localToUTC } from "@/lib/utils/timezone";
 import { computeEffectiveAvailabilityWithPriority } from "@/lib/utils/availability-priority";
+
+// Safely format a date, handling invalid dates
+function safeFormatDate(date: unknown): string | null {
+  try {
+    if (date instanceof Date && isValid(date)) {
+      return format(date, "yyyy-MM-dd");
+    }
+    if (typeof date === "string") {
+      const parsed = new Date(date);
+      if (isValid(parsed)) {
+        return format(parsed, "yyyy-MM-dd");
+      }
+    }
+    console.error("Invalid date encountered:", date);
+    return null;
+  } catch (e) {
+    console.error("Error formatting date:", date, e);
+    return null;
+  }
+}
 
 export async function GET(
   request: NextRequest,
@@ -62,29 +82,34 @@ export async function GET(
         const inUTC: Array<{ date: string; startTime: string; endTime: string }> = [];
 
         for (const slot of expanded) {
-          const start = localToUTC(slot.startTime, slot.date, participantTimezone);
-          const end = localToUTC(slot.endTime, slot.date, participantTimezone);
+          try {
+            const start = localToUTC(slot.startTime, slot.date, participantTimezone);
+            const end = localToUTC(slot.endTime, slot.date, participantTimezone);
 
-          if (start.date === end.date) {
-            if (start.time < end.time) {
+            if (start.date === end.date) {
+              if (start.time < end.time) {
+                inUTC.push({
+                  date: start.date,
+                  startTime: start.time,
+                  endTime: end.time,
+                });
+              }
+            } else {
+              // Slot crosses midnight when converted to UTC - split into two slots
               inUTC.push({
                 date: start.date,
                 startTime: start.time,
+                endTime: "23:59",
+              });
+              inUTC.push({
+                date: end.date,
+                startTime: "00:00",
                 endTime: end.time,
               });
             }
-          } else {
-            // Slot crosses midnight when converted to UTC - split into two slots
-            inUTC.push({
-              date: start.date,
-              startTime: start.time,
-              endTime: "23:59",
-            });
-            inUTC.push({
-              date: end.date,
-              startTime: "00:00",
-              endTime: end.time,
-            });
+          } catch (e) {
+            console.error("Error converting slot to UTC:", slot, participantTimezone, e);
+            // Skip invalid slots
           }
         }
         return inUTC;
@@ -112,20 +137,38 @@ export async function GET(
       const unavailablePatternsInUTC = expandAndConvertToUTC(unavailablePatterns);
 
       // Specific slots are already in UTC (manual calendar additions)
-      // Handle both Date objects and string dates for backwards compatibility
-      const manualAdditions = participant.availability.map((a) => ({
-        date: a.date instanceof Date ? format(a.date, "yyyy-MM-dd") : String(a.date).split("T")[0],
-        startTime: a.startTime,
-        endTime: a.endTime,
-      }));
+      // Handle both Date objects and string dates, filter out invalid entries
+      const manualAdditions = participant.availability
+        .map((a) => {
+          const dateStr = safeFormatDate(a.date);
+          if (!dateStr) {
+            console.error("Skipping invalid availability entry for participant", participant.id, a);
+            return null;
+          }
+          return {
+            date: dateStr,
+            startTime: a.startTime,
+            endTime: a.endTime,
+          };
+        })
+        .filter((a): a is { date: string; startTime: string; endTime: string } => a !== null);
 
       // Exceptions are already in UTC (manual calendar removals)
-      // Handle both Date objects and string dates for backwards compatibility
-      const manualRemovals = participant.exceptions.map((e) => ({
-        date: e.date instanceof Date ? format(e.date, "yyyy-MM-dd") : String(e.date).split("T")[0],
-        startTime: e.startTime,
-        endTime: e.endTime,
-      }));
+      // Handle both Date objects and string dates, filter out invalid entries
+      const manualRemovals = participant.exceptions
+        .map((e) => {
+          const dateStr = safeFormatDate(e.date);
+          if (!dateStr) {
+            console.error("Skipping invalid exception entry for participant", participant.id, e);
+            return null;
+          }
+          return {
+            date: dateStr,
+            startTime: e.startTime,
+            endTime: e.endTime,
+          };
+        })
+        .filter((e): e is { date: string; startTime: string; endTime: string } => e !== null);
 
       // Use the priority-based algorithm:
       // Priority: Manual > Unavailable patterns > Available patterns
