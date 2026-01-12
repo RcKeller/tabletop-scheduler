@@ -7,7 +7,8 @@ import {
   AllCommunityModule,
   themeQuartz,
 } from "ag-grid-community";
-import { format, eachDayOfInterval, startOfWeek } from "date-fns";
+import { format, eachDayOfInterval, startOfWeek, addDays } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
 import type {
   ColDef,
   ColGroupDef,
@@ -371,14 +372,25 @@ export function VirtualizedAvailabilityGrid({
   }, [earliestTime, latestTime, timeWindowTimezone, userTimezone, startDate]);
 
   // Generate all dates in range
+  // Use noon UTC to avoid date-shifting issues when converting to other timezones
+  // This ensures the "date" portion is stable across all timezones
   const allDates = useMemo(() => {
-    return eachDayOfInterval({ start: startDate, end: endDate });
+    const dates = eachDayOfInterval({ start: startDate, end: endDate });
+    // Adjust each date to noon UTC to make date formatting timezone-stable
+    // This prevents dates from shifting when formatted in negative-offset timezones
+    return dates.map(d => {
+      const noon = new Date(d);
+      noon.setUTCHours(12, 0, 0, 0);
+      return noon;
+    });
   }, [startDate, endDate]);
 
   // Pre-compute date strings for performance
+  // Format in user's timezone - since we're using noon UTC, the date won't shift
+  // for any timezone within +/- 12 hours of UTC (covers all timezones)
   const dateStrings = useMemo(() => {
-    return allDates.map(d => format(d, "yyyy-MM-dd"));
-  }, [allDates]);
+    return allDates.map(d => formatInTimeZone(d, userTimezone, "yyyy-MM-dd"));
+  }, [allDates, userTimezone]);
 
   // Generate time slots using the converted time window
   const timeSlots = useMemo(
@@ -417,6 +429,11 @@ export function VirtualizedAvailabilityGrid({
     return map;
   }, [mode, displayParticipants]);
 
+  // Check if the time window is overnight (earliest > latest means it crosses midnight)
+  const isOvernightWindow = useMemo(() => {
+    return displayTimeWindow.earliest > displayTimeWindow.latest;
+  }, [displayTimeWindow.earliest, displayTimeWindow.latest]);
+
   // Static row data - doesn't include selection state
   const rowData = useMemo(() => {
     return timeSlots.map((time, rowIndex) => {
@@ -434,8 +451,23 @@ export function VirtualizedAvailabilityGrid({
 
       // For heatmap mode, include counts
       if (mode === "heatmap") {
-        for (const dateStr of dateStrings) {
-          const key = `${dateStr}-${time}`;
+        // For overnight windows (e.g., 18:00-08:00), times after midnight (00:00-07:30)
+        // actually fall on the NEXT calendar day
+        const isAfterMidnight = isOvernightWindow && time < displayTimeWindow.latest;
+
+        for (let colIdx = 0; colIdx < dateStrings.length; colIdx++) {
+          const dateStr = dateStrings[colIdx];
+          // For after-midnight times, look up the next day's date
+          // The availability data has the correct date because it was converted from UTC
+          let lookupDate = dateStr;
+          if (isAfterMidnight) {
+            // Get the next date in the user's timezone
+            const nextDayDateStr = colIdx + 1 < dateStrings.length
+              ? dateStrings[colIdx + 1]
+              : formatInTimeZone(addDays(allDates[colIdx], 1), userTimezone, "yyyy-MM-dd");
+            lookupDate = nextDayDateStr;
+          }
+          const key = `${lookupDate}-${time}`;
           row[dateStr] = heatmapData.get(key)?.size || 0;
         }
       } else {
@@ -447,7 +479,7 @@ export function VirtualizedAvailabilityGrid({
 
       return row;
     });
-  }, [timeSlots, dateStrings, mode, heatmapData]);
+  }, [timeSlots, dateStrings, mode, heatmapData, isOvernightWindow, displayTimeWindow.latest, allDates, userTimezone]);
 
   // Calculate pending cells during drag (no state update)
   const calculatePendingCells = useCallback((
@@ -514,7 +546,20 @@ export function VirtualizedAvailabilityGrid({
     if (mode === "heatmap" && onHoverSlot) {
       const rowIndex = event.data.rowIndex as number;
       const time = timeSlots[rowIndex];
-      const key = `${field}-${time}`;
+
+      // For overnight windows, after-midnight times need to look up the next day
+      let lookupDate = field;
+      const isAfterMidnight = isOvernightWindow && time < displayTimeWindow.latest;
+      if (isAfterMidnight) {
+        const colIdx = dateStrings.indexOf(field);
+        if (colIdx !== -1) {
+          lookupDate = colIdx + 1 < dateStrings.length
+            ? dateStrings[colIdx + 1]
+            : formatInTimeZone(addDays(allDates[colIdx], 1), userTimezone, "yyyy-MM-dd");
+        }
+      }
+
+      const key = `${lookupDate}-${time}`;
       const availableIds = heatmapData.get(key) || new Set();
 
       const available = participants.filter(p => availableIds.has(p.id));
@@ -541,7 +586,7 @@ export function VirtualizedAvailabilityGrid({
       pendingCellsRef.current = newPending;
       refreshGrid();
     }
-  }, [mode, calculatePendingCells, heatmapData, participants, onHoverSlot, timeSlots, refreshGrid]);
+  }, [mode, calculatePendingCells, heatmapData, participants, onHoverSlot, timeSlots, refreshGrid, isOvernightWindow, displayTimeWindow.latest, dateStrings, allDates, userTimezone]);
 
   // Mouse up handler
   const handleMouseUp = useCallback(() => {
@@ -687,9 +732,10 @@ export function VirtualizedAvailabilityGrid({
 
     for (const [weekLabel, dates] of weekGroups) {
       const children: ColDef[] = dates.map((date) => {
-        const dateStr = format(date, "yyyy-MM-dd");
-        const dayName = format(date, "EEE");
-        const dayNum = format(date, "d");
+        // Format in user's timezone to match availability data
+        const dateStr = formatInTimeZone(date, userTimezone, "yyyy-MM-dd");
+        const dayName = formatInTimeZone(date, userTimezone, "EEE");
+        const dayNum = formatInTimeZone(date, userTimezone, "d");
 
         const colDef: ColDef = {
           field: dateStr,
@@ -717,7 +763,7 @@ export function VirtualizedAvailabilityGrid({
     }
 
     return cols;
-  }, [allDates, mode, cellClassRules, getHeatmapCellStyle]);
+  }, [allDates, mode, cellClassRules, getHeatmapCellStyle, userTimezone]);
 
   // Default column definition
   const defaultColDef = useMemo((): ColDef => ({

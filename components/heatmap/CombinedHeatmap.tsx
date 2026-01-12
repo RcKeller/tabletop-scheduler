@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { format, parse } from "date-fns";
+import { format, parse, addDays } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
 import { HoverDetailPanel } from "./HoverDetailPanel";
 import { HeatmapLegend } from "./HeatmapLegend";
 import type { TimeSlot } from "@/lib/types";
@@ -81,6 +82,11 @@ export function CombinedHeatmap({
     [displayTimeWindow.earliest, displayTimeWindow.latest]
   );
 
+  // Check if the time window is overnight (earliest > latest means it crosses midnight)
+  const isOvernightWindow = useMemo(() => {
+    return displayTimeWindow.earliest > displayTimeWindow.latest;
+  }, [displayTimeWindow.earliest, displayTimeWindow.latest]);
+
   // Convert participant availability from UTC to local timezone
   const displayParticipants = useMemo(() => {
     if (timezone === "UTC") return participants;
@@ -149,6 +155,25 @@ export function CombinedHeatmap({
     return map;
   }, [displayParticipants]);
 
+  // Helper to get the correct lookup date for a time slot
+  // For overnight windows, after-midnight times need the NEXT day's date
+  const getLookupDate = useCallback(
+    (date: Date, dateIdx: number, time: string): string => {
+      const dateStr = formatInTimeZone(date, timezone, "yyyy-MM-dd");
+
+      // For overnight windows, times before the latest time are "after midnight" - next day
+      if (isOvernightWindow && time < displayTimeWindow.latest) {
+        const nextDate = dateIdx + 1 < weekDates.length
+          ? weekDates[dateIdx + 1]
+          : addDays(date, 1);
+        return formatInTimeZone(nextDate, timezone, "yyyy-MM-dd");
+      }
+
+      return dateStr;
+    },
+    [timezone, isOvernightWindow, displayTimeWindow.latest, weekDates]
+  );
+
   // Get participants available/unavailable for a slot
   const getSlotParticipants = useCallback(
     (date: string, time: string) => {
@@ -176,8 +201,9 @@ export function CombinedHeatmap({
     const suggestions: { date: string; time: string; count: number }[] = [];
     const slotsNeeded = Math.ceil(sessionLengthMinutes / 30);
 
-    for (const date of weekDates) {
-      const dateStr = format(date, "yyyy-MM-dd");
+    for (let dateIdx = 0; dateIdx < weekDates.length; dateIdx++) {
+      const date = weekDates[dateIdx];
+      const dateStr = formatInTimeZone(date, timezone, "yyyy-MM-dd");
 
       for (let i = 0; i <= timeSlots.length - slotsNeeded; i++) {
         // Check if all consecutive slots have good availability
@@ -186,7 +212,9 @@ export function CombinedHeatmap({
 
         for (let j = 0; j < slotsNeeded; j++) {
           const time = timeSlots[i + j];
-          const key = `${dateStr}-${time}`;
+          // For overnight windows, after-midnight times need the NEXT day's lookup date
+          const lookupDate = getLookupDate(date, dateIdx, time);
+          const key = `${lookupDate}-${time}`;
           const available = availabilityMap.get(key)?.size || 0;
           minAvailable = Math.min(minAvailable, available);
 
@@ -210,7 +238,7 @@ export function CombinedHeatmap({
     return suggestions
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
-  }, [weekDates, timeSlots, availabilityMap, participants.length, sessionLengthMinutes]);
+  }, [weekDates, timeSlots, availabilityMap, participants.length, sessionLengthMinutes, timezone, getLookupDate]);
 
   // Format session length for display
   const sessionLengthDisplay = useMemo(() => {
@@ -248,9 +276,9 @@ export function CombinedHeatmap({
                   key={date.toISOString()}
                   className="p-2 text-center text-xs font-medium text-zinc-700 dark:text-zinc-300"
                 >
-                  <div>{format(date, "EEE")}</div>
+                  <div>{formatInTimeZone(date, timezone, "EEE")}</div>
                   <div className="text-zinc-500 dark:text-zinc-400">
-                    {format(date, "M/d")}
+                    {formatInTimeZone(date, timezone, "M/d")}
                   </div>
                 </div>
               ))}
@@ -278,9 +306,11 @@ export function CombinedHeatmap({
                         return format(timeObj, "h a");
                       })()}
                     </div>
-                    {weekDates.map((date) => {
-                      const dateStr = format(date, "yyyy-MM-dd");
-                      const slotKey = `${dateStr}-${time}`;
+                    {weekDates.map((date, dateIdx) => {
+                      const dateStr = formatInTimeZone(date, timezone, "yyyy-MM-dd");
+                      // For overnight windows, after-midnight times need the NEXT day's lookup date
+                      const lookupDate = getLookupDate(date, dateIdx, time);
+                      const slotKey = `${lookupDate}-${time}`;
                       const availableCount =
                         availabilityMap.get(slotKey)?.size || 0;
                       const cellColor = getHeatmapColor(
@@ -288,14 +318,14 @@ export function CombinedHeatmap({
                         participants.length
                       );
                       const isHovered =
-                        hoveredSlot?.date === dateStr &&
+                        hoveredSlot?.date === lookupDate &&
                         hoveredSlot?.time === time;
 
                       return (
                         <div
-                          key={slotKey}
+                          key={`${dateStr}-${time}`}
                           onMouseEnter={() =>
-                            setHoveredSlot({ date: dateStr, time })
+                            setHoveredSlot({ date: lookupDate, time })
                           }
                           onMouseLeave={() => setHoveredSlot(null)}
                           className={`h-6 cursor-pointer border-l border-zinc-100 transition-all dark:border-zinc-800 ${cellColor} ${

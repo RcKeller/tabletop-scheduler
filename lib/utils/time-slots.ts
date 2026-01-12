@@ -54,10 +54,16 @@ export function generateTimeSlots(earliest: string, latest: string): string[] {
 
 /**
  * Generate 7 days starting from a date (defaults to current week starting Sunday)
+ * Uses noon UTC to ensure dates don't shift when formatted in different timezones
  */
 export function getWeekDates(start?: Date): Date[] {
   const weekStart = start || startOfWeek(new Date(), { weekStartsOn: 0 });
-  return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = addDays(weekStart, i);
+    // Set to noon UTC to make date formatting timezone-stable
+    d.setUTCHours(12, 0, 0, 0);
+    return d;
+  });
 }
 
 /**
