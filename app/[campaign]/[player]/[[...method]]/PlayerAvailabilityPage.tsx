@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { parseISO, eachDayOfInterval, format } from "date-fns";
+import { parseISO, format } from "date-fns";
 import Link from "next/link";
 import { VirtualizedAvailabilityGrid } from "@/components/availability/VirtualizedAvailabilityGrid";
 import { AvailabilityAI } from "@/components/availability/AvailabilityAI";
 import { GeneralAvailabilityEditor } from "@/components/availability/GeneralAvailabilityEditor";
 import { TimezoneAutocomplete } from "@/components/timezone/TimezoneAutocomplete";
 import { CtaBanner } from "@/components/ui/CtaBanner";
+import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import type { TimeSlot, GeneralAvailability as GeneralAvailabilityType } from "@/lib/types";
 import { formatTimeDisplay } from "@/lib/utils/gm-availability";
 import { expandPatternsToDateRange, slotsToKeySet, keySetToSlots } from "@/lib/utils/availability";
@@ -121,7 +122,7 @@ export function PlayerAvailabilityPage({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadKey, setLoadKey] = useState(0);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showClearModal, setShowClearModal] = useState(false);
   const hasLoadedOnce = useRef(false);
 
   // Undo stack for AI changes - stores multiple snapshots
@@ -356,7 +357,6 @@ export function PlayerAvailabilityPage({
         console.log("[Frontend] Triggering reload...");
         await new Promise(resolve => setTimeout(resolve, 100));
         setLoadKey((k) => k + 1);
-        setHasUnsavedChanges(false);
       }
     } catch (error) {
       console.error("Failed to save general availability:", error);
@@ -365,10 +365,14 @@ export function PlayerAvailabilityPage({
     }
   };
 
-  // Handle reset
-  const handleReset = async () => {
-    if (!confirm("Are you sure you want to clear all your availability?")) return;
+  // Handle reset - show confirmation modal
+  const handleReset = () => {
+    setShowClearModal(true);
+  };
 
+  // Execute clear after confirmation
+  const executeClear = async () => {
+    setShowClearModal(false);
     setIsSaving(true);
     try {
       await fetch(`/api/availability/${participant.id}`, {
@@ -601,10 +605,6 @@ export function PlayerAvailabilityPage({
     }
   }, [effectiveAvailability, specificAvailability, generalAvailability, exceptions, participant.id, timezone]);
 
-  const handleDone = () => {
-    router.push(`/${event.slug}`);
-  };
-
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       {/* Header */}
@@ -768,6 +768,17 @@ export function PlayerAvailabilityPage({
           />
         )
       )}
+
+      {/* Clear Availability Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showClearModal}
+        onClose={() => setShowClearModal(false)}
+        onConfirm={executeClear}
+        title="Clear Availability"
+        message="Are you sure you want to clear all your availability? This cannot be undone."
+        confirmLabel="Clear All"
+        variant="danger"
+      />
 
       {/* Fixed position undo toast stack - above CTA banner */}
       {undoStack.length > 0 && (

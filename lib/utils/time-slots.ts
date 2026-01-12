@@ -82,14 +82,3 @@ export function isTimeInRange(
   return timeMins >= startMins && timeMins < endMins;
 }
 
-/**
- * Format time for display (12-hour format with AM/PM)
- */
-export function formatTimeDisplay(time: string): string {
-  const [hourStr, minute] = time.split(":");
-  const hour = parseInt(hourStr);
-  if (hour === 0) return `12:${minute} AM`;
-  if (hour < 12) return `${hour}:${minute} AM`;
-  if (hour === 12) return `12:${minute} PM`;
-  return `${hour - 12}:${minute} PM`;
-}

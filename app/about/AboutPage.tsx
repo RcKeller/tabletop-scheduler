@@ -96,7 +96,7 @@ export function AboutPage() {
             </div>
             <div>
               <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">
-                Howdy - I'm Andy
+                Howdy - I&apos;m Andy
               </h2>
               <p className="text-zinc-600 dark:text-zinc-400">
                 Software Engineer & TTRPG enthusiast from Las Vegas
@@ -145,7 +145,7 @@ export function AboutPage() {
           {submitted ? (
             <div className="rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-900/50 dark:bg-green-900/20">
               <p className="text-green-700 dark:text-green-400">
-                Thanks for your feedback! I'll review it soon.
+                Thanks for your feedback! I&apos;ll review it soon.
               </p>
               <button
                 onClick={() => setSubmitted(false)}

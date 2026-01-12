@@ -367,7 +367,7 @@ export function CombinedHeatmap({
                     </div>
                     <div className="border-t border-zinc-100 pt-3 dark:border-zinc-800">
                       <p className="text-xs text-zinc-400 dark:text-zinc-500">
-                        Hover over a time slot to see who's available
+                        Hover over a time slot to see who&apos;s available
                       </p>
                     </div>
                   </div>

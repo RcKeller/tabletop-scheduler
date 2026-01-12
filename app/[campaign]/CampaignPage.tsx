@@ -13,6 +13,7 @@ import { Footer } from "@/components/layout/Footer";
 import { EmptyPartyList } from "@/components/empty-states/EmptyPartyList";
 import { EmptyHeatmap } from "@/components/empty-states/EmptyHeatmap";
 import { CtaBanner } from "@/components/ui/CtaBanner";
+import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import type { MeetingType, CampaignType, Participant, ParticipantWithAvailability } from "@/lib/types";
 import { getBrowserTimezone } from "@/lib/utils/timezone";
 
@@ -79,6 +80,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
   const [newPlayerName, setNewPlayerName] = useState("");
   const [isAddingPlayer, setIsAddingPlayer] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [playerToRemove, setPlayerToRemove] = useState<{ id: string; name: string } | null>(null);
 
   const eventStartDate = useMemo(() => {
     return event.startDate ? parseISO(event.startDate) : new Date();
@@ -145,27 +147,30 @@ export function CampaignPage({ event }: CampaignPageProps) {
     }
   }, [newPlayerName, event.slug]);
 
-  // Handle removing a player
-  const handleRemovePlayer = useCallback(async (participantId: string, displayName: string) => {
-    if (!confirm(`Are you sure you want to remove ${displayName} from this campaign? This cannot be undone.`)) {
-      return;
-    }
+  // Handle removing a player - show confirmation modal
+  const handleRemovePlayer = useCallback((participantId: string, displayName: string) => {
+    setPlayerToRemove({ id: participantId, name: displayName });
+  }, []);
+
+  // Execute player removal after confirmation
+  const executeRemovePlayer = useCallback(async () => {
+    if (!playerToRemove) return;
 
     try {
-      const res = await fetch(`/api/participants/${participantId}`, {
+      const res = await fetch(`/api/participants/${playerToRemove.id}`, {
         method: "DELETE",
       });
 
       if (res.ok) {
-        setParticipants((prev) => prev.filter(p => p.id !== participantId));
-        setParticipantsWithAvailability((prev) => prev.filter(p => p.id !== participantId));
+        setParticipants((prev) => prev.filter(p => p.id !== playerToRemove.id));
+        setParticipantsWithAvailability((prev) => prev.filter(p => p.id !== playerToRemove.id));
         // Close profile modal if the removed player was being viewed
-        if (selectedParticipant?.id === participantId) {
+        if (selectedParticipant?.id === playerToRemove.id) {
           setIsProfileModalOpen(false);
           setSelectedParticipant(null);
         }
         // Clear current participant if removed
-        if (currentParticipant?.id === participantId) {
+        if (currentParticipant?.id === playerToRemove.id) {
           setCurrentParticipant(null);
           localStorage.removeItem(`participant_${event.id}`);
         }
@@ -176,18 +181,10 @@ export function CampaignPage({ event }: CampaignPageProps) {
     } catch (error) {
       console.error("Failed to remove player:", error);
       alert("Failed to remove player");
+    } finally {
+      setPlayerToRemove(null);
     }
-  }, [selectedParticipant, currentParticipant, event.id]);
-
-  // Navigate to character edit page for current user
-  const handleCreateCharacter = useCallback(() => {
-    if (currentParticipant) {
-      const playerSlug = encodeURIComponent(
-        currentParticipant.displayName.toLowerCase().replace(/\s+/g, "-")
-      );
-      router.push(`/${event.slug}/${playerSlug}/character`);
-    }
-  }, [currentParticipant, event.slug, router]);
+  }, [playerToRemove, selectedParticipant, currentParticipant, event.id]);
 
   // Load heatmap data
   const loadHeatmapData = useCallback(async () => {
@@ -237,13 +234,6 @@ export function CampaignPage({ event }: CampaignPageProps) {
     router.push(`/${event.slug}/${playerSlug}`);
   };
 
-  const handleEditAvailability = () => {
-    if (currentParticipant) {
-      const playerSlug = encodeURIComponent(currentParticipant.displayName.toLowerCase().replace(/\s+/g, "-"));
-      router.push(`/${event.slug}/${playerSlug}`);
-    }
-  };
-
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
     setCopiedLink(true);
@@ -273,7 +263,6 @@ export function CampaignPage({ event }: CampaignPageProps) {
   const hasGm = !!gmParticipant;
   const playerCount = participants.filter(p => !p.isGm).length;
   const isAtCapacity = event.maxPlayers !== null && playerCount >= event.maxPlayers;
-  const isOverCapacity = event.maxPlayers !== null && playerCount > event.maxPlayers;
 
   // Check if GM has set availability
   const gmHasAvailability = useMemo(() => {
@@ -281,12 +270,6 @@ export function CampaignPage({ event }: CampaignPageProps) {
     const gmWithAvailability = participantsWithAvailability.find(p => p.id === gmParticipant.id);
     return gmWithAvailability && gmWithAvailability.availability.length > 0;
   }, [gmParticipant, participantsWithAvailability]);
-
-  // Check if current participant needs to complete profile
-  const showProfileCallout = currentParticipant &&
-    !currentParticipant.isGm &&
-    event.customPreSessionInstructions &&
-    (!currentParticipant.characterName && !currentParticipant.notes);
 
   const formatDateRange = () => {
     if (!event.startDate || !event.endDate) return null;
@@ -679,6 +662,17 @@ export function CampaignPage({ event }: CampaignPageProps) {
           isCurrentUser={currentParticipant?.id === selectedParticipant.id}
         />
       )}
+
+      {/* Remove Player Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={!!playerToRemove}
+        onClose={() => setPlayerToRemove(null)}
+        onConfirm={executeRemovePlayer}
+        title="Remove Player"
+        message={`Are you sure you want to remove ${playerToRemove?.name} from this campaign? This cannot be undone.`}
+        confirmLabel="Remove"
+        variant="danger"
+      />
     </div>
   );
 }

@@ -19,6 +19,3 @@ export async function generateSlug(title: string): Promise<string> {
   return existing ? `${base}-${nanoid(6)}` : base;
 }
 
-export function isValidSlug(slug: string): boolean {
-  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) && slug.length <= 60;
-}
