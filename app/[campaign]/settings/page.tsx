@@ -41,6 +41,7 @@ export default async function Page({ params }: Props) {
     playerPrepUrls: event.playerPrepUrls as { label: string; url: string }[] | null,
     minPlayers: event.minPlayers,
     maxPlayers: event.maxPlayers,
+    requireCharacterCreation: event.requireCharacterCreation,
     gameSystem: event.gameSystem
       ? {
           id: event.gameSystem.id,

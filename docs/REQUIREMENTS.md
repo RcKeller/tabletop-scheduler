@@ -65,7 +65,9 @@ USER DISPLAY (local timezone)
     └─── User sees "5:00 PM" in their timezone
 ```
 
-### Database Storage - ALL UTC
+### Database Storage - DIFFERENT TIMEZONES BY DATA TYPE
+
+> **CRITICAL CORRECTION (2026-01-12):** NOT everything is UTC. Different data types have different source timezones.
 
 | Table.Field | Format | Timezone | Notes |
 |-------------|--------|----------|-------|
@@ -77,11 +79,13 @@ USER DISPLAY (local timezone)
 | `AvailabilityException.endTime` | "HH:MM" | **UTC** | |
 | `Event.startDate` | Date | **UTC** | Campaign date range |
 | `Event.endDate` | Date | **UTC** | |
-| `Event.earliestTime` | "HH:MM" | **UTC** | Daily time window |
-| `Event.latestTime` | "HH:MM" | **UTC** | |
-| `GeneralAvailability.dayOfWeek` | 0-6 | **Local context** | See note below |
-| `GeneralAvailability.startTime` | "HH:MM" | **Local context** | See note below |
-| `GeneralAvailability.endTime` | "HH:MM" | **Local context** | See note below |
+| `Event.earliestTime` | "HH:MM" | **Event's timezone** | Daily time window - stored in `event.timezone` |
+| `Event.latestTime` | "HH:MM" | **Event's timezone** | Daily time window - stored in `event.timezone` |
+| `Event.timezone` | String | N/A | The timezone context for earliestTime/latestTime |
+| `GeneralAvailability.dayOfWeek` | 0-6 | **User's local** | Stored with `participant.timezone` |
+| `GeneralAvailability.startTime` | "HH:MM" | **User's local** | Stored with `participant.timezone` |
+| `GeneralAvailability.endTime` | "HH:MM" | **User's local** | Stored with `participant.timezone` |
+| `Participant.timezone` | String | N/A | The timezone context for this participant's patterns |
 
 #### Special Case: GeneralAvailability (Recurring Patterns)
 
@@ -133,9 +137,90 @@ Recurring patterns are stored in the user's local timezone context because:
 
 1. **Comparing UTC times with local times** - Always convert to same timezone first
 2. **Forgetting to pass timezone param** - Pattern expansion needs user's timezone
-3. **Double-converting** - If data is already UTC, don't convert again
-4. **Storing local times** - Never store local times in the database (except GeneralAvailability)
+3. **Double-converting** - If data is already in target timezone, don't convert again
+4. **Storing local times** - Never store local times in the database (except GeneralAvailability and Event time windows)
 5. **Displaying UTC directly** - Always convert to local before showing to users
+6. **Assuming all times are UTC** - Check the table above! Event times are in event.timezone
+7. **Using boolean flags for timezone** - Use `timeWindowTimezone: string` to specify source timezone
+
+---
+
+## CRITICAL: Bug Prevention Guidelines
+
+> **Read this section BEFORE making ANY timezone-related changes.**
+
+### The Three Timezone Questions
+
+Before working with any time data, answer these questions:
+
+1. **What timezone is the SOURCE data in?**
+   - Availability slots → UTC
+   - Recurring patterns → User's timezone (`participant.timezone`)
+   - Event time window → Event's timezone (`event.timezone`)
+
+2. **What timezone should the DISPLAY be in?**
+   - Always the user's selected timezone (stored in localStorage)
+
+3. **Do I need to convert?**
+   - Only if source ≠ display timezone
+   - Use `convertDateTime(time, date, sourceTimezone, displayTimezone)`
+
+### Component Prop Patterns
+
+**For calendar grid components:**
+```typescript
+// Time window already in user's local timezone
+<VirtualizedAvailabilityGrid
+  earliestTime="00:00"
+  latestTime="23:30"
+  // NO timeWindowTimezone prop needed
+/>
+
+// Time window in a different timezone (e.g., event's timezone)
+<VirtualizedAvailabilityGrid
+  earliestTime={event.earliestTime}
+  latestTime={event.latestTime}
+  timeWindowTimezone={event.timezone}  // Source timezone - converts to user's timezone
+/>
+```
+
+### Historical Bug Patterns (Learn From These!)
+
+**Bug 1: "UTC-First" Over-Simplification (2026-01-09)**
+- Symptom: GM sets 5pm, player sees wrong time
+- Root cause: Treated event time window as UTC when it's in event.timezone
+- Fix: Added `timeWindowTimezone` prop to specify source timezone
+
+**Bug 2: Boolean Timezone Flag (2026-01-12)**
+- Symptom: `timeWindowInUTC={true}` couldn't handle non-UTC source timezones
+- Root cause: Boolean can only express "is UTC", not "convert from X to Y"
+- Fix: Replaced with `timeWindowTimezone: string` to specify source timezone
+
+**Bug 3: Regression in GM Availability (2026-01-12)**
+- Symptom: GM availability page broke after timezone fix
+- Root cause: Applied UTC conversion to time windows that were already local
+- Fix: Only convert when `timeWindowTimezone` is provided AND differs from user timezone
+
+### Testing Checklist for Timezone Changes
+
+Before ANY timezone-related PR, manually test:
+
+- [ ] GM in timezone A (e.g., PST) sets availability for 5pm-9pm
+- [ ] Player in timezone B (e.g., EST) views - should see 8pm-12am
+- [ ] Player switches to timezone A (PST) - should see 5pm-9pm
+- [ ] GM views their own availability in different timezone - displays correctly
+- [ ] Time window clamps correctly for players (shows GM's available window)
+- [ ] Heatmap aggregates correctly across timezones
+- [ ] Recurring patterns expand correctly in different timezones
+- [ ] Overnight slots (crossing midnight) handled correctly
+
+### Never Do These
+
+- ❌ Assume all times are UTC
+- ❌ Use boolean flags for timezone conversion
+- ❌ Convert times without knowing the source timezone
+- ❌ Skip multi-timezone testing
+- ❌ Update timezone code without reading this section first
 
 ### Timezone Utility Functions (`lib/utils/timezone.ts`)
 

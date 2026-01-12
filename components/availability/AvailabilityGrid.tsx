@@ -2,9 +2,9 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { format, parse } from "date-fns";
-import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import type { TimeSlot } from "@/lib/types";
-import { generateTimeSlots, getWeekDates, addThirtyMinutes } from "@/lib/utils/time-slots";
+import { generateTimeSlots, getWeekDates } from "@/lib/utils/time-slots";
+import { utcToLocal, convertDateTime } from "@/lib/utils/timezone";
 
 interface AvailabilityGridProps {
   availability: TimeSlot[];
@@ -16,6 +16,7 @@ interface AvailabilityGridProps {
   weekStart?: Date;
   earliestTime?: string;
   latestTime?: string;
+  timeWindowTimezone?: string;  // Source timezone of time window (converts to user's timezone)
   autoSave?: boolean;
   showLegend?: boolean;
 }
@@ -30,6 +31,7 @@ export function AvailabilityGrid({
   weekStart,
   earliestTime = "00:00",
   latestTime = "23:30",
+  timeWindowTimezone,
   autoSave = false,
   showLegend = true,
 }: AvailabilityGridProps) {
@@ -47,9 +49,23 @@ export function AvailabilityGrid({
   const initializedRef = useRef(false);
 
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
+
+  // Convert time window for Y-axis display if needed
+  // - If timeWindowTimezone is provided and different from timezone: convert
+  // - Otherwise: use as-is (already in user's local timezone)
+  const displayTimeWindow = useMemo(() => {
+    if (!timeWindowTimezone || timeWindowTimezone === timezone) {
+      return { earliest: earliestTime, latest: latestTime };
+    }
+    const refDate = format(weekDates[0], "yyyy-MM-dd");
+    const localEarliest = convertDateTime(earliestTime, refDate, timeWindowTimezone, timezone);
+    const localLatest = convertDateTime(latestTime, refDate, timeWindowTimezone, timezone);
+    return { earliest: localEarliest.time, latest: localLatest.time };
+  }, [earliestTime, latestTime, timeWindowTimezone, timezone, weekDates]);
+
   const timeSlots = useMemo(
-    () => generateTimeSlots(earliestTime, latestTime),
-    [earliestTime, latestTime]
+    () => generateTimeSlots(displayTimeWindow.earliest, displayTimeWindow.latest),
+    [displayTimeWindow.earliest, displayTimeWindow.latest]
   );
 
   // Calculate pending slots from drag rectangle
@@ -377,17 +393,7 @@ export function AvailabilityGrid({
                 >
                   <div className="flex items-center justify-center p-1 text-xs text-zinc-400 dark:text-zinc-500">
                     {isHourMark && (() => {
-                      // Convert time from event timezone to viewer timezone for display
-                      if (eventTimezone && timezone && eventTimezone !== timezone) {
-                        try {
-                          const dateStr = format(weekDates[0], "yyyy-MM-dd");
-                          // Create date in event timezone and convert to viewer timezone
-                          const eventDate = fromZonedTime(`${dateStr} ${time}`, eventTimezone);
-                          return formatInTimeZone(eventDate, timezone, "h a");
-                        } catch {
-                          return format(parse(time, "HH:mm", new Date()), "h a");
-                        }
-                      }
+                      // Time is already converted to local timezone via displayTimeWindow
                       return format(parse(time, "HH:mm", new Date()), "h a");
                     })()}
                   </div>

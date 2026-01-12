@@ -19,7 +19,7 @@ import type {
 } from "ag-grid-community";
 import type { TimeSlot } from "@/lib/types";
 import { generateTimeSlots, addThirtyMinutes } from "@/lib/utils/time-slots";
-import { utcToLocal, localToUTC } from "@/lib/utils/timezone";
+import { utcToLocal, localToUTC, convertDateTime } from "@/lib/utils/timezone";
 
 /**
  * Convert availability array from UTC to local timezone for display
@@ -125,8 +125,9 @@ interface Participant {
 interface VirtualizedAvailabilityGridProps {
   startDate: Date;
   endDate: Date;
-  earliestTime?: string;  // Time window start (in UTC)
-  latestTime?: string;    // Time window end (in UTC)
+  earliestTime?: string;  // Time window start (in timeWindowTimezone if provided, else local)
+  latestTime?: string;    // Time window end (in timeWindowTimezone if provided, else local)
+  timeWindowTimezone?: string;  // Source timezone of earliestTime/latestTime (converts to user's timezone)
   mode: "edit" | "heatmap";
   availability?: TimeSlot[];  // Availability data (in UTC)
   onSave?: (slots: TimeSlot[]) => void;  // Returns UTC times
@@ -240,6 +241,7 @@ export function VirtualizedAvailabilityGrid({
   endDate,
   earliestTime = "00:00",
   latestTime = "23:30",
+  timeWindowTimezone,
   mode,
   availability = [],
   onSave,
@@ -251,8 +253,8 @@ export function VirtualizedAvailabilityGrid({
   timezone = "UTC",
 }: VirtualizedAvailabilityGridProps) {
   // UTC-first architecture:
-  // - All incoming data (availability, participants, time window) is in UTC
-  // - Convert to user's timezone for display
+  // - Availability data is always in UTC, convert to user's timezone for display
+  // - Time window (earliestTime/latestTime) is in timeWindowTimezone if provided, else already local
   // - Convert back to UTC when saving
   const userTimezone = timezone;
 
@@ -354,14 +356,19 @@ export function VirtualizedAvailabilityGrid({
     };
   }, []);
 
-  // Convert the time window from UTC to user's timezone for Y-axis display
-  // UTC-first architecture: event time window is stored in UTC, displayed in local
-  // Time window (earliestTime/latestTime) are display preferences, NOT UTC times
-  // They represent what hours to show on the grid in the user's local timezone
-  // No conversion needed - use as-is
+  // Convert the time window for Y-axis display if needed
+  // - If timeWindowTimezone is provided and different from userTimezone: convert
+  // - Otherwise: use as-is (already in user's local timezone)
   const displayTimeWindow = useMemo(() => {
-    return { earliest: earliestTime, latest: latestTime };
-  }, [earliestTime, latestTime]);
+    if (!timeWindowTimezone || timeWindowTimezone === userTimezone) {
+      return { earliest: earliestTime, latest: latestTime };
+    }
+    // Convert from source timezone to user's timezone
+    const refDate = format(startDate, "yyyy-MM-dd");
+    const localEarliest = convertDateTime(earliestTime, refDate, timeWindowTimezone, userTimezone);
+    const localLatest = convertDateTime(latestTime, refDate, timeWindowTimezone, userTimezone);
+    return { earliest: localEarliest.time, latest: localLatest.time };
+  }, [earliestTime, latestTime, timeWindowTimezone, userTimezone, startDate]);
 
   // Generate all dates in range
   const allDates = useMemo(() => {

@@ -25,6 +25,9 @@ interface EventData {
   minPlayers: number | null;
   maxPlayers: number | null;
   gameSystem: GameSystem | null;
+  startDate: string | null;
+  endDate: string | null;
+  requireCharacterCreation: boolean;
 }
 
 interface CampaignSettingsPageProps {
@@ -53,6 +56,13 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
   const [meetingLocation, setMeetingLocation] = useState(event.meetingLocation || "");
   const [meetingRoom, setMeetingRoom] = useState(event.meetingRoom || "");
 
+  // Date range
+  const [startDate, setStartDate] = useState<string>(event.startDate || "");
+  const [endDate, setEndDate] = useState<string>(event.endDate || "");
+
+  // Character creation requirement
+  const [requireCharacterCreation, setRequireCharacterCreation] = useState(event.requireCharacterCreation);
+
   // Modal state
   const [isCreatingGameSystem, setIsCreatingGameSystem] = useState(false);
 
@@ -67,6 +77,8 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
       // Auto-fill instructions from game system if empty
       if (system?.defaultInstructions && !playerInstructions) {
         setPlayerInstructions(system.defaultInstructions);
+        // Auto-enable character creation requirement when system has instructions
+        setRequireCharacterCreation(true);
       }
       if (system?.defaultUrls && playerPrepUrls.length === 0) {
         setPlayerPrepUrls(system.defaultUrls);
@@ -122,6 +134,11 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
         meetingType,
         meetingLocation: meetingLocation || null,
         meetingRoom: meetingRoom || null,
+        // Date range
+        startDate: startDate || null,
+        endDate: endDate || null,
+        // Character creation
+        requireCharacterCreation,
       };
 
       const res = await fetch(`/api/events/${event.slug}`, {
@@ -289,6 +306,40 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
               onMeetingLocationChange={setMeetingLocation}
               onMeetingRoomChange={setMeetingRoom}
             />
+
+            {/* Date Range */}
+            <div className="mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                Date Range
+              </label>
+              <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                When are you looking to schedule sessions?
+              </p>
+              <div className="mt-2 flex items-center gap-3">
+                <div className="flex-1">
+                  <label className="sr-only" htmlFor="startDate">Start Date</label>
+                  <input
+                    type="date"
+                    id="startDate"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  />
+                </div>
+                <span className="text-zinc-400">to</span>
+                <div className="flex-1">
+                  <label className="sr-only" htmlFor="endDate">End Date</label>
+                  <input
+                    type="date"
+                    id="endDate"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    min={startDate}
+                    className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Player Instructions */}
@@ -355,6 +406,35 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
                   + Add link
                 </button>
               </div>
+            </div>
+
+            {/* Require Character Creation Toggle */}
+            <div className="mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+              <label className="flex cursor-pointer items-center justify-between">
+                <div>
+                  <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Require Character Creation
+                  </span>
+                  <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                    Prompt players to set up their character after joining
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={requireCharacterCreation}
+                  onClick={() => setRequireCharacterCreation(!requireCharacterCreation)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                    requireCharacterCreation ? "bg-blue-600" : "bg-zinc-200 dark:bg-zinc-700"
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      requireCharacterCreation ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </label>
             </div>
           </div>
         </div>

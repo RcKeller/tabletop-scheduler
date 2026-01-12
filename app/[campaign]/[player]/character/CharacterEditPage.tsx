@@ -76,71 +76,65 @@ export function CharacterEditPage({
 
       {/* Main Content */}
       <main className="mx-auto max-w-3xl px-4 py-6">
-        <div className="grid gap-6 lg:grid-cols-5">
-          {/* Main form column */}
-          <div className="lg:col-span-3">
-            {/* Character Form Card */}
-            <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-              {/* Profile Header */}
-              <div className="flex items-center gap-4 border-b border-zinc-200 p-4 dark:border-zinc-700">
-                {participant.characterTokenBase64 ? (
-                  <img
-                    src={participant.characterTokenBase64}
-                    alt={participant.characterName || participant.displayName}
-                    className="h-14 w-14 rounded-full object-cover ring-2 ring-zinc-200 dark:ring-zinc-700"
-                  />
-                ) : (
-                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-zinc-200 text-xl font-medium text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400">
-                    {participant.displayName.charAt(0).toUpperCase()}
-                  </div>
-                )}
-                <div>
-                  <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-                    {participant.displayName}
-                  </h2>
-                  {participant.characterName ? (
-                    <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                      {participant.characterName}
-                      {participant.characterClass && ` · ${participant.characterClass}`}
-                    </p>
-                  ) : (
-                    <p className="text-sm italic text-zinc-400 dark:text-zinc-500">
-                      No character details yet
-                    </p>
-                  )}
-                </div>
-              </div>
+        <div className="space-y-6">
+          {/* Before You Play - Full span on desktop, first section */}
+          {event.customPreSessionInstructions && (
+            <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+              <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Before You Play
+              </h3>
+              <p className="whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-400">
+                {event.customPreSessionInstructions}
+              </p>
+            </div>
+          )}
 
-              {/* Form */}
-              <div className="p-4">
-                <CharacterForm participant={participant} eventSlug={event.slug} />
+          <div className="grid gap-6 lg:grid-cols-5">
+            {/* Main form column */}
+            <div className="lg:col-span-3">
+              {/* Character Form Card */}
+              <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+                {/* Profile Header */}
+                <div className="flex items-center gap-4 border-b border-zinc-200 p-4 dark:border-zinc-700">
+                  {participant.characterTokenBase64 ? (
+                    <img
+                      src={participant.characterTokenBase64}
+                      alt={participant.characterName || participant.displayName}
+                      className="h-14 w-14 rounded-full object-cover ring-2 ring-zinc-200 dark:ring-zinc-700"
+                    />
+                  ) : (
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-zinc-200 text-xl font-medium text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400">
+                      {participant.displayName.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                      {participant.displayName}
+                    </h2>
+                    {participant.characterName ? (
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                        {participant.characterName}
+                        {participant.characterClass && ` · ${participant.characterClass}`}
+                      </p>
+                    ) : (
+                      <p className="text-sm italic text-zinc-400 dark:text-zinc-500">
+                        No character details yet
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Form */}
+                <div className="p-4">
+                  <CharacterForm participant={participant} eventSlug={event.slug} />
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Sidebar */}
-          <div className="lg:col-span-2">
-            <div className="sticky top-20 space-y-4">
-              {/* Pre-session Instructions */}
-              {event.customPreSessionInstructions && (
-                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/50 dark:bg-blue-900/20">
-                  <div className="flex items-start gap-3">
-                    <svg className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <div>
-                      <h3 className="text-sm font-semibold text-blue-800 dark:text-blue-300">
-                        Before You Play
-                      </h3>
-                      <p className="mt-1 whitespace-pre-wrap text-sm text-blue-700 dark:text-blue-300/80">
-                        {event.customPreSessionInstructions}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Party members for reference */}
+            {/* Sidebar */}
+            <div className="lg:col-span-2">
+              <div className="sticky top-20 space-y-4">
+                {/* Party members for reference */}
               <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
                 <h3 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
                   Your Party
@@ -197,6 +191,7 @@ export function CharacterEditPage({
               </div>
             </div>
           </div>
+        </div>
         </div>
       </main>
 

@@ -6,7 +6,7 @@ import { HoverDetailPanel } from "./HoverDetailPanel";
 import { HeatmapLegend } from "./HeatmapLegend";
 import type { TimeSlot } from "@/lib/types";
 import { generateTimeSlots, getWeekDates } from "@/lib/utils/time-slots";
-import { utcToLocal } from "@/lib/utils/timezone";
+import { utcToLocal, convertDateTime } from "@/lib/utils/timezone";
 
 interface Participant {
   id: string;
@@ -26,8 +26,9 @@ interface SessionDetails {
 interface CombinedHeatmapProps {
   participants: Participant[];  // Availability data is in UTC
   weekStart: Date;
-  earliestTime?: string;  // Time window in UTC
-  latestTime?: string;    // Time window in UTC
+  earliestTime?: string;  // Time window start (in timeWindowTimezone if provided)
+  latestTime?: string;    // Time window end (in timeWindowTimezone if provided)
+  timeWindowTimezone?: string;  // Source timezone of time window (converts to user's timezone)
   sessionLengthMinutes?: number;
   timezone?: string;  // User's display timezone (defaults to UTC)
   sessionDetails?: SessionDetails;
@@ -52,6 +53,7 @@ export function CombinedHeatmap({
   weekStart,
   earliestTime = "00:00",
   latestTime = "23:30",
+  timeWindowTimezone,
   sessionLengthMinutes = 180,
   timezone = "UTC",
   sessionDetails,
@@ -60,16 +62,61 @@ export function CombinedHeatmap({
   const [hoveredSlot, setHoveredSlot] = useState<{ date: string; time: string } | null>(null);
 
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
+
+  // Convert time window for Y-axis display if needed
+  // - If timeWindowTimezone is provided and different from timezone: convert
+  // - Otherwise: use as-is (already in user's local timezone)
+  const displayTimeWindow = useMemo(() => {
+    if (!timeWindowTimezone || timeWindowTimezone === timezone) {
+      return { earliest: earliestTime, latest: latestTime };
+    }
+    const refDate = format(weekStart, "yyyy-MM-dd");
+    const localEarliest = convertDateTime(earliestTime, refDate, timeWindowTimezone, timezone);
+    const localLatest = convertDateTime(latestTime, refDate, timeWindowTimezone, timezone);
+    return { earliest: localEarliest.time, latest: localLatest.time };
+  }, [earliestTime, latestTime, timeWindowTimezone, timezone, weekStart]);
+
   const timeSlots = useMemo(
-    () => generateTimeSlots(earliestTime, latestTime),
-    [earliestTime, latestTime]
+    () => generateTimeSlots(displayTimeWindow.earliest, displayTimeWindow.latest),
+    [displayTimeWindow.earliest, displayTimeWindow.latest]
   );
 
+  // Convert participant availability from UTC to local timezone
+  const displayParticipants = useMemo(() => {
+    if (timezone === "UTC") return participants;
+
+    return participants.map(p => ({
+      ...p,
+      availability: p.availability.flatMap(slot => {
+        const start = utcToLocal(slot.startTime, slot.date, timezone);
+        const end = utcToLocal(slot.endTime, slot.date, timezone);
+
+        if (start.date === end.date) {
+          // Same day - simple case
+          if (start.time < end.time) {
+            return [{ date: start.date, startTime: start.time, endTime: end.time }];
+          }
+          return [];
+        } else {
+          // Slot crosses midnight when converted - split into two slots
+          const result: TimeSlot[] = [
+            { date: start.date, startTime: start.time, endTime: "23:59" },
+          ];
+          if (end.time > "00:00") {
+            result.push({ date: end.date, startTime: "00:00", endTime: end.time });
+          }
+          return result;
+        }
+      }),
+    }));
+  }, [participants, timezone]);
+
   // Build availability map: date-time -> participant IDs who are available
+  // Uses converted local-time availability
   const availabilityMap = useMemo(() => {
     const map = new Map<string, Set<string>>();
 
-    for (const participant of participants) {
+    for (const participant of displayParticipants) {
       for (const slot of participant.availability) {
         // Skip invalid slots where start >= end
         if (slot.startTime >= slot.endTime) continue;
@@ -100,7 +147,7 @@ export function CombinedHeatmap({
     }
 
     return map;
-  }, [participants]);
+  }, [displayParticipants]);
 
   // Get participants available/unavailable for a slot
   const getSlotParticipants = useCallback(
@@ -226,10 +273,8 @@ export function CombinedHeatmap({
                   >
                     <div className="flex items-center justify-center p-1 text-xs text-zinc-400 dark:text-zinc-500">
                       {isHourMark && (() => {
-                        // UTC-first: Convert UTC time to user's timezone for display
-                        const dateStr = format(weekDates[0], "yyyy-MM-dd");
-                        const localTime = utcToLocal(time, dateStr, timezone);
-                        const timeObj = parse(localTime.time, "HH:mm", new Date());
+                        // Time is already in local timezone (converted via displayTimeWindow)
+                        const timeObj = parse(time, "HH:mm", new Date());
                         return format(timeObj, "h a");
                       })()}
                     </div>

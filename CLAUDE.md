@@ -8,6 +8,7 @@ Read and follow these skills before writing any code:
 - .claude/skills/session-management.md
 - .claude/skills/typescript.md
 - .claude/skills/react-web.md
+- .claude/skills/timezone-architecture.md (CRITICAL: read before ANY timezone-related work)
 
 ## Project Overview
 A tabletop gaming session scheduler for coordinating game nights. Helps groups organize and schedule their tabletop RPG sessions.
@@ -101,10 +102,22 @@ When starting a new session:
 - Next.js App Router for routing
 - Server Components by default, Client Components when needed
 - Tailwind CSS for styling
-- All times stored in UTC, converted to user timezone on display
 - 30-minute time slot granularity for availability
 - Mobile: AI text input only (no drag grid)
 - Desktop: Both drag-select grid and AI text input
+
+## Timezone Architecture (CRITICAL)
+**Read `.claude/skills/timezone-architecture.md` before ANY timezone work.**
+
+Key rules:
+- **Database**: Availability in UTC, patterns in user's local timezone, event times in event's timezone
+- **Display**: Convert to user's selected timezone (default: browser local)
+- **Timezone switcher**: Available on all pages with time displays
+- **Calendar grids**: Accept `timeWindowTimezone` prop to specify SOURCE timezone of time window
+  - GM page: Pass local times ("00:00"-"23:30"), no `timeWindowTimezone` (already local)
+  - Campaign/Heatmap: Pass `timeWindowTimezone={event.timezone}` to convert event times
+  - Player page: Convert bounds to local BEFORE passing, no `timeWindowTimezone`
+- **GM availability window**: Clamps player views but not GM view (GM sees 24 hours)
 
 ## Key Files
 - `lib/db/schema.sql` - Database schema (run in Vercel Dashboard)

@@ -13,7 +13,7 @@ import type { TimeSlot, GeneralAvailability as GeneralAvailabilityType } from "@
 import { formatTimeDisplay } from "@/lib/utils/gm-availability";
 import { expandPatternsToDateRange, slotsToKeySet, keySetToSlots } from "@/lib/utils/availability";
 import { addThirtyMinutes } from "@/lib/utils/time-slots";
-import { utcToLocal, localToUTC, convertDateTime } from "@/lib/utils/timezone";
+import { utcToLocal, localToUTC, convertDateTime, getBrowserTimezone } from "@/lib/utils/timezone";
 
 interface EventProps {
   id: string;
@@ -69,13 +69,19 @@ export function PlayerAvailabilityPage({
   const router = useRouter();
 
   // Persist timezone globally in localStorage
+  // Default to event.timezone for SSR, then update client-side
   const [timezone, setTimezoneState] = useState(event.timezone);
 
-  // Load timezone from localStorage on mount (after hydration)
+  // Load timezone from localStorage on mount, or default to browser timezone
   useEffect(() => {
     const stored = localStorage.getItem("when2play_timezone");
     if (stored) {
       setTimezoneState(stored);
+    } else {
+      // If no stored timezone, default to browser's local timezone (not event timezone)
+      const browserTz = getBrowserTimezone();
+      setTimezoneState(browserTz);
+      localStorage.setItem("when2play_timezone", browserTz);
     }
   }, []);
 

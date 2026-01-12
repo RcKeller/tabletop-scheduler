@@ -11,7 +11,7 @@ import { CtaBanner } from "@/components/ui/CtaBanner";
 import type { TimeSlot, GeneralAvailability as GeneralAvailabilityType } from "@/lib/types";
 import { expandPatternsToDateRange, slotsToKeySet, keySetToSlots } from "@/lib/utils/availability";
 import { addThirtyMinutes } from "@/lib/utils/time-slots";
-import { utcToLocal, localToUTC } from "@/lib/utils/timezone";
+import { utcToLocal, localToUTC, getBrowserTimezone } from "@/lib/utils/timezone";
 
 interface EventProps {
   id: string;
@@ -53,15 +53,21 @@ export function GmAvailabilityPage({
   participant,
 }: GmAvailabilityPageProps) {
   // Persist timezone globally in localStorage
+  // Default to event.timezone for SSR, then update client-side
   const [timezone, setTimezoneState] = useState(event.timezone);
   const [hasSetAvailability, setHasSetAvailability] = useState(false);
   const [showCtaBanner, setShowCtaBanner] = useState(false);
 
-  // Load timezone from localStorage on mount (after hydration)
+  // Load timezone from localStorage on mount, or default to browser timezone
   useEffect(() => {
     const stored = localStorage.getItem("when2play_timezone");
     if (stored) {
       setTimezoneState(stored);
+    } else {
+      // If no stored timezone, default to browser's local timezone (not event timezone)
+      const browserTz = getBrowserTimezone();
+      setTimezoneState(browserTz);
+      localStorage.setItem("when2play_timezone", browserTz);
     }
   }, []);
 

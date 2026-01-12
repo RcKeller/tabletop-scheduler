@@ -58,6 +58,7 @@ model Event {
   sessionLengthMinutes       Int         @default(180)
   customPreSessionInstructions String?   @db.Text
   playerPrepUrls             Json?       // Array of { label: string, url: string }
+  requireCharacterCreation   Boolean     @default(false)
 
   // Date range for availability window
   startDate                  DateTime?   @db.Date

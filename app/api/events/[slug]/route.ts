@@ -173,6 +173,7 @@ export async function PATCH(
     if (body.playerPrepUrls !== undefined) updateData.playerPrepUrls = body.playerPrepUrls || null;
     if (body.minPlayers !== undefined) updateData.minPlayers = body.minPlayers;
     if (body.maxPlayers !== undefined) updateData.maxPlayers = body.maxPlayers;
+    if (body.requireCharacterCreation !== undefined) updateData.requireCharacterCreation = body.requireCharacterCreation;
 
     const event = await prisma.event.update({
       where: { slug },

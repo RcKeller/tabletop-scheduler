@@ -1,16 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { ReactNode } from "react";
 
 interface CtaBannerProps {
   message: string;
-  actionLabel: string;
+  actionLabel?: string;
   actionHref?: string;
   onAction?: () => void;
   onDismiss?: () => void;
   variant?: "info" | "success" | "warning";
   secondaryActionLabel?: string;
   secondaryActionHref?: string;
+  children?: ReactNode; // For custom content like forms
 }
 
 const variantStyles = {
@@ -64,6 +66,7 @@ export function CtaBanner({
   variant = "info",
   secondaryActionLabel,
   secondaryActionHref,
+  children,
 }: CtaBannerProps) {
   const styles = variantStyles[variant];
 
@@ -89,40 +92,44 @@ export function CtaBanner({
             </span>
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center gap-2 sm:shrink-0">
-            {onDismiss && (
-              <button
-                onClick={onDismiss}
-                className="rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              >
-                Dismiss
-              </button>
-            )}
-            {secondaryActionLabel && secondaryActionHref && (
-              <Link
-                href={secondaryActionHref}
-                className="rounded-md border border-zinc-300 bg-white px-4 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-              >
-                {secondaryActionLabel}
-              </Link>
-            )}
-            {actionHref ? (
-              <Link
-                href={actionHref}
-                className={`rounded-md px-4 py-1.5 text-sm font-medium text-white ${styles.button}`}
-              >
-                {actionLabel}
-              </Link>
-            ) : (
-              <button
-                onClick={handleAction}
-                className={`rounded-md px-4 py-1.5 text-sm font-medium text-white ${styles.button}`}
-              >
-                {actionLabel}
-              </button>
-            )}
-          </div>
+          {/* Custom content or standard actions */}
+          {children ? (
+            <div className="sm:shrink-0">{children}</div>
+          ) : (
+            <div className="flex items-center gap-2 sm:shrink-0">
+              {onDismiss && (
+                <button
+                  onClick={onDismiss}
+                  className="rounded-md px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                >
+                  Dismiss
+                </button>
+              )}
+              {secondaryActionLabel && secondaryActionHref && (
+                <Link
+                  href={secondaryActionHref}
+                  className="rounded-md border border-zinc-300 bg-white px-4 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                >
+                  {secondaryActionLabel}
+                </Link>
+              )}
+              {actionLabel && (actionHref ? (
+                <Link
+                  href={actionHref}
+                  className={`rounded-md px-4 py-1.5 text-sm font-medium text-white ${styles.button}`}
+                >
+                  {actionLabel}
+                </Link>
+              ) : (
+                <button
+                  onClick={handleAction}
+                  className={`rounded-md px-4 py-1.5 text-sm font-medium text-white ${styles.button}`}
+                >
+                  {actionLabel}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -14,6 +14,7 @@ import { EmptyPartyList } from "@/components/empty-states/EmptyPartyList";
 import { EmptyHeatmap } from "@/components/empty-states/EmptyHeatmap";
 import { CtaBanner } from "@/components/ui/CtaBanner";
 import type { MeetingType, CampaignType, Participant, ParticipantWithAvailability } from "@/lib/types";
+import { getBrowserTimezone } from "@/lib/utils/timezone";
 
 // Tabs removed - all content now stacked vertically
 
@@ -48,13 +49,19 @@ export function CampaignPage({ event }: CampaignPageProps) {
   const router = useRouter();
 
   // Persist timezone globally in localStorage
+  // Default to event.timezone for SSR, then update client-side
   const [timezone, setTimezoneState] = useState(event.timezone);
 
-  // Load timezone from localStorage on mount (after hydration)
+  // Load timezone from localStorage on mount, or default to browser timezone
   useEffect(() => {
     const stored = localStorage.getItem("when2play_timezone");
     if (stored) {
       setTimezoneState(stored);
+    } else {
+      // If no stored timezone, default to browser's local timezone (not event timezone)
+      const browserTz = getBrowserTimezone();
+      setTimezoneState(browserTz);
+      localStorage.setItem("when2play_timezone", browserTz);
     }
   }, []);
 
@@ -262,10 +269,18 @@ export function CampaignPage({ event }: CampaignPageProps) {
   };
 
   const meetingInfo = getMeetingInfo();
-  const hasGm = participants.some(p => p.isGm);
+  const gmParticipant = participants.find(p => p.isGm);
+  const hasGm = !!gmParticipant;
   const playerCount = participants.filter(p => !p.isGm).length;
   const isAtCapacity = event.maxPlayers !== null && playerCount >= event.maxPlayers;
   const isOverCapacity = event.maxPlayers !== null && playerCount > event.maxPlayers;
+
+  // Check if GM has set availability
+  const gmHasAvailability = useMemo(() => {
+    if (!gmParticipant) return false;
+    const gmWithAvailability = participantsWithAvailability.find(p => p.id === gmParticipant.id);
+    return gmWithAvailability && gmWithAvailability.availability.length > 0;
+  }, [gmParticipant, participantsWithAvailability]);
 
   // Check if current participant needs to complete profile
   const showProfileCallout = currentParticipant &&
@@ -294,61 +309,29 @@ export function CampaignPage({ event }: CampaignPageProps) {
 
       {/* Main Content - Centered single column, all sections stacked */}
       <div className="mx-auto max-w-5xl px-4 py-4 space-y-4">
-        {/* Join Form for non-registered users */}
-        {!currentParticipant && (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <svg className="h-5 w-5 shrink-0 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-                </svg>
-                <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
-                  {isAtCapacity
-                    ? `Campaign at capacity (${playerCount}/${event.maxPlayers}), but you can still join`
-                    : "Join this campaign to set your availability"
-                  }
-                </span>
-              </div>
-              <JoinEventForm
-                eventSlug={event.slug}
-                onJoined={handleJoined}
-                hasGm={hasGm}
-                compact
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Current User Status Bar - only show if logged in (simplified) */}
-        {currentParticipant && (
-          <div className="flex items-center gap-3 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400">
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                {currentParticipant.displayName}
-              </p>
-              <p className="text-xs text-zinc-500">
-                {currentParticipant.isGm ? "Game Master" : "Player"}
-              </p>
-            </div>
-          </div>
-        )}
-
         {/* Campaign Details Section */}
         <div className="space-y-4">
-          {/* Description */}
-          {event.description && (
+          {/* About / Before You Play - Combined */}
+          {(event.description || event.customPreSessionInstructions) && (
             <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
               <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
                 About this {event.campaignType === "ONESHOT" ? "Game" : "Campaign"}
               </h3>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                {event.description}
-              </p>
+              {event.description && (
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                  {event.description}
+                </p>
+              )}
+              {event.customPreSessionInstructions && (
+                <div className={event.description ? "mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-700" : ""}>
+                  <h4 className="mb-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    Before You Play
+                  </h4>
+                  <p className="whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-400">
+                    {event.customPreSessionInstructions}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -400,25 +383,6 @@ export function CampaignPage({ event }: CampaignPageProps) {
               )}
             </dl>
           </div>
-
-          {/* Before You Play - moved to bottom of details */}
-          {event.customPreSessionInstructions && (
-            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/50 dark:bg-blue-900/20">
-              <div className="flex items-start gap-3">
-                <svg className="mt-0.5 h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <div>
-                  <h3 className="text-sm font-semibold text-blue-800 dark:text-blue-300">
-                    Before You Play
-                  </h3>
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-blue-700 dark:text-blue-300/80">
-                    {event.customPreSessionInstructions}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Group Availability Section - responsive (hide sidebar on mobile) */}
@@ -433,6 +397,31 @@ export function CampaignPage({ event }: CampaignPageProps) {
             />
           </div>
           <div className="p-3">
+            {/* GM Availability Status Callout */}
+            {hasGm && !isLoading && (
+              <div className={`mb-3 rounded-lg border p-3 ${
+                gmHasAvailability
+                  ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
+                  : "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20"
+              }`}>
+                <div className="flex items-center gap-2">
+                  <svg className={`h-4 w-4 shrink-0 ${gmHasAvailability ? "text-green-500 dark:text-green-400" : "text-amber-500 dark:text-amber-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    {gmHasAvailability ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    )}
+                  </svg>
+                  <span className={`text-sm ${gmHasAvailability ? "text-green-700 dark:text-green-300" : "text-amber-700 dark:text-amber-300"}`}>
+                    {gmHasAvailability
+                      ? `${gmParticipant?.displayName} (GM) has set their availability`
+                      : `${gmParticipant?.displayName} (GM) hasn't set their availability yet`
+                    }
+                  </span>
+                </div>
+              </div>
+            )}
+
             {isLoading ? (
               <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "300px" }} />
             ) : participantsWithAvailability.length === 0 ? (
@@ -446,6 +435,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
                     endDate={eventEndDate}
                     earliestTime={event.earliestTime}
                     latestTime={event.latestTime}
+                    timeWindowTimezone={event.timezone}
                     mode="heatmap"
                     participants={participantsWithAvailability.map(p => ({
                       id: p.id,
@@ -629,6 +619,24 @@ export function CampaignPage({ event }: CampaignPageProps) {
       </div>
 
       {/* Contextual CTA Banners */}
+      {/* Join CTA for non-registered users */}
+      {!currentParticipant && (
+        <CtaBanner
+          message={isAtCapacity
+            ? `Campaign at capacity (${playerCount}/${event.maxPlayers}), but you can still join`
+            : "Join this campaign to set your availability"
+          }
+          variant="info"
+        >
+          <JoinEventForm
+            eventSlug={event.slug}
+            onJoined={handleJoined}
+            hasGm={hasGm}
+            compact
+          />
+        </CtaBanner>
+      )}
+
       {/* GM invite CTA - highest priority for GMs with no players */}
       {currentParticipant?.isGm && playerCount === 0 && (
         <CtaBanner
@@ -641,21 +649,18 @@ export function CampaignPage({ event }: CampaignPageProps) {
         />
       )}
 
-      {/* Edit Availability CTA for registered users (with character as secondary if needed) */}
+      {/* Status CTA for registered users - always show edit options */}
       {currentParticipant && !(currentParticipant.isGm && playerCount === 0) && (
         <CtaBanner
-          message={showProfileCallout
-            ? "Set your availability and create your character"
-            : "Update your availability for the campaign"
-          }
+          message={`Joined as ${currentParticipant.displayName}${currentParticipant.isGm ? " (GM)" : ""}`}
           actionLabel="Edit Availability"
           actionHref={`/${event.slug}/${encodeURIComponent(currentParticipant.displayName.toLowerCase().replace(/\s+/g, "-"))}`}
-          secondaryActionLabel={showProfileCallout ? "Set Up Character" : undefined}
-          secondaryActionHref={showProfileCallout
+          secondaryActionLabel={!currentParticipant.isGm ? "Edit Character" : undefined}
+          secondaryActionHref={!currentParticipant.isGm
             ? `/${event.slug}/${encodeURIComponent(currentParticipant.displayName.toLowerCase().replace(/\s+/g, "-"))}/character`
             : undefined
           }
-          variant="info"
+          variant="success"
         />
       )}
 
