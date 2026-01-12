@@ -73,12 +73,20 @@ export function CampaignPage({ event }: CampaignPageProps) {
   const [participantsWithAvailability, setParticipantsWithAvailability] = useState<ParticipantWithAvailability[]>([]);
   const [currentParticipant, setCurrentParticipant] = useState<Participant | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  // Effective time bounds from heatmap API (calculated from actual availability)
+  // Effective time bounds from heatmap API (calculated from GM availability)
   const [effectiveTimeBounds, setEffectiveTimeBounds] = useState<{
     earliestTime: string;
     latestTime: string;
     timezone: string;
   } | null>(null);
+  // GM availability info for callout
+  const [gmAvailability, setGmAvailability] = useState<{
+    name: string;
+    earliestTime: string | null;
+    latestTime: string | null;
+  } | null>(null);
+  // Toggle to show full 24-hour view
+  const [showFullDay, setShowFullDay] = useState(false);
   const [selectedParticipant, setSelectedParticipant] = useState<Participant | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>(event.participants);
@@ -199,13 +207,17 @@ export function CampaignPage({ event }: CampaignPageProps) {
       if (res.ok) {
         const data = await res.json();
         setParticipantsWithAvailability(data.participants);
-        // Use effective time bounds from heatmap API (calculated from actual availability)
+        // Use effective time bounds from heatmap API (calculated from GM availability)
         if (data.event) {
           setEffectiveTimeBounds({
             earliestTime: data.event.earliestTime,
             latestTime: data.event.latestTime,
             timezone: data.event.timezone,
           });
+        }
+        // Store GM availability info for callout
+        if (data.gmAvailability) {
+          setGmAvailability(data.gmAvailability);
         }
       }
     } catch (error) {
@@ -419,6 +431,26 @@ export function CampaignPage({ event }: CampaignPageProps) {
               </div>
             )}
 
+            {/* GM availability callout and view toggle */}
+            {!isLoading && gmAvailability && gmAvailability.earliestTime && gmAvailability.latestTime && (
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                  <span className="font-medium">{gmAvailability.name}</span> (GM) is available from{" "}
+                  <span className="font-medium">{formatTime(gmAvailability.earliestTime)}</span> to{" "}
+                  <span className="font-medium">{formatTime(gmAvailability.latestTime)}</span>
+                </p>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={showFullDay}
+                    onChange={(e) => setShowFullDay(e.target.checked)}
+                    className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-800"
+                  />
+                  <span className="text-zinc-600 dark:text-zinc-400">Show full 24 hours</span>
+                </label>
+              </div>
+            )}
+
             {isLoading ? (
               <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "300px" }} />
             ) : participantsWithAvailability.length === 0 ? (
@@ -427,11 +459,11 @@ export function CampaignPage({ event }: CampaignPageProps) {
               <div className="flex gap-4">
                 <div className="flex-1">
                   <VirtualizedAvailabilityGrid
-                    key={`heatmap-${timezone}-${effectiveTimeBounds?.earliestTime}-${effectiveTimeBounds?.latestTime}`}
+                    key={`heatmap-${timezone}-${showFullDay}-${effectiveTimeBounds?.earliestTime}-${effectiveTimeBounds?.latestTime}`}
                     startDate={eventStartDate}
                     endDate={eventEndDate}
-                    earliestTime={effectiveTimeBounds?.earliestTime || event.earliestTime}
-                    latestTime={effectiveTimeBounds?.latestTime || event.latestTime}
+                    earliestTime={showFullDay ? "00:00" : (effectiveTimeBounds?.earliestTime || event.earliestTime)}
+                    latestTime={showFullDay ? "23:30" : (effectiveTimeBounds?.latestTime || event.latestTime)}
                     timeWindowTimezone={effectiveTimeBounds?.timezone || event.timezone}
                     mode="heatmap"
                     participants={participantsWithAvailability.map(p => ({
