@@ -402,7 +402,7 @@ export function GeneralAvailabilityEditor({
                 className="fixed inset-0 z-10"
                 onClick={() => setShowAddMenu(false)}
               />
-              <div className="absolute left-0 top-full z-20 mt-1 w-56 rounded-lg border border-zinc-200 bg-white py-1 shadow-xl dark:border-zinc-700 dark:bg-zinc-800">
+              <div className="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-zinc-200 bg-white py-1 shadow-xl dark:border-zinc-700 dark:bg-zinc-800">
                 <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
                   Available times
                 </div>
@@ -427,6 +427,19 @@ export function GeneralAvailabilityEditor({
                     7 days
                   </span>
                 </button>
+                {/* Single day quick-add */}
+                <div className="flex gap-1 px-3 py-2">
+                  {DAYS.map((day) => (
+                    <button
+                      key={`single-${day.value}`}
+                      onClick={() => addEntry([day.value], true)}
+                      className="flex-1 rounded bg-green-50 px-1 py-1.5 text-xs font-medium text-green-700 transition-colors hover:bg-green-100 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/40"
+                      title={`Add ${day.label} only`}
+                    >
+                      {day.short}
+                    </button>
+                  ))}
+                </div>
                 <div className="my-1 border-t border-zinc-100 dark:border-zinc-700" />
                 <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
                   Blocked times
@@ -452,6 +465,19 @@ export function GeneralAvailabilityEditor({
                     blocked
                   </span>
                 </button>
+                {/* Single day quick-add for blocked */}
+                <div className="flex gap-1 px-3 py-2">
+                  {DAYS.map((day) => (
+                    <button
+                      key={`blocked-single-${day.value}`}
+                      onClick={() => addEntry([day.value], false)}
+                      className="flex-1 rounded bg-red-50 px-1 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40"
+                      title={`Block ${day.label} only`}
+                    >
+                      {day.short}
+                    </button>
+                  ))}
+                </div>
               </div>
             </>
           )}

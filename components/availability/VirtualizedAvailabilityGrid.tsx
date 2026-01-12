@@ -782,7 +782,7 @@ export function VirtualizedAvailabilityGrid({
     }
     .virtualized-availability-grid .time-cell {
       display: flex !important;
-      align-items: center !important;
+      align-items: flex-start !important;
       justify-content: flex-end !important;
       padding-right: 8px !important;
       font-size: 10px !important;
@@ -790,6 +790,14 @@ export function VirtualizedAvailabilityGrid({
       color: ${isDarkMode ? "#a1a1aa" : "#71717a"} !important;
       background-color: ${isDarkMode ? "#18181b" : "#fafafa"} !important;
       border-right: 2px solid ${isDarkMode ? "#3f3f46" : "#e4e4e7"} !important;
+      line-height: 24px !important;
+      position: relative !important;
+    }
+    .virtualized-availability-grid .time-cell .ag-cell-value {
+      position: absolute !important;
+      top: 0 !important;
+      right: 8px !important;
+      transform: translateY(-50%) !important;
     }
     .virtualized-availability-grid .ag-pinned-left-cols-container .ag-cell {
       border-right: none !important;

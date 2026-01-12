@@ -15,7 +15,7 @@ import { EmptyHeatmap } from "@/components/empty-states/EmptyHeatmap";
 import { CtaBanner } from "@/components/ui/CtaBanner";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import type { MeetingType, CampaignType, Participant, ParticipantWithAvailability } from "@/lib/types";
-import { getBrowserTimezone } from "@/lib/utils/timezone";
+import { getBrowserTimezone, convertDateTime } from "@/lib/utils/timezone";
 
 // Tabs removed - all content now stacked vertically
 
@@ -84,6 +84,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
     name: string;
     earliestTime: string | null;
     latestTime: string | null;
+    timezone: string;
   } | null>(null);
   // Toggle to show full 24-hour view
   const [showFullDay, setShowFullDay] = useState(false);
@@ -432,24 +433,35 @@ export function CampaignPage({ event }: CampaignPageProps) {
             )}
 
             {/* GM availability callout and view toggle */}
-            {!isLoading && gmAvailability && gmAvailability.earliestTime && gmAvailability.latestTime && (
-              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                  <span className="font-medium">{gmAvailability.name}</span> (GM) is available from{" "}
-                  <span className="font-medium">{formatTime(gmAvailability.earliestTime)}</span> to{" "}
-                  <span className="font-medium">{formatTime(gmAvailability.latestTime)}</span>
-                </p>
-                <label className="flex cursor-pointer items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={showFullDay}
-                    onChange={(e) => setShowFullDay(e.target.checked)}
-                    className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-800"
-                  />
-                  <span className="text-zinc-600 dark:text-zinc-400">Show full 24 hours</span>
-                </label>
-              </div>
-            )}
+            {!isLoading && gmAvailability && gmAvailability.earliestTime && gmAvailability.latestTime && (() => {
+              // Convert GM availability times from event timezone to user's timezone
+              const refDate = format(eventStartDate, "yyyy-MM-dd");
+              const localEarliest = gmAvailability.timezone !== timezone
+                ? convertDateTime(gmAvailability.earliestTime, refDate, gmAvailability.timezone, timezone).time
+                : gmAvailability.earliestTime;
+              const localLatest = gmAvailability.timezone !== timezone
+                ? convertDateTime(gmAvailability.latestTime, refDate, gmAvailability.timezone, timezone).time
+                : gmAvailability.latestTime;
+
+              return (
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                    <span className="font-medium">{gmAvailability.name}</span> (GM) is available from{" "}
+                    <span className="font-medium">{formatTime(localEarliest)}</span> to{" "}
+                    <span className="font-medium">{formatTime(localLatest)}</span>
+                  </p>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={showFullDay}
+                      onChange={(e) => setShowFullDay(e.target.checked)}
+                      className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-800"
+                    />
+                    <span className="text-zinc-600 dark:text-zinc-400">Show full 24 hours</span>
+                  </label>
+                </div>
+              );
+            })()}
 
             {isLoading ? (
               <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "300px" }} />

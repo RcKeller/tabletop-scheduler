@@ -241,79 +241,34 @@ export async function GET(
 
     // Calculate effective time bounds based on GM's availability only
     // Players can only play when the GM is available, so we use GM's bounds
+    // Bounds are converted to event timezone to match heatmap display
     let effectiveEarliest: string | null = null;
     let effectiveLatest: string | null = null;
 
-    if (gmParticipant) {
-      // Build a set of times where GM is available (in event timezone)
-      const gmAvailableTimes = new Set<string>();
+    if (gmParticipant && gmParticipant.availability.length > 0) {
+      // Collect all start and end times, converted to event timezone
+      const startTimes: string[] = [];
+      const endTimes: string[] = [];
 
       for (const slot of gmParticipant.availability) {
+        // Skip invalid slots
         if (slot.startTime >= slot.endTime) continue;
 
-        let currentTime = slot.startTime;
-        let iterations = 0;
-        const maxIterations = 48;
+        // Convert from UTC to event timezone
+        const localStart = utcToLocal(slot.startTime, slot.date, eventTimezone);
+        const localEnd = utcToLocal(slot.endTime, slot.date, eventTimezone);
 
-        while (currentTime < slot.endTime && iterations < maxIterations) {
-          const localSlot = utcToLocal(currentTime, slot.date, eventTimezone);
-          gmAvailableTimes.add(localSlot.time);
-          currentTime = addThirtyMinutes(currentTime);
-          iterations++;
-        }
+        startTimes.push(localStart.time);
+        endTimes.push(localEnd.time);
       }
 
-      // Handle midnight-spanning availability by finding the longest UNAVAILABLE gap
-      // The window should be from end of gap to start of gap (wrapping around midnight)
-      if (gmAvailableTimes.size > 0) {
-        // Create array of availability (true/false) for each 30-min slot
-        const slotAvailability = fullDaySlots.map(time => gmAvailableTimes.has(time));
+      if (startTimes.length > 0) {
+        // Find the earliest start time and latest end time
+        startTimes.sort();
+        endTimes.sort();
 
-        // Find the longest contiguous run of unavailable slots
-        let longestGapStart = -1;
-        let longestGapLength = 0;
-        let currentGapStart = -1;
-        let currentGapLength = 0;
-
-        // Check twice around the clock to handle gaps that span midnight
-        const doubleSlots = [...slotAvailability, ...slotAvailability];
-        for (let i = 0; i < doubleSlots.length; i++) {
-          if (!doubleSlots[i]) {
-            // Unavailable
-            if (currentGapStart === -1) {
-              currentGapStart = i;
-            }
-            currentGapLength++;
-          } else {
-            // Available - end of gap
-            if (currentGapLength > longestGapLength) {
-              longestGapLength = currentGapLength;
-              longestGapStart = currentGapStart;
-            }
-            currentGapStart = -1;
-            currentGapLength = 0;
-          }
-        }
-        // Check final gap
-        if (currentGapLength > longestGapLength) {
-          longestGapLength = currentGapLength;
-          longestGapStart = currentGapStart;
-        }
-
-        if (longestGapLength > 0 && longestGapLength < 48) {
-          // Window starts at end of gap, ends at start of gap
-          const windowStartIndex = (longestGapStart + longestGapLength) % 48;
-          const windowEndIndex = longestGapStart % 48;
-
-          effectiveEarliest = fullDaySlots[windowStartIndex];
-          // End time is the start of the gap (exclusive), so we use that slot's time
-          effectiveLatest = fullDaySlots[windowEndIndex];
-        } else if (longestGapLength === 0) {
-          // No gap - GM is available 24/7 (unlikely but handle it)
-          effectiveEarliest = "00:00";
-          effectiveLatest = "00:00"; // Will show full day
-        }
-        // If longestGapLength >= 48, no availability at all
+        effectiveEarliest = startTimes[0];
+        effectiveLatest = endTimes[endTimes.length - 1];
       }
     }
 
@@ -336,11 +291,12 @@ export async function GET(
         sessionLengthMinutes: event.sessionLengthMinutes,
         timezone: eventTimezone,
       },
-      // GM availability info for display callout
+      // GM availability info for display callout (times in event timezone)
       gmAvailability: gmParticipant ? {
         name: gmParticipant.name,
         earliestTime: effectiveEarliest,
         latestTime: effectiveLatest,
+        timezone: eventTimezone,
       } : null,
       dates: dateStrings,
       timeSlots,
