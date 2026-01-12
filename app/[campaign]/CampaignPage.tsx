@@ -73,6 +73,12 @@ export function CampaignPage({ event }: CampaignPageProps) {
   const [participantsWithAvailability, setParticipantsWithAvailability] = useState<ParticipantWithAvailability[]>([]);
   const [currentParticipant, setCurrentParticipant] = useState<Participant | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  // Effective time bounds from heatmap API (calculated from actual availability)
+  const [effectiveTimeBounds, setEffectiveTimeBounds] = useState<{
+    earliestTime: string;
+    latestTime: string;
+    timezone: string;
+  } | null>(null);
   const [selectedParticipant, setSelectedParticipant] = useState<Participant | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>(event.participants);
@@ -193,6 +199,14 @@ export function CampaignPage({ event }: CampaignPageProps) {
       if (res.ok) {
         const data = await res.json();
         setParticipantsWithAvailability(data.participants);
+        // Use effective time bounds from heatmap API (calculated from actual availability)
+        if (data.event) {
+          setEffectiveTimeBounds({
+            earliestTime: data.event.earliestTime,
+            latestTime: data.event.latestTime,
+            timezone: data.event.timezone,
+          });
+        }
       }
     } catch (error) {
       console.error("Failed to load heatmap data:", error);
@@ -347,7 +361,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
               <div>
                 <dt className="text-zinc-500 dark:text-zinc-400">Time Window</dt>
                 <dd className="font-medium text-zinc-900 dark:text-zinc-100">
-                  {formatTime(event.earliestTime)} - {formatTime(event.latestTime)}
+                  {formatTime(effectiveTimeBounds?.earliestTime || event.earliestTime)} - {formatTime(effectiveTimeBounds?.latestTime || event.latestTime)}
                 </dd>
               </div>
               {meetingInfo && (
@@ -413,12 +427,12 @@ export function CampaignPage({ event }: CampaignPageProps) {
               <div className="flex gap-4">
                 <div className="flex-1">
                   <VirtualizedAvailabilityGrid
-                    key={`heatmap-${timezone}`}
+                    key={`heatmap-${timezone}-${effectiveTimeBounds?.earliestTime}-${effectiveTimeBounds?.latestTime}`}
                     startDate={eventStartDate}
                     endDate={eventEndDate}
-                    earliestTime={event.earliestTime}
-                    latestTime={event.latestTime}
-                    timeWindowTimezone={event.timezone}
+                    earliestTime={effectiveTimeBounds?.earliestTime || event.earliestTime}
+                    latestTime={effectiveTimeBounds?.latestTime || event.latestTime}
+                    timeWindowTimezone={effectiveTimeBounds?.timezone || event.timezone}
                     mode="heatmap"
                     participants={participantsWithAvailability.map(p => ({
                       id: p.id,

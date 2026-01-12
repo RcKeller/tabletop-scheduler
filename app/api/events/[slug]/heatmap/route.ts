@@ -192,12 +192,13 @@ export async function GET(
     // Calculate heatmap cells
     const heatmapData: Record<string, { count: number; participantIds: string[] }> = {};
 
-    // Generate time slots using shared utility
-    const timeSlots = generateTimeSlots(earliestTime, latestTime);
+    // Generate time slots for the FULL day so we can capture all availability
+    // We'll calculate effective bounds based on where availability actually exists
+    const fullDaySlots = generateTimeSlots("00:00", "23:30");
 
-    // Initialize all slots
+    // Initialize all slots for full day
     for (const date of dateStrings) {
-      for (const time of timeSlots) {
+      for (const time of fullDaySlots) {
         const key = `${date}-${time}`;
         heatmapData[key] = { count: 0, participantIds: [] };
       }
@@ -234,6 +235,37 @@ export async function GET(
       }
     }
 
+    // Calculate effective time bounds based on where availability actually exists
+    let effectiveEarliest: string | null = null;
+    let effectiveLatest: string | null = null;
+
+    for (const time of fullDaySlots) {
+      // Check if any date has availability at this time
+      const hasAvailability = dateStrings.some(date => {
+        const key = `${date}-${time}`;
+        return heatmapData[key] && heatmapData[key].count > 0;
+      });
+
+      if (hasAvailability) {
+        if (effectiveEarliest === null) {
+          effectiveEarliest = time;
+        }
+        effectiveLatest = time;
+      }
+    }
+
+    // If we found effective bounds, add 30 min to latest (since it's the start of the last slot)
+    if (effectiveLatest !== null) {
+      effectiveLatest = addThirtyMinutes(effectiveLatest);
+    }
+
+    // Use effective bounds if available, otherwise fall back to configured bounds
+    const displayEarliest = effectiveEarliest || earliestTime;
+    const displayLatest = effectiveLatest || latestTime;
+
+    // Generate the final time slots for the effective range
+    const timeSlots = generateTimeSlots(displayEarliest, displayLatest);
+
     const response = NextResponse.json({
       event: {
         id: event.id,
@@ -241,9 +273,10 @@ export async function GET(
         title: event.title,
         startDate: event.startDate?.toISOString() || null,
         endDate: event.endDate?.toISOString() || null,
-        earliestTime: event.earliestTime,
-        latestTime: event.latestTime,
+        earliestTime: displayEarliest,
+        latestTime: displayLatest,
         sessionLengthMinutes: event.sessionLengthMinutes,
+        timezone: eventTimezone,
       },
       dates: dateStrings,
       timeSlots,
