@@ -12,68 +12,97 @@ After each task, ask: Decision made? >10 tool calls? Feature done?
 *Last updated: 2026-01-13*
 
 ## Active Task
-Fixed bug: Weekend availability patterns not showing when they span midnight in UTC.
+Availability system rip-and-replace refactor - implementing new rules-based architecture.
 
 ## Current Status
-- **Phase**: Bug fix complete, build verified
-- **Progress**: All timezone bugs fixed
+- **Phase**: Phase 2 (API Layer) - partial
+- **Progress**: Phase 1 complete, new rules API ready, working on heatmap integration
 - **Blocking Issues**: None
 
-## Bug Fixes Applied This Session
+## What Was Completed This Session
 
-### Bug 4 (NEW): Weekend patterns not showing - midnight spanning
-**Root Cause**: When a user sets availability like "Saturday 7am-9pm" in EST (UTC-5), the UTC conversion was:
-- Saturday 7am EST → Saturday 12:00 UTC
-- Saturday 9pm EST → Sunday 02:00 UTC
+### Phase 1: Foundation (COMPLETE)
+- Created new availability types in `lib/types/availability.ts`
+  - 4 rule types: `available_pattern`, `available_override`, `blocked_pattern`, `blocked_override`
+  - TimeRange, DayAvailability, DisplaySlot, GridCellState types
+  - API request/response types
+  - Type guards for rule types
 
-Old code stored this as: `{ dayOfWeek: 6, startTime: "12:00", endTime: "02:00" }`
+- Implemented `lib/availability/range-math.ts`
+  - Time/minutes conversion utilities
+  - Range operations: merge, subtract, add, intersect
+  - Slot expansion: rangesToSlots, slotsToRanges
+  - Window clamping for time bounds
 
-When expanding, the loop checked `currentTime < slot.endTime`:
-- "12:00" < "02:00" → false (string comparison fails!)
-- Result: **No slots generated for weekend!**
+- Implemented `lib/availability/timezone.ts`
+  - localToUTC / utcToLocal conversions
+  - convertPatternToUTC / convertPatternFromUTC (handles day-of-week shifts)
+  - convertOverrideToUTC / convertOverrideFromUTC
+  - Day of week and date range utilities
 
-**Fix Applied**:
-1. `convertPatternToUTC()` now returns an **array** of patterns, splitting at midnight:
-   - Pattern 1: `{ dayOfWeek: 6, startTime: "12:00", endTime: "24:00" }`
-   - Pattern 2: `{ dayOfWeek: 0, startTime: "00:00", endTime: "02:00" }`
-2. Frontend uses `.flatMap()` instead of `.map()` to handle the array
-3. Heatmap API uses numeric time comparison with midnight detection
+- Implemented `lib/availability/compute-effective.ts`
+  - Core algorithm: computeEffectiveForDate, computeEffectiveRanges
+  - Priority: blocked > available, override > pattern
+  - Heatmap computation: computeHeatmap
+  - Session finding: findOverlappingSlots, findSessionSlots
 
-### Previous Fixes (earlier this session)
+- Created comprehensive test suite (101 tests passing)
+  - `__tests__/lib/availability/range-math.test.ts` (49 tests)
+  - `__tests__/lib/availability/timezone.test.ts` (31 tests)
+  - `__tests__/lib/availability/compute-effective.test.ts` (21 tests)
 
-**Bug 1**: `page.tsx` - GM patterns treated as local instead of UTC
-- Fixed: Convert patterns from UTC to GM timezone before bounds calculation
+- Updated Prisma schema with new AvailabilityRule model
+  - Added AvailabilityRuleType and RuleSource enums
+  - Added AvailabilityRule model with all fields
+  - Kept old tables for backward compatibility
 
-**Bug 2**: `GeneralAvailabilityEditor` - double timezone conversion
-- Fixed: Removed redundant `utcToLocal()` call
+### Phase 2: API Layer (PARTIAL)
+- Created `/api/availability/[participantId]/rules` endpoint
+  - GET: Fetch all rules for a participant
+  - PUT: Replace all rules (full sync)
+  - PATCH: Incremental add/remove rules
 
-**Bug 3**: `events/[slug]/route.ts` - same as Bug 1
-- Fixed: Added pattern/slot conversion
+- Added new imports to heatmap API (for future use)
 
-## Files Modified
-| File | Change |
-|------|--------|
-| `lib/utils/timezone.ts` | `convertPatternToUTC` returns array, splits at UTC midnight |
-| `app/[campaign]/gm-availability/GmAvailabilityPage.tsx` | Use `.flatMap()` for pattern conversion |
-| `app/[campaign]/[player]/[[...method]]/PlayerAvailabilityPage.tsx` | Use `.flatMap()` for pattern conversion |
-| `app/api/events/[slug]/heatmap/route.ts` | Numeric time comparison with midnight detection |
-| `app/[campaign]/[player]/[[...method]]/page.tsx` | Convert patterns from UTC to GM timezone |
-| `app/api/events/[slug]/route.ts` | Convert patterns and slots from UTC to GM timezone |
-| `components/availability/GeneralAvailabilityEditor.tsx` | Remove double conversion on time window |
+## Files Created/Modified
 
-## Verification
-- TypeScript type check: ✓ Pass
-- Production build: ✓ Pass
+### New Files
+- `lib/types/availability.ts` - New availability types
+- `lib/availability/range-math.ts` - Range math utilities
+- `lib/availability/timezone.ts` - Timezone conversion utilities
+- `lib/availability/compute-effective.ts` - Core algorithm
+- `lib/availability/index.ts` - Module exports
+- `__tests__/lib/availability/*.test.ts` - Test files (3 files)
+- `app/api/availability/[participantId]/rules/route.ts` - New rules API
 
-## Testing Instructions
-1. Set timezone to America/New_York (EST, UTC-5)
-2. Create recurring schedule: Saturday/Sunday 7am-9pm, Weekdays 2pm-9pm
-3. Save and verify **both** weekend and weekday slots appear on the heatmap
-4. Check that the patterns expand correctly for all days
+### Modified Files
+- `prisma/schema.prisma` - Added AvailabilityRule model
+- `app/api/events/[slug]/heatmap/route.ts` - Added new imports
 
-## Note on Display Behavior
-After this fix, a pattern like "Saturday 7am-9pm local" is stored as TWO patterns in DB:
-- Saturday 12:00-24:00 UTC
-- Sunday 00:00-02:00 UTC
+## Immediate Next Steps
 
-When loaded back for display, these appear as two separate entries in GeneralAvailabilityEditor. Functionally correct but visually different from original input. Future improvement could track related patterns and merge for display.
+1. **AI Parser Update**: Update `lib/ai/availability-parser.ts` to return new rule format
+2. **TimezoneContext**: Create React context for global timezone state
+3. **useDragSelection hook**: Implement drag selection logic
+4. **UnifiedGrid component**: Build single grid implementation
+5. **AvailabilityEditor**: Build unified GM/player editor
+
+## Verification Commands
+
+```bash
+# Run all availability tests
+NODE_OPTIONS="--max-old-space-size=8192" npm test -- __tests__/lib/availability --runInBand --no-coverage
+
+# Type check
+npx tsc --noEmit
+
+# Validate Prisma schema
+npx prisma validate
+```
+
+## Files to Review First When Resuming
+
+1. `/Users/dev/.claude/plans/spicy-waddling-engelbart.md` - Full refactor plan
+2. `lib/availability/index.ts` - Module exports
+3. `lib/types/availability.ts` - Type definitions
+4. `app/api/availability/[participantId]/rules/route.ts` - New API

@@ -5,6 +5,13 @@ import { expandPatternsToSlots, mergeOverlappingSlots } from "@/lib/utils/availa
 import { generateTimeSlots, addThirtyMinutes, parseTimeToMinutes } from "@/lib/utils/time-slots";
 import { localToUTC, utcToLocal } from "@/lib/utils/timezone";
 import { computeEffectiveAvailabilityWithPriority } from "@/lib/utils/availability-priority";
+// New availability system imports
+import {
+  computeHeatmap as computeHeatmapNew,
+  computeEffectiveRanges,
+  rangesToSlots,
+} from "@/lib/availability";
+import type { AvailabilityRule } from "@/lib/types/availability";
 
 // Safely format a date, handling invalid dates
 function safeFormatDate(date: unknown): string | null {

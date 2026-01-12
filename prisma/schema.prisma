@@ -23,6 +23,20 @@ enum CampaignType {
   CAMPAIGN
 }
 
+// New availability system enums
+enum AvailabilityRuleType {
+  available_pattern   // Recurring weekly availability
+  available_override  // One-off date availability
+  blocked_pattern     // Recurring weekly block
+  blocked_override    // One-off date block
+}
+
+enum RuleSource {
+  manual
+  ai
+  import
+}
+
 model GameSystem {
   id                  String   @id @default(uuid())
   name                String   @unique
@@ -99,9 +113,14 @@ model Participant {
   characterTokenBase64  String?                @db.Text
   notes                 String?                @db.VarChar(255)
   createdAt             DateTime               @default(now())
+
+  // Legacy availability tables (will be removed after migration)
   availability          Availability[]
   generalAvailability   GeneralAvailability[]
   exceptions            AvailabilityException[]
+
+  // New availability rules system
+  availabilityRules     AvailabilityRule[]
 
   @@unique([eventId, displayName])
   @@map("participants")
@@ -154,4 +173,46 @@ model Feedback {
   createdAt   DateTime @default(now())
 
   @@map("feedback")
+}
+
+// New unified availability rules system
+// Replaces Availability, GeneralAvailability, and AvailabilityException tables
+model AvailabilityRule {
+  id            String                @id @default(uuid())
+  participantId String
+  participant   Participant           @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  // Rule type discriminator
+  ruleType      AvailabilityRuleType
+
+  // For patterns: day of week in UTC (0=Sunday, 6=Saturday)
+  // For overrides: null
+  dayOfWeek     Int?
+
+  // For overrides: specific date in UTC
+  // For patterns: null
+  specificDate  DateTime?             @db.Date
+
+  // Time range in UTC (HH:MM format)
+  startTime     String
+  endTime       String
+
+  // Preserve user intent for cross-timezone display
+  originalTimezone   String           // IANA timezone (e.g., "Asia/Tokyo")
+  originalDayOfWeek  Int?             // What day the user selected in their timezone
+
+  // Metadata
+  reason        String?
+  source        RuleSource            @default(manual)
+
+  // Audit
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  // Indexes for efficient queries
+  @@index([participantId])
+  @@index([ruleType])
+  @@index([specificDate])
+  @@index([dayOfWeek])
+  @@map("availability_rules")
 }
