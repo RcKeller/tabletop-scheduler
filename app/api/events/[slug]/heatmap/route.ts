@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { format, eachDayOfInterval, isValid } from "date-fns";
 import { expandPatternsToSlots, mergeOverlappingSlots } from "@/lib/utils/availability-expander";
-import { generateTimeSlots, addThirtyMinutes } from "@/lib/utils/time-slots";
+import { generateTimeSlots, addThirtyMinutes, parseTimeToMinutes } from "@/lib/utils/time-slots";
 import { localToUTC, utcToLocal } from "@/lib/utils/timezone";
 import { computeEffectiveAvailabilityWithPriority } from "@/lib/utils/availability-priority";
 
@@ -211,14 +211,33 @@ export async function GET(
 
     for (const participant of participantsData) {
       for (const slot of participant.availability) {
-        // Skip invalid slots where start >= end
-        if (slot.startTime >= slot.endTime) continue;
+        const startMinutes = parseTimeToMinutes(slot.startTime);
+        const endMinutes = parseTimeToMinutes(slot.endTime);
+
+        // Determine if this is an overnight slot (end time <= start time numerically)
+        // e.g., 22:00 to 02:00 (1320 to 120) or 12:00 to 02:00 (720 to 120)
+        const isOvernight = endMinutes <= startMinutes && slot.endTime !== slot.startTime;
+
+        // Skip truly invalid slots (same start and end)
+        if (slot.startTime === slot.endTime) continue;
 
         let currentTime = slot.startTime;
         let iterations = 0;
         const maxIterations = 48; // Max 48 half-hour slots in a day
+        let passedMidnight = false;
 
-        while (currentTime < slot.endTime && iterations < maxIterations) {
+        while (iterations < maxIterations) {
+          const currentMinutes = parseTimeToMinutes(currentTime);
+
+          // Determine if we should stop
+          if (isOvernight) {
+            // For overnight slots: continue until we've passed midnight AND reached end time
+            if (passedMidnight && currentMinutes >= endMinutes) break;
+          } else {
+            // For normal slots: stop when we reach end time
+            if (currentMinutes >= endMinutes) break;
+          }
+
           // Convert this UTC time slot to event timezone for heatmap lookup
           const localSlot = utcToLocal(currentTime, slot.date, eventTimezone);
           const key = `${localSlot.date}-${localSlot.time}`;
@@ -229,7 +248,12 @@ export async function GET(
           }
 
           // Increment by 30 minutes
-          currentTime = addThirtyMinutes(currentTime);
+          const nextTime = addThirtyMinutes(currentTime);
+          // Detect midnight crossing
+          if (parseTimeToMinutes(nextTime) < currentMinutes) {
+            passedMidnight = true;
+          }
+          currentTime = nextTime;
           iterations++;
         }
       }

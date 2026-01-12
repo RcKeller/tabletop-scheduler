@@ -4,6 +4,7 @@ import type { TimeSlot, GeneralAvailability } from "@/lib/types";
 /**
  * Expands general availability patterns into specific time slots for a date range.
  * This is the core utility that bridges patterns and specific slots.
+ * Handles overnight patterns where endTime <= startTime (e.g., 12:00-02:00).
  */
 export function expandPatternsToSlots(
   patterns: Array<{ dayOfWeek: number; startTime: string; endTime: string }>,
@@ -22,30 +23,60 @@ export function expandPatternsToSlots(
   while (currentDate <= end) {
     const dayOfWeek = getDay(currentDate); // 0 = Sunday, 6 = Saturday
     const dateStr = format(currentDate, "yyyy-MM-dd");
+    const nextDateStr = format(addDays(currentDate, 1), "yyyy-MM-dd");
 
     // Find all patterns for this day of week
     const dayPatterns = patterns.filter((p) => p.dayOfWeek === dayOfWeek);
 
     for (const pattern of dayPatterns) {
-      let effectiveStart = pattern.startTime;
-      let effectiveEnd = pattern.endTime;
+      const startMins = parseTimeToMinutes(pattern.startTime);
+      const endMins = parseTimeToMinutes(pattern.endTime);
 
-      // Clamp to event's time window if provided
-      if (earliestTime && latestTime) {
-        effectiveStart = clampTime(effectiveStart, earliestTime, latestTime, "start");
-        effectiveEnd = clampTime(effectiveEnd, earliestTime, latestTime, "end");
+      // Check if this is an overnight pattern (end time <= start time numerically)
+      const isOvernight = endMins <= startMins && pattern.endTime !== pattern.startTime;
 
-        // Skip if the pattern is completely outside the time window
-        if (effectiveStart >= effectiveEnd) {
-          continue;
+      // Skip patterns with same start and end (invalid)
+      if (pattern.startTime === pattern.endTime) continue;
+
+      if (isOvernight) {
+        // For overnight patterns, split into two slots:
+        // 1. From startTime to midnight (on current day)
+        // 2. From midnight to endTime (on next day)
+        slots.push({
+          date: dateStr,
+          startTime: pattern.startTime,
+          endTime: "24:00", // End of current day
+        });
+        // Only add next day portion if next day is within the date range
+        if (addDays(currentDate, 1) <= end) {
+          slots.push({
+            date: nextDateStr,
+            startTime: "00:00",
+            endTime: pattern.endTime,
+          });
         }
-      }
+      } else {
+        // Normal same-day pattern
+        let effectiveStart = pattern.startTime;
+        let effectiveEnd = pattern.endTime;
 
-      slots.push({
-        date: dateStr,
-        startTime: effectiveStart,
-        endTime: effectiveEnd,
-      });
+        // Clamp to event's time window if provided
+        if (earliestTime && latestTime) {
+          effectiveStart = clampTime(effectiveStart, earliestTime, latestTime, "start");
+          effectiveEnd = clampTime(effectiveEnd, earliestTime, latestTime, "end");
+
+          // Skip if the pattern is completely outside the time window (for non-overnight only)
+          if (parseTimeToMinutes(effectiveStart) >= parseTimeToMinutes(effectiveEnd)) {
+            continue;
+          }
+        }
+
+        slots.push({
+          date: dateStr,
+          startTime: effectiveStart,
+          endTime: effectiveEnd,
+        });
+      }
     }
 
     currentDate = addDays(currentDate, 1);

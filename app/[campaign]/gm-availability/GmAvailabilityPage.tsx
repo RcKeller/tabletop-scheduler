@@ -157,17 +157,34 @@ export function GmAvailabilityPage({
           }))
         );
         // Convert patterns from UTC to display timezone
-        setGeneralAvailability(
-          data.generalAvailability.map((p: GeneralAvailabilityType) => {
-            const converted = convertPatternFromUTC(p.dayOfWeek, p.startTime, p.endTime, timezone);
-            return {
-              ...p,
-              dayOfWeek: converted.dayOfWeek,
-              startTime: converted.startTime,
-              endTime: converted.endTime,
-            };
-          })
-        );
+        const convertedPatterns = data.generalAvailability.map((p: GeneralAvailabilityType) => {
+          const converted = convertPatternFromUTC(p.dayOfWeek, p.startTime, p.endTime, timezone);
+          return {
+            ...p,
+            dayOfWeek: converted.dayOfWeek,
+            startTime: converted.startTime,
+            endTime: converted.endTime,
+          };
+        });
+
+        // Debug: Log the UTC patterns from DB and converted patterns
+        console.log("[GM Availability] Patterns loaded:", {
+          displayTimezone: timezone,
+          utcPatternsFromDB: data.generalAvailability.map((p: GeneralAvailabilityType) => ({
+            dayOfWeek: p.dayOfWeek,
+            day: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][p.dayOfWeek],
+            startTime: p.startTime,
+            endTime: p.endTime,
+          })),
+          convertedForDisplay: convertedPatterns.map((p: GeneralAvailabilityType) => ({
+            dayOfWeek: p.dayOfWeek,
+            day: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][p.dayOfWeek],
+            startTime: p.startTime,
+            endTime: p.endTime,
+          })),
+        });
+
+        setGeneralAvailability(convertedPatterns);
         setExceptions(
           data.exceptions.map((e: { date: string; startTime: string; endTime: string }) => ({
             date: e.date,
@@ -304,6 +321,23 @@ export function GmAvailabilityPage({
           startTime: converted.startTime,
           endTime: converted.endTime,
         };
+      });
+
+      // Debug: Log patterns being saved
+      console.log("[GM Availability] Saving patterns:", {
+        displayTimezone: timezone,
+        patternsInLocalTime: patterns.map(p => ({
+          dayOfWeek: p.dayOfWeek,
+          day: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][p.dayOfWeek],
+          startTime: p.startTime,
+          endTime: p.endTime,
+        })),
+        patternsConvertedToUTC: patternsInUTC.map(p => ({
+          dayOfWeek: p.dayOfWeek,
+          day: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][p.dayOfWeek],
+          startTime: p.startTime,
+          endTime: p.endTime,
+        })),
       });
 
       const res = await fetch(`/api/availability/${participant.id}`, {

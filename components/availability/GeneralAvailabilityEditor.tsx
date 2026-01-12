@@ -1,9 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { format } from "date-fns";
 import type { GeneralAvailability } from "@/lib/types";
-import { utcToLocal } from "@/lib/utils/timezone";
 
 interface GeneralAvailabilityEditorProps {
   patterns: GeneralAvailability[];
@@ -141,17 +139,14 @@ export function GeneralAvailabilityEditor({
   // Track the last saved patterns to detect external changes
   const [lastSavedPatterns, setLastSavedPatterns] = useState<string>("");
 
-  // Convert UTC event time window to user's local timezone for comparison
+  // Event time window is already in user's local timezone (pre-converted by parent component)
   const localTimeWindow = useMemo(() => {
     if (!eventEarliestTime || !eventLatestTime) return null;
-    const refDate = format(new Date(), "yyyy-MM-dd");
-    const localEarliest = utcToLocal(eventEarliestTime, refDate, timezone);
-    const localLatest = utcToLocal(eventLatestTime, refDate, timezone);
     return {
-      earliest: localEarliest.time,
-      latest: localLatest.time,
+      earliest: eventEarliestTime,
+      latest: eventLatestTime,
     };
-  }, [eventEarliestTime, eventLatestTime, timezone]);
+  }, [eventEarliestTime, eventLatestTime]);
 
   const entriesOutsideWindow = useMemo(() => {
     if (!localTimeWindow) return [];

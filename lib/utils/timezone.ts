@@ -184,9 +184,11 @@ export function convertPatternToUTC(
   const utcEnd = localToUTC(endTime, dateStr, fromTz);
 
   // Calculate the new day of week based on the date shift
-  const refDateObj = new Date(dateStr);
-  const utcStartDate = new Date(utcStart.date);
-  const dayShift = Math.round((utcStartDate.getTime() - refDateObj.getTime()) / (24 * 60 * 60 * 1000));
+  // Use UTC dates for consistent comparison across all browser timezones
+  const refDateUTC = Date.UTC(2024, 0, 7 + dayOfWeek);
+  const [utcYear, utcMonth, utcDay] = utcStart.date.split("-").map(Number);
+  const utcStartDateUTC = Date.UTC(utcYear, utcMonth - 1, utcDay);
+  const dayShift = Math.round((utcStartDateUTC - refDateUTC) / (24 * 60 * 60 * 1000));
   const newDayOfWeek = ((dayOfWeek + dayShift) % 7 + 7) % 7; // Handle negative modulo
 
   return {
@@ -199,6 +201,7 @@ export function convertPatternToUTC(
 /**
  * Convert a recurring pattern from UTC to local timezone for display.
  * Handles day-of-week shifts when crossing midnight.
+ * Properly handles overnight patterns where endTime < startTime in UTC.
  */
 export function convertPatternFromUTC(
   dayOfWeek: number,
@@ -211,16 +214,29 @@ export function convertPatternFromUTC(
   }
 
   // Use a reference week to determine the day shift
+  // Jan 7, 2024 is a Sunday (dayOfWeek 0)
   const refDate = new Date(2024, 0, 7 + dayOfWeek);
   const dateStr = format(refDate, "yyyy-MM-dd");
 
-  const localStart = utcToLocal(startTime, dateStr, toTz);
-  const localEnd = utcToLocal(endTime, dateStr, toTz);
+  // Check if this is an overnight pattern in UTC (end time <= start time)
+  const startMins = parseInt(startTime.split(":")[0]) * 60 + parseInt(startTime.split(":")[1]);
+  const endMins = parseInt(endTime.split(":")[0]) * 60 + parseInt(endTime.split(":")[1]);
+  const isOvernightUTC = endMins <= startMins && endTime !== startTime;
 
-  // Calculate the new day of week based on the date shift
-  const refDateObj = new Date(dateStr);
-  const localStartDate = new Date(localStart.date);
-  const dayShift = Math.round((localStartDate.getTime() - refDateObj.getTime()) / (24 * 60 * 60 * 1000));
+  // For overnight patterns, the end time is actually on the next day in UTC
+  const endDateStr = isOvernightUTC
+    ? format(new Date(2024, 0, 7 + dayOfWeek + 1), "yyyy-MM-dd")
+    : dateStr;
+
+  const localStart = utcToLocal(startTime, dateStr, toTz);
+  const localEnd = utcToLocal(endTime, endDateStr, toTz);
+
+  // Calculate the new day of week based on the date shift of the START time
+  // Use UTC dates for consistent comparison across all browser timezones
+  const refDateUTC = Date.UTC(2024, 0, 7 + dayOfWeek);
+  const [localYear, localMonth, localDay] = localStart.date.split("-").map(Number);
+  const localStartDateUTC = Date.UTC(localYear, localMonth - 1, localDay);
+  const dayShift = Math.round((localStartDateUTC - refDateUTC) / (24 * 60 * 60 * 1000));
   const newDayOfWeek = ((dayOfWeek + dayShift) % 7 + 7) % 7;
 
   return {

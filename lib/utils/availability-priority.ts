@@ -215,19 +215,28 @@ export function slotKeysToRanges(keys: Set<string>): TimeRange[] {
 
 /**
  * Convert TimeRange array to a slot-based representation (Set of "date-time" keys)
+ * Handles "24:00" as end time correctly.
  */
 export function rangesToSlotKeys(ranges: TimeRange[]): Set<string> {
   const keys = new Set<string>();
 
   for (const range of ranges) {
-    // Skip invalid ranges
-    if (range.startTime >= range.endTime) continue;
+    const startMins = parseTimeToMinutes(range.startTime);
+    const endMins = parseTimeToMinutes(range.endTime); // "24:00" -> 1440
+
+    // Skip invalid ranges (same start and end, or overnight which shouldn't happen here)
+    if (range.startTime === range.endTime) continue;
+    if (endMins <= startMins && range.endTime !== "24:00") continue;
 
     let currentTime = range.startTime;
     let iterations = 0;
     const maxIterations = 48;
 
-    while (currentTime < range.endTime && iterations < maxIterations) {
+    while (iterations < maxIterations) {
+      const currentMins = parseTimeToMinutes(currentTime);
+      // Stop when we reach end time (using numeric comparison for "24:00" support)
+      if (currentMins >= endMins) break;
+
       keys.add(`${range.date}-${currentTime}`);
       currentTime = addThirtyMinutes(currentTime);
       iterations++;

@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db/prisma";
 import { notFound, redirect } from "next/navigation";
 import { PlayerAvailabilityPage } from "./PlayerAvailabilityPage";
 import { getGmAvailabilityBounds } from "@/lib/utils/gm-availability";
-import { utcToLocal } from "@/lib/utils/timezone";
+import { utcToLocal, convertPatternFromUTC } from "@/lib/utils/timezone";
 import type { GeneralAvailability, TimeSlot } from "@/lib/types";
 
 interface Props {
@@ -63,15 +63,18 @@ export default async function Page({ params }: Props) {
     if (gmParticipant) {
       const gmTz = gmParticipant.timezone || "UTC";
 
-      // Patterns are stored in GM's local timezone - use as-is
-      const patterns = gmParticipant.generalAvailability.map((ga) => ({
-        id: ga.id,
-        participantId: ga.participantId,
-        dayOfWeek: ga.dayOfWeek,
-        startTime: ga.startTime,
-        endTime: ga.endTime,
-        isAvailable: ga.isAvailable,
-      })) as GeneralAvailability[];
+      // Patterns are stored in UTC - convert to GM's local timezone for bounds calculation
+      const patterns = gmParticipant.generalAvailability.map((ga) => {
+        const converted = convertPatternFromUTC(ga.dayOfWeek, ga.startTime, ga.endTime, gmTz);
+        return {
+          id: ga.id,
+          participantId: ga.participantId,
+          dayOfWeek: converted.dayOfWeek,
+          startTime: converted.startTime,
+          endTime: converted.endTime,
+          isAvailable: ga.isAvailable,
+        };
+      }) as GeneralAvailability[];
 
       // Slots are stored in UTC - convert to GM's local timezone for consistency
       const slots = gmParticipant.availability.map((a) => {
