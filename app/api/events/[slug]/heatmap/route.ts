@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { format, eachDayOfInterval, isValid } from "date-fns";
 import { expandPatternsToSlots, mergeOverlappingSlots } from "@/lib/utils/availability-expander";
 import { generateTimeSlots, addThirtyMinutes } from "@/lib/utils/time-slots";
-import { localToUTC } from "@/lib/utils/timezone";
+import { localToUTC, utcToLocal } from "@/lib/utils/timezone";
 import { computeEffectiveAvailabilityWithPriority } from "@/lib/utils/availability-priority";
 
 // Safely format a date, handling invalid dates
@@ -204,6 +204,10 @@ export async function GET(
     }
 
     // Fill in availability
+    // IMPORTANT: Availability is in UTC, but heatmap keys are in event timezone
+    // We need to convert each UTC time slot to event timezone before looking up
+    const eventTimezone = event.timezone || "UTC";
+
     for (const participant of participantsData) {
       for (const slot of participant.availability) {
         // Skip invalid slots where start >= end
@@ -214,7 +218,10 @@ export async function GET(
         const maxIterations = 48; // Max 48 half-hour slots in a day
 
         while (currentTime < slot.endTime && iterations < maxIterations) {
-          const key = `${slot.date}-${currentTime}`;
+          // Convert this UTC time slot to event timezone for heatmap lookup
+          const localSlot = utcToLocal(currentTime, slot.date, eventTimezone);
+          const key = `${localSlot.date}-${localSlot.time}`;
+
           if (heatmapData[key]) {
             heatmapData[key].count++;
             heatmapData[key].participantIds.push(participant.id);
