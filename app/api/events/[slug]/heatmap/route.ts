@@ -31,8 +31,15 @@ export async function GET(
     }
 
     // Use full event date range (or default to today if not set)
-    const rangeStart = event.startDate || new Date();
-    const rangeEnd = event.endDate || rangeStart;
+    // Ensure dates are valid Date objects
+    const rangeStart = event.startDate ? new Date(event.startDate) : new Date();
+    const rangeEnd = event.endDate ? new Date(event.endDate) : rangeStart;
+
+    // Validate dates
+    if (isNaN(rangeStart.getTime()) || isNaN(rangeEnd.getTime())) {
+      console.error("Invalid event dates:", { startDate: event.startDate, endDate: event.endDate });
+      return NextResponse.json({ error: "Invalid event date configuration" }, { status: 500 });
+    }
 
     // Generate all dates in the range
     const allDates = eachDayOfInterval({ start: rangeStart, end: rangeEnd });
@@ -105,15 +112,17 @@ export async function GET(
       const unavailablePatternsInUTC = expandAndConvertToUTC(unavailablePatterns);
 
       // Specific slots are already in UTC (manual calendar additions)
+      // Handle both Date objects and string dates for backwards compatibility
       const manualAdditions = participant.availability.map((a) => ({
-        date: format(a.date, "yyyy-MM-dd"),
+        date: a.date instanceof Date ? format(a.date, "yyyy-MM-dd") : String(a.date).split("T")[0],
         startTime: a.startTime,
         endTime: a.endTime,
       }));
 
       // Exceptions are already in UTC (manual calendar removals)
+      // Handle both Date objects and string dates for backwards compatibility
       const manualRemovals = participant.exceptions.map((e) => ({
-        date: format(e.date, "yyyy-MM-dd"),
+        date: e.date instanceof Date ? format(e.date, "yyyy-MM-dd") : String(e.date).split("T")[0],
         startTime: e.startTime,
         endTime: e.endTime,
       }));
@@ -199,8 +208,9 @@ export async function GET(
     return response;
   } catch (error) {
     console.error("Error fetching heatmap data:", error);
+    console.error("Stack:", error instanceof Error ? error.stack : "No stack");
     return NextResponse.json(
-      { error: "Failed to fetch heatmap data" },
+      { error: "Failed to fetch heatmap data", details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     );
   }
