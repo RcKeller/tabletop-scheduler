@@ -263,20 +263,58 @@ export async function GET(
         }
       }
 
-      // Find earliest and latest times where GM has any availability
-      for (const time of fullDaySlots) {
-        if (gmAvailableTimes.has(time)) {
-          if (effectiveEarliest === null) {
-            effectiveEarliest = time;
-          }
-          effectiveLatest = time;
-        }
-      }
-    }
+      // Handle midnight-spanning availability by finding the longest UNAVAILABLE gap
+      // The window should be from end of gap to start of gap (wrapping around midnight)
+      if (gmAvailableTimes.size > 0) {
+        // Create array of availability (true/false) for each 30-min slot
+        const slotAvailability = fullDaySlots.map(time => gmAvailableTimes.has(time));
 
-    // If we found effective bounds, add 30 min to latest (since it's the start of the last slot)
-    if (effectiveLatest !== null) {
-      effectiveLatest = addThirtyMinutes(effectiveLatest);
+        // Find the longest contiguous run of unavailable slots
+        let longestGapStart = -1;
+        let longestGapLength = 0;
+        let currentGapStart = -1;
+        let currentGapLength = 0;
+
+        // Check twice around the clock to handle gaps that span midnight
+        const doubleSlots = [...slotAvailability, ...slotAvailability];
+        for (let i = 0; i < doubleSlots.length; i++) {
+          if (!doubleSlots[i]) {
+            // Unavailable
+            if (currentGapStart === -1) {
+              currentGapStart = i;
+            }
+            currentGapLength++;
+          } else {
+            // Available - end of gap
+            if (currentGapLength > longestGapLength) {
+              longestGapLength = currentGapLength;
+              longestGapStart = currentGapStart;
+            }
+            currentGapStart = -1;
+            currentGapLength = 0;
+          }
+        }
+        // Check final gap
+        if (currentGapLength > longestGapLength) {
+          longestGapLength = currentGapLength;
+          longestGapStart = currentGapStart;
+        }
+
+        if (longestGapLength > 0 && longestGapLength < 48) {
+          // Window starts at end of gap, ends at start of gap
+          const windowStartIndex = (longestGapStart + longestGapLength) % 48;
+          const windowEndIndex = longestGapStart % 48;
+
+          effectiveEarliest = fullDaySlots[windowStartIndex];
+          // End time is the start of the gap (exclusive), so we use that slot's time
+          effectiveLatest = fullDaySlots[windowEndIndex];
+        } else if (longestGapLength === 0) {
+          // No gap - GM is available 24/7 (unlikely but handle it)
+          effectiveEarliest = "00:00";
+          effectiveLatest = "00:00"; // Will show full day
+        }
+        // If longestGapLength >= 48, no availability at all
+      }
     }
 
     // Use effective bounds if available, otherwise fall back to configured bounds
