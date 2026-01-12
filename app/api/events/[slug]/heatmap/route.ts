@@ -185,9 +185,13 @@ export async function GET(
       return {
         id: participant.id,
         name: participant.displayName,
+        isGm: participant.isGm,
         availability: effectiveAvailability,
       };
     });
+
+    // Find GM participant for calculating time bounds
+    const gmParticipant = participantsData.find(p => p.isGm);
 
     // Calculate heatmap cells
     const heatmapData: Record<string, { count: number; participantIds: string[] }> = {};
@@ -235,22 +239,38 @@ export async function GET(
       }
     }
 
-    // Calculate effective time bounds based on where availability actually exists
+    // Calculate effective time bounds based on GM's availability only
+    // Players can only play when the GM is available, so we use GM's bounds
     let effectiveEarliest: string | null = null;
     let effectiveLatest: string | null = null;
 
-    for (const time of fullDaySlots) {
-      // Check if any date has availability at this time
-      const hasAvailability = dateStrings.some(date => {
-        const key = `${date}-${time}`;
-        return heatmapData[key] && heatmapData[key].count > 0;
-      });
+    if (gmParticipant) {
+      // Build a set of times where GM is available (in event timezone)
+      const gmAvailableTimes = new Set<string>();
 
-      if (hasAvailability) {
-        if (effectiveEarliest === null) {
-          effectiveEarliest = time;
+      for (const slot of gmParticipant.availability) {
+        if (slot.startTime >= slot.endTime) continue;
+
+        let currentTime = slot.startTime;
+        let iterations = 0;
+        const maxIterations = 48;
+
+        while (currentTime < slot.endTime && iterations < maxIterations) {
+          const localSlot = utcToLocal(currentTime, slot.date, eventTimezone);
+          gmAvailableTimes.add(localSlot.time);
+          currentTime = addThirtyMinutes(currentTime);
+          iterations++;
         }
-        effectiveLatest = time;
+      }
+
+      // Find earliest and latest times where GM has any availability
+      for (const time of fullDaySlots) {
+        if (gmAvailableTimes.has(time)) {
+          if (effectiveEarliest === null) {
+            effectiveEarliest = time;
+          }
+          effectiveLatest = time;
+        }
       }
     }
 
@@ -278,6 +298,12 @@ export async function GET(
         sessionLengthMinutes: event.sessionLengthMinutes,
         timezone: eventTimezone,
       },
+      // GM availability info for display callout
+      gmAvailability: gmParticipant ? {
+        name: gmParticipant.name,
+        earliestTime: effectiveEarliest,
+        latestTime: effectiveLatest,
+      } : null,
       dates: dateStrings,
       timeSlots,
       participants: participantsData,
