@@ -69,6 +69,14 @@ export async function POST(
     });
 
     if (existing) {
+      // Update timezone if provided and participant exists (re-joining)
+      if (body.timezone && existing.timezone !== body.timezone) {
+        const updated = await prisma.participant.update({
+          where: { id: existing.id },
+          data: { timezone: body.timezone },
+        });
+        return NextResponse.json(updated);
+      }
       return NextResponse.json(existing);
     }
 
@@ -77,6 +85,7 @@ export async function POST(
         eventId: event.id,
         displayName,
         isGm: body.isGm || false,
+        timezone: body.timezone || "UTC",
       },
     });
 

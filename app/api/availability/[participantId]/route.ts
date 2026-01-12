@@ -84,8 +84,9 @@ export async function GET(
       const availablePatterns = generalAvailability.filter(p => p.isAvailable !== false);
       const unavailablePatterns = generalAvailability.filter(p => p.isAvailable === false);
 
-      // Helper to expand patterns and convert to UTC
-      const expandAndConvertToUTC = (patterns: typeof availablePatterns) => {
+      // Expand patterns to specific dates
+      // NOTE: Patterns are now stored in UTC, so no timezone conversion needed
+      const expandPatternsToUTCSlots = (patterns: typeof availablePatterns) => {
         const expanded = expandPatternsToSlots(
           patterns.map((p) => ({
             dayOfWeek: p.dayOfWeek,
@@ -95,41 +96,13 @@ export async function GET(
           startDate,
           endDate
         );
-
-        // Convert from local timezone to UTC
-        const inUTC: Array<{ date: string; startTime: string; endTime: string }> = [];
-        for (const slot of expanded) {
-          const start = localToUTC(slot.startTime, slot.date, userTimezone);
-          const end = localToUTC(slot.endTime, slot.date, userTimezone);
-
-          if (start.date === end.date) {
-            if (start.time < end.time) {
-              inUTC.push({
-                date: start.date,
-                startTime: start.time,
-                endTime: end.time,
-              });
-            }
-          } else {
-            // Slot crosses midnight when converted to UTC - split into two slots
-            inUTC.push({
-              date: start.date,
-              startTime: start.time,
-              endTime: "23:59",
-            });
-            inUTC.push({
-              date: end.date,
-              startTime: "00:00",
-              endTime: end.time,
-            });
-          }
-        }
-        return inUTC;
+        // Patterns are already in UTC, just filter valid slots
+        return expanded.filter(slot => slot.startTime < slot.endTime);
       };
 
       // Expand available and unavailable patterns
-      const availablePatternsInUTC = expandAndConvertToUTC(availablePatterns);
-      const unavailablePatternsInUTC = expandAndConvertToUTC(unavailablePatterns);
+      const availablePatternsInUTC = expandPatternsToUTCSlots(availablePatterns);
+      const unavailablePatternsInUTC = expandPatternsToUTCSlots(unavailablePatterns);
 
       // Use the new priority-based algorithm:
       // Priority: Manual (specific slots) > Unavailable patterns > Available patterns

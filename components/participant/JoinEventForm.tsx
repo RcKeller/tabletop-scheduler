@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { getBrowserTimezone } from "@/lib/utils/timezone";
 
 interface Participant {
   id: string;
@@ -34,6 +35,7 @@ export function JoinEventForm({ eventSlug, onJoined, hasGm = false, compact = fa
         body: JSON.stringify({
           displayName: displayName.trim(),
           isGm,
+          timezone: getBrowserTimezone(),
         }),
       });
 

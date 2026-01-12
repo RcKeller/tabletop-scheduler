@@ -12,7 +12,7 @@ import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import type { TimeSlot, GeneralAvailability as GeneralAvailabilityType } from "@/lib/types";
 import { expandPatternsToDateRange, slotsToKeySet, keySetToSlots } from "@/lib/utils/availability";
 import { addThirtyMinutes } from "@/lib/utils/time-slots";
-import { utcToLocal, localToUTC, getBrowserTimezone } from "@/lib/utils/timezone";
+import { utcToLocal, localToUTC, getBrowserTimezone, convertPatternToUTC, convertPatternFromUTC } from "@/lib/utils/timezone";
 
 interface EventProps {
   id: string;
@@ -156,7 +156,18 @@ export function GmAvailabilityPage({
             endTime: a.endTime,
           }))
         );
-        setGeneralAvailability(data.generalAvailability);
+        // Convert patterns from UTC to display timezone
+        setGeneralAvailability(
+          data.generalAvailability.map((p: GeneralAvailabilityType) => {
+            const converted = convertPatternFromUTC(p.dayOfWeek, p.startTime, p.endTime, timezone);
+            return {
+              ...p,
+              dayOfWeek: converted.dayOfWeek,
+              startTime: converted.startTime,
+              endTime: converted.endTime,
+            };
+          })
+        );
         setExceptions(
           data.exceptions.map((e: { date: string; startTime: string; endTime: string }) => ({
             date: e.date,
@@ -284,10 +295,21 @@ export function GmAvailabilityPage({
   const handleSaveGeneralAvailability = async (patterns: Omit<GeneralAvailabilityType, "id" | "participantId">[]) => {
     setIsSaving(true);
     try {
+      // Convert patterns from display timezone to UTC before saving
+      const patternsInUTC = patterns.map(p => {
+        const converted = convertPatternToUTC(p.dayOfWeek, p.startTime, p.endTime, timezone);
+        return {
+          ...p,
+          dayOfWeek: converted.dayOfWeek,
+          startTime: converted.startTime,
+          endTime: converted.endTime,
+        };
+      });
+
       const res = await fetch(`/api/availability/${participant.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ generalAvailability: patterns, timezone }),
+        body: JSON.stringify({ generalAvailability: patternsInUTC }),
       });
       if (res.ok) {
         setGeneralAvailability(patterns.map((p, i) => ({

@@ -73,46 +73,31 @@ export async function GET(
     // This combines patterns + specific slots - exceptions for the full date range
     // Priority: Manual calendar > Unavailable patterns > Available patterns
     // IMPORTANT: Patterns are stored in participant's local timezone, specific slots and exceptions are in UTC
+    // Check for debug mode
+    const debugMode = request.nextUrl.searchParams.get("debug") === "true";
+    const debugInfo: Record<string, unknown> = {};
+
     const participantsData = event.participants.map((participant) => {
-      const participantTimezone = participant.timezone || "UTC";
+      // Log debug info for GM
+      if (debugMode && participant.isGm) {
+        debugInfo.gmParticipant = {
+          id: participant.id,
+          displayName: participant.displayName,
+          patterns: participant.generalAvailability.map(p => ({
+            dayOfWeek: p.dayOfWeek,
+            startTime: p.startTime,
+            endTime: p.endTime,
+            isAvailable: p.isAvailable,
+          })),
+        };
+      }
 
-      // Helper to expand patterns and convert to UTC
-      const expandAndConvertToUTC = (patterns: Array<{ dayOfWeek: number; startTime: string; endTime: string }>) => {
+      // Expand patterns to specific dates
+      // NOTE: Patterns are now stored in UTC, so no timezone conversion needed
+      const expandPatternsToUTCSlots = (patterns: Array<{ dayOfWeek: number; startTime: string; endTime: string }>) => {
         const expanded = expandPatternsToSlots(patterns, rangeStart, rangeEnd);
-        const inUTC: Array<{ date: string; startTime: string; endTime: string }> = [];
-
-        for (const slot of expanded) {
-          try {
-            const start = localToUTC(slot.startTime, slot.date, participantTimezone);
-            const end = localToUTC(slot.endTime, slot.date, participantTimezone);
-
-            if (start.date === end.date) {
-              if (start.time < end.time) {
-                inUTC.push({
-                  date: start.date,
-                  startTime: start.time,
-                  endTime: end.time,
-                });
-              }
-            } else {
-              // Slot crosses midnight when converted to UTC - split into two slots
-              inUTC.push({
-                date: start.date,
-                startTime: start.time,
-                endTime: "23:59",
-              });
-              inUTC.push({
-                date: end.date,
-                startTime: "00:00",
-                endTime: end.time,
-              });
-            }
-          } catch (e) {
-            console.error("Error converting slot to UTC:", slot, participantTimezone, e);
-            // Skip invalid slots
-          }
-        }
-        return inUTC;
+        // Patterns are already in UTC, just filter valid slots
+        return expanded.filter(slot => slot.startTime < slot.endTime);
       };
 
       // Separate patterns into available and unavailable
@@ -133,8 +118,8 @@ export async function GET(
         }));
 
       // Expand patterns and convert to UTC
-      const availablePatternsInUTC = expandAndConvertToUTC(availablePatterns);
-      const unavailablePatternsInUTC = expandAndConvertToUTC(unavailablePatterns);
+      const availablePatternsInUTC = expandPatternsToUTCSlots(availablePatterns);
+      const unavailablePatternsInUTC = expandPatternsToUTCSlots(unavailablePatterns);
 
       // Specific slots are already in UTC (manual calendar additions)
       // Handle both Date objects and string dates, filter out invalid entries
@@ -182,6 +167,12 @@ export async function GET(
       // Merge overlapping slots
       const effectiveAvailability = mergeOverlappingSlots(effectiveSlots);
 
+      // Log debug info for GM's UTC slots
+      if (debugMode && participant.isGm) {
+        debugInfo.gmUTCSlots = effectiveAvailability.slice(0, 10); // First 10 for brevity
+        debugInfo.gmUTCSlotsCount = effectiveAvailability.length;
+      }
+
       return {
         id: participant.id,
         name: participant.displayName,
@@ -192,6 +183,11 @@ export async function GET(
 
     // Find GM participant for calculating time bounds
     const gmParticipant = participantsData.find(p => p.isGm);
+
+    if (debugMode) {
+      debugInfo.eventTimezone = event.timezone;
+      debugInfo.effectiveEventTimezone = event.timezone || "UTC";
+    }
 
     // Calculate heatmap cells
     const heatmapData: Record<string, { count: number; participantIds: string[] }> = {};
@@ -249,6 +245,7 @@ export async function GET(
       // Collect all start and end times, converted to event timezone
       const startTimes: string[] = [];
       const endTimes: string[] = [];
+      const debugConversions: Array<{ utc: { date: string; start: string; end: string }; local: { startDate: string; startTime: string; endDate: string; endTime: string } }> = [];
 
       for (const slot of gmParticipant.availability) {
         // Skip invalid slots
@@ -260,6 +257,21 @@ export async function GET(
 
         startTimes.push(localStart.time);
         endTimes.push(localEnd.time);
+
+        if (debugMode && debugConversions.length < 5) {
+          debugConversions.push({
+            utc: { date: slot.date, start: slot.startTime, end: slot.endTime },
+            local: { startDate: localStart.date, startTime: localStart.time, endDate: localEnd.date, endTime: localEnd.time },
+          });
+        }
+      }
+
+      if (debugMode) {
+        debugInfo.boundsCalculation = {
+          sampleConversions: debugConversions,
+          allStartTimes: [...new Set(startTimes)].sort().slice(0, 10),
+          allEndTimes: [...new Set(endTimes)].sort().slice(0, 10),
+        };
       }
 
       if (startTimes.length > 0) {
@@ -278,6 +290,18 @@ export async function GET(
 
     // Generate the final time slots for the effective range
     const timeSlots = generateTimeSlots(displayEarliest, displayLatest);
+
+    // Add final bounds to debug info
+    if (debugMode) {
+      debugInfo.finalBounds = {
+        effectiveEarliest,
+        effectiveLatest,
+        displayEarliest,
+        displayLatest,
+        fallbackEarliestTime: earliestTime,
+        fallbackLatestTime: latestTime,
+      };
+    }
 
     const response = NextResponse.json({
       event: {
@@ -303,6 +327,8 @@ export async function GET(
       participants: participantsData,
       heatmap: heatmapData,
       totalParticipants: participantsData.length,
+      // Include debug info only when requested
+      ...(debugMode && { _debug: debugInfo }),
     });
 
     // Add cache headers for short-term caching (5 seconds stale-while-revalidate)

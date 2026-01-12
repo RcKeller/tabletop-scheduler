@@ -2,10 +2,11 @@
 
 ## Core Principles
 
-### 1. Database Storage: UTC for Availability, Local for Patterns
+### 1. Database Storage: ALL Times in UTC
 - **Specific availability slots**: Stored in **UTC**
-- **Recurring patterns (GeneralAvailability)**: Stored in **user's local timezone** (with `participant.timezone`)
-- **Event time window (`earliestTime`/`latestTime`)**: Stored in **event's timezone** (`event.timezone`)
+- **Recurring patterns (GeneralAvailability)**: Stored in **UTC** (converted at save time, dayOfWeek may shift)
+- **Exceptions**: Stored in **UTC**
+- **Event time window**: Calculated dynamically from GM availability
 
 ### 2. Frontend Display: User's Selected Timezone
 All times displayed to users are converted to their selected timezone.
@@ -18,16 +19,17 @@ All times displayed to users are converted to their selected timezone.
 Timezone conversion happens at clear boundaries:
 
 ```
-Availability Data:
+Availability Data (specific dates):
   User Input (local) → localToUTC() → API/Database (UTC)
   Database (UTC) → utcToLocal() → Display (local)
 
-Recurring Patterns:
-  User Input (local) → Store as-is with participant.timezone
-  API expands → converts to UTC → Frontend converts to user's timezone
+Recurring Patterns (dayOfWeek based):
+  User Input (local) → convertPatternToUTC() → API/Database (UTC)
+  Database (UTC) → convertPatternFromUTC() → Display (local)
+  Note: dayOfWeek may shift when converting (e.g., Monday 1am Manila = Sunday 5pm UTC)
 
 Time Windows:
-  Stored in event.timezone → convertDateTime() → Display in user's timezone
+  Calculated from GM's UTC availability → utcToLocal() → Display in viewer's timezone
 ```
 
 ---
@@ -106,7 +108,7 @@ Time Windows:
 Located in `lib/utils/timezone.ts`:
 
 ```typescript
-// Convert local time to UTC (for saving)
+// Convert local time to UTC (for saving specific date slots)
 localToUTC(time: string, date: string, fromTz: string): { date: string; time: string }
 
 // Convert UTC to local time (for display)
@@ -114,9 +116,18 @@ utcToLocal(time: string, date: string, toTz: string): { date: string; time: stri
 
 // Convert between any two timezones
 convertDateTime(time: string, date: string, fromTz: string, toTz: string): { date: string; time: string }
+
+// Convert recurring pattern from local timezone to UTC (for saving patterns)
+// Handles dayOfWeek shift when crossing midnight
+convertPatternToUTC(dayOfWeek: number, startTime: string, endTime: string, fromTz: string):
+  { dayOfWeek: number; startTime: string; endTime: string }
+
+// Convert recurring pattern from UTC to local timezone (for display)
+convertPatternFromUTC(dayOfWeek: number, startTime: string, endTime: string, toTz: string):
+  { dayOfWeek: number; startTime: string; endTime: string }
 ```
 
-**Important:** All functions handle date changes when crossing midnight.
+**Important:** All functions handle date/day changes when crossing midnight.
 
 ---
 
@@ -133,11 +144,13 @@ convertDateTime(time: string, date: string, fromTz: string, toTz: string): { dat
 
 ## Common Mistakes to Avoid
 
-1. **Assuming time window timezone** - Always check if times are local, UTC, or event timezone
-2. **Double conversion** - Don't convert times that are already in the target timezone
-3. **Forgetting midnight crossing** - Timezone conversion can shift dates
-4. **Mixing timezones in comparisons** - Always compare times in the same timezone
-5. **Treating event times as UTC** - Event `earliestTime`/`latestTime` are in `event.timezone`, NOT UTC
+1. **Using participant.timezone for data interpretation** - This field is deprecated. All data is stored in UTC.
+2. **Assuming time window timezone** - Time bounds are calculated from GM's UTC availability
+3. **Double conversion** - Don't convert times that are already in the target timezone
+4. **Forgetting midnight/day crossing** - Timezone conversion can shift dates AND days of week
+5. **Mixing timezones in comparisons** - Always compare times in the same timezone
+6. **Forgetting to convert patterns on save** - Frontend MUST call `convertPatternToUTC()` before API calls
+7. **Forgetting to convert patterns on load** - Frontend MUST call `convertPatternFromUTC()` for display
 
 ---
 

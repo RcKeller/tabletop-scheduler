@@ -149,6 +149,87 @@ export function getTimezoneAbbr(timezone: string, date: Date = new Date()): stri
   return formatInTimeZone(date, timezone, "zzz");
 }
 
+/**
+ * Convert a recurring pattern (dayOfWeek + time) from local timezone to UTC.
+ * Handles day-of-week shifts when crossing midnight.
+ *
+ * @param dayOfWeek - 0 (Sunday) to 6 (Saturday) in local timezone
+ * @param startTime - HH:MM in local timezone
+ * @param endTime - HH:MM in local timezone
+ * @param fromTz - Source timezone
+ * @returns Pattern with dayOfWeek and times in UTC
+ *
+ * @example
+ * // Monday 1am-5am in Manila (UTC+8) becomes Sunday 5pm-9pm UTC
+ * convertPatternToUTC(1, "01:00", "05:00", "Asia/Manila")
+ * // Returns { dayOfWeek: 0, startTime: "17:00", endTime: "21:00" }
+ */
+export function convertPatternToUTC(
+  dayOfWeek: number,
+  startTime: string,
+  endTime: string,
+  fromTz: string
+): { dayOfWeek: number; startTime: string; endTime: string } {
+  if (fromTz === "UTC") {
+    return { dayOfWeek, startTime, endTime };
+  }
+
+  // Use a reference week to determine the day shift
+  // Pick a date that's definitely the correct day of week (Jan 2024 week)
+  // Jan 7, 2024 is a Sunday (dayOfWeek 0)
+  const refDate = new Date(2024, 0, 7 + dayOfWeek); // 7=Sun, 8=Mon, etc.
+  const dateStr = format(refDate, "yyyy-MM-dd");
+
+  const utcStart = localToUTC(startTime, dateStr, fromTz);
+  const utcEnd = localToUTC(endTime, dateStr, fromTz);
+
+  // Calculate the new day of week based on the date shift
+  const refDateObj = new Date(dateStr);
+  const utcStartDate = new Date(utcStart.date);
+  const dayShift = Math.round((utcStartDate.getTime() - refDateObj.getTime()) / (24 * 60 * 60 * 1000));
+  const newDayOfWeek = ((dayOfWeek + dayShift) % 7 + 7) % 7; // Handle negative modulo
+
+  return {
+    dayOfWeek: newDayOfWeek,
+    startTime: utcStart.time,
+    endTime: utcEnd.time,
+  };
+}
+
+/**
+ * Convert a recurring pattern from UTC to local timezone for display.
+ * Handles day-of-week shifts when crossing midnight.
+ */
+export function convertPatternFromUTC(
+  dayOfWeek: number,
+  startTime: string,
+  endTime: string,
+  toTz: string
+): { dayOfWeek: number; startTime: string; endTime: string } {
+  if (toTz === "UTC") {
+    return { dayOfWeek, startTime, endTime };
+  }
+
+  // Use a reference week to determine the day shift
+  const refDate = new Date(2024, 0, 7 + dayOfWeek);
+  const dateStr = format(refDate, "yyyy-MM-dd");
+
+  const localStart = utcToLocal(startTime, dateStr, toTz);
+  const localEnd = utcToLocal(endTime, dateStr, toTz);
+
+  // Calculate the new day of week based on the date shift
+  const refDateObj = new Date(dateStr);
+  const localStartDate = new Date(localStart.date);
+  const dayShift = Math.round((localStartDate.getTime() - refDateObj.getTime()) / (24 * 60 * 60 * 1000));
+  const newDayOfWeek = ((dayOfWeek + dayShift) % 7 + 7) % 7;
+
+  return {
+    dayOfWeek: newDayOfWeek,
+    startTime: localStart.time,
+    endTime: localEnd.time,
+  };
+}
+
 // Legacy aliases for backwards compatibility
 export const toUTC = localToUTC;
 export const fromUTC = utcToLocal;

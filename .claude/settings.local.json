@@ -34,9 +34,7 @@
       "Bash(git -C /Users/dev/tabletop-scheduler show HEAD:prisma/schema.prisma)",
       "Bash(git -C /Users/dev/tabletop-scheduler log --oneline -5)",
       "Bash(git -C /Users/dev/tabletop-scheduler diff HEAD~1 -- prisma/schema.prisma)",
-      "Bash(git add:*)",
       "Bash(git -C /Users/dev/tabletop-scheduler log --oneline --all)",
-      "Bash(git commit:*)",
       "Bash(git -C /Users/dev/tabletop-scheduler branch -vv)"
     ]
   }

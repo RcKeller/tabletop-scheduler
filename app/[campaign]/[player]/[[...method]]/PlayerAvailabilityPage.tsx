@@ -14,7 +14,7 @@ import type { TimeSlot, GeneralAvailability as GeneralAvailabilityType } from "@
 import { formatTimeDisplay } from "@/lib/utils/gm-availability";
 import { expandPatternsToDateRange, slotsToKeySet, keySetToSlots } from "@/lib/utils/availability";
 import { addThirtyMinutes } from "@/lib/utils/time-slots";
-import { utcToLocal, localToUTC, convertDateTime, getBrowserTimezone } from "@/lib/utils/timezone";
+import { utcToLocal, localToUTC, convertDateTime, getBrowserTimezone, convertPatternToUTC, convertPatternFromUTC } from "@/lib/utils/timezone";
 
 interface EventProps {
   id: string;
@@ -204,7 +204,18 @@ export function PlayerAvailabilityPage({
             endTime: a.endTime,
           }))
         );
-        setGeneralAvailability(data.generalAvailability);
+        // Convert patterns from UTC to display timezone
+        setGeneralAvailability(
+          data.generalAvailability.map((p: GeneralAvailabilityType) => {
+            const converted = convertPatternFromUTC(p.dayOfWeek, p.startTime, p.endTime, timezone);
+            return {
+              ...p,
+              dayOfWeek: converted.dayOfWeek,
+              startTime: converted.startTime,
+              endTime: converted.endTime,
+            };
+          })
+        );
         setExceptions(
           data.exceptions.map((e: { date: string; startTime: string; endTime: string }) => ({
             date: e.date,
@@ -342,10 +353,21 @@ export function PlayerAvailabilityPage({
     console.log("[Frontend] Saving general availability:", { patterns, timezone });
     setIsSaving(true);
     try {
+      // Convert patterns from display timezone to UTC before saving
+      const patternsInUTC = patterns.map(p => {
+        const converted = convertPatternToUTC(p.dayOfWeek, p.startTime, p.endTime, timezone);
+        return {
+          ...p,
+          dayOfWeek: converted.dayOfWeek,
+          startTime: converted.startTime,
+          endTime: converted.endTime,
+        };
+      });
+
       const res = await fetch(`/api/availability/${participant.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ generalAvailability: patterns, timezone }),
+        body: JSON.stringify({ generalAvailability: patternsInUTC }),
       });
       console.log("[Frontend] Save response:", res.ok, res.status);
       if (res.ok) {
