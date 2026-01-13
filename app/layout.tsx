@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { TimezoneProvider } from "@/components/layout/TimezoneProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -27,7 +28,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-zinc-50 antialiased dark:bg-zinc-950`}
       >
-        {children}
+        <TimezoneProvider>
+          {children}
+        </TimezoneProvider>
       </body>
     </html>
   );

@@ -9,11 +9,11 @@ After each task, ask: Decision made? >10 tool calls? Feature done?
 
 # Current Session State
 
-*Last updated: 2026-01-13*
+*Last updated: 2026-01-14*
 
 ## Completed Tasks
 
-### 1. Fixed Recurring Availability Pattern Bug
+### 1. Fixed Recurring Availability Pattern Bug (Overnight UTC)
 **Problem**: When a pattern like "7am-9am Manila (UTC+8)" crosses midnight in UTC (23:00-01:00), the overnight split was creating gaps.
 
 **Solution**:
@@ -21,52 +21,120 @@ After each task, ask: Decision made? >10 tool calls? Feature done?
 - Updated timezone conversion functions to handle `"24:00"` as `"00:00 of next day"`
 - Added `mergeAdjacentSlots()` function to combine adjacent slots after conversion
 
-### 2. Enhanced VirtualizedAvailabilityGrid with GM Availability & Compact Mode
+### 2. Enhanced VirtualizedAvailabilityGrid
+**New props:**
+- `gmAvailability` - GM's availability for visual indication (blue border)
+- `disabled` - Prevents drag interactions (view-only mode)
+- `compact` - Smaller cell sizes (row: 18px, col: 32px)
 
-**New Props Added**:
-- `gmAvailability?: TimeSlot[]` - GM's availability for visual indication (blue border)
-- `disabled?: boolean` - Disable drag interactions (view-only mode)
-- `compact?: boolean` - Use smaller cell sizes for dense display
+**Visual:** Blue 2px inset border on cells where GM is available
 
-**Visual Changes**:
-- **GM availability indicator**: Blue 2px inset border on cells where GM is available
-- **Compact mode**:
-  - Row height: 18px (vs 24px normal)
-  - Column width: 32px (vs 48px normal)
-  - Smaller fonts and padding throughout
+### 3. Fixed Pattern Save Bug (Manual Entries Disappearing)
+**Problem**: When saving recurring patterns, manual calendar entries (from drag-select) would disappear.
 
-**New Legend for Heatmap Mode**:
-- "GM available" - Green cell with blue border
-- "Players available" - Green cell
-- "No availability" - Gray cell
+**Root Cause**: `savePatterns` was reading override rules from `effectiveRules`, but `effectiveRules` wasn't updated after grid saves (due to `skipRefetch=true`).
 
-### 3. Updated Campaign Page
-- Extracts GM availability slots from `participantsWithAvailability`
-- Passes `gmAvailability` and `compact` props to the grid
-- Heatmap now shows which time slots the GM is available (blue border)
+**Solution**:
+- Added `localOverrideSlots` state to track grid slots locally
+- When grid saves, store the slots in `localOverrideSlots`
+- When patterns save, use `localOverrideSlots` instead of stale `effectiveRules`
+
+### 4. Immediate Auto-Save for All Changes
+**Problem**: User had to click "Save Schedule" after changing patterns.
+
+**Solution**:
+- Handlers call `debouncedSavePatterns()` directly when patterns change
+- Removed "Save Schedule" button
+- Shows "Saving..." / "Saved" status indicator instead
+- Grid already had `autoSave={true}`
+
+### 5. Fixed Auto-Save Infinite Loop Bug
+**Problem**: Auto-save using useEffect caused infinite loop (page refreshing and saving repeatedly).
+
+**Root Cause**: Initial implementation used a `useEffect` that watched `patternEntries`. When patterns saved, the server response updated `effectiveRules`, which re-extracted patterns, which triggered the effect again.
+
+**Solution**:
+- Removed the problematic `useEffect`
+- Pattern handlers now call `debouncedSavePatterns()` directly
+- Reordered hook definitions so `savePatterns` and `debouncedSavePatterns` are defined BEFORE handlers that use them
+
+### 6. Fixed Pattern Save Stale Closure Bug
+**Problem**: Adding patterns would flash and disappear immediately.
+
+**Root Cause**: Debounced save used stale closure - `savePatterns` captured old `patternEntries` state. Also, useEffect was overwriting local state from server response.
+
+**Solution**:
+- Added refs (`patternEntriesRef`, `localOverrideSlotsRef`) to track latest state
+- Added `isUserEditingRef` to prevent useEffect from overwriting during edits
+- `savePatterns` now reads from refs instead of state closure
+- `patternsInitializedRef` prevents re-initialization after first load
+
+### 7. Added Comprehensive Pattern Tests
+Added 25 new tests in `__tests__/components/availability/pattern-editor.test.ts`:
+- Timezone conversion tests (Manila, LA, India, Nepal)
+- Round-trip conversion verification
+- Effective availability computation
+- Blocked patterns priority
+- Override behavior
+- Timezone switching scenarios
+- Regression tests for known bugs
+
+### 8. Created Shared Navbar with Timezone Selector
+**Problem**: Timezone selector was duplicated across pages, inconsistent navigation.
+
+**Solution**:
+- Created `TimezoneProvider` context (`components/layout/TimezoneProvider.tsx`)
+- Created `Navbar` component (`components/layout/Navbar.tsx`)
+- Created campaign layout (`app/[campaign]/layout.tsx`, `CampaignLayoutClient.tsx`)
+- Added `compact` mode to `TimezoneAutocomplete`
+- Updated `AvailabilityEditor` and `CampaignPage` to use shared context
+- Navbar is sticky with campaign navigation links
 
 ## Files Modified This Session
 
+- `components/availability/AvailabilityEditor.tsx`:
+  - Added `localOverrideSlots` state + refs for stale closure fix
+  - Added `isUserEditingRef` to prevent state overwrite during edits
+  - `savePatterns` uses refs instead of state closure
+  - Handlers call `debouncedSavePatterns()` directly (no useEffect)
+  - Uses shared `useTimezone()` context instead of local state
+  - Removed inline TimezoneAutocomplete
+
 - `components/availability/VirtualizedAvailabilityGrid.tsx`:
   - Added `gmAvailability`, `disabled`, `compact` props
-  - Added GM availability slot lookup
-  - Added blue inset border for GM available times
-  - Added compact mode sizing (smaller rows/columns/fonts)
-  - Added disabled mode (no drag interactions)
-  - Added heatmap legend with GM availability indicator
+  - Added blue border for GM available times
+  - Added compact mode sizing
+  - Fixed overnight slot handling ("24:00")
+  - Added `mergeAdjacentSlots()` function
 
-- `components/availability/AvailabilityEditor.tsx`:
-  - Fixed overnight slot splitting to use "24:00"
+- `components/layout/TimezoneProvider.tsx` (NEW):
+  - Global timezone context with localStorage persistence
+
+- `components/layout/Navbar.tsx` (NEW):
+  - Sticky navbar with campaign navigation
+  - Compact timezone selector
+
+- `components/timezone/TimezoneAutocomplete.tsx`:
+  - Added `compact` prop for smaller navbar variant
+
+- `app/[campaign]/layout.tsx` (NEW):
+  - Campaign layout with navbar
+
+- `app/[campaign]/CampaignLayoutClient.tsx` (NEW):
+  - Client wrapper for navbar
 
 - `app/[campaign]/CampaignPage.tsx`:
-  - Added `gmAvailabilitySlots` computation
-  - Pass `gmAvailability={gmAvailabilitySlots}` and `compact` to grid
+  - Uses shared `useTimezone()` context
+  - Removed inline TimezoneAutocomplete
 
-- `__tests__/integration/pattern-availability.test.ts`:
-  - Updated to handle "24:00" and merge adjacent slots
+- `app/layout.tsx`:
+  - Wrapped with `TimezoneProvider`
+
+- `__tests__/components/availability/pattern-editor.test.ts` (NEW):
+  - 25 comprehensive pattern tests
 
 ## Test Results
-- **107 tests pass**
+- **132 tests pass** (25 new pattern tests added)
 - Type checks pass (`npx tsc --noEmit`)
 
 ## Next Steps

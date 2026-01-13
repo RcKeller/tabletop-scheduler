@@ -2,21 +2,18 @@
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { VirtualizedAvailabilityGrid } from "./VirtualizedAvailabilityGrid";
-import { TimezoneAutocomplete } from "@/components/timezone/TimezoneAutocomplete";
 import { useAvailabilityRules } from "@/lib/hooks/useAvailabilityRules";
+import { useTimezone } from "@/components/layout/TimezoneProvider";
 import {
   computeEffectiveRanges,
   minutesToTime,
   prepareRuleForStorage,
   convertPatternFromUTC,
-  getBrowserTimezone,
   type AvailabilityRule,
   type CreateAvailabilityRuleInput,
   type DateRange,
 } from "@/lib/availability";
 import type { TimeSlot } from "@/lib/types";
-
-const TIMEZONE_STORAGE_KEY = "when2play-timezone";
 
 interface AvailabilityEditorProps {
   participantId: string;
@@ -254,33 +251,8 @@ export function AvailabilityEditor({
   initialRules,
   onSaveComplete,
 }: AvailabilityEditorProps) {
-  // Timezone state - synced with localStorage
-  const [timezone, setTimezoneState] = useState<string>(() => {
-    if (typeof window === "undefined") return event.timezone || "UTC";
-    const stored = localStorage.getItem(TIMEZONE_STORAGE_KEY);
-    return stored || getBrowserTimezone();
-  });
-
-  const setTimezone = useCallback((tz: string) => {
-    setTimezoneState(tz);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(TIMEZONE_STORAGE_KEY, tz);
-    }
-  }, []);
-
-  // Sync timezone from localStorage on mount
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem(TIMEZONE_STORAGE_KEY);
-      if (stored && stored !== timezone) {
-        setTimezoneState(stored);
-      } else if (!stored) {
-        const browserTz = getBrowserTimezone();
-        localStorage.setItem(TIMEZONE_STORAGE_KEY, browserTz);
-        setTimezoneState(browserTz);
-      }
-    }
-  }, []);
+  // Use shared timezone from context (managed by navbar)
+  const { timezone } = useTimezone();
 
   const {
     rules,
@@ -298,10 +270,21 @@ export function AvailabilityEditor({
 
   // Pattern editor state
   const [patternEntries, setPatternEntries] = useState<PatternEntry[]>([]);
-  const [hasPatternChanges, setHasPatternChanges] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  // Track current grid slots locally to avoid losing overrides when patterns are saved
+  // This is updated when the grid saves, and used when patterns are saved
+  const [localOverrideSlots, setLocalOverrideSlots] = useState<TimeSlot[]>([]);
+
+  // Refs for latest state (to avoid stale closures in debounced saves)
+  const patternEntriesRef = useRef<PatternEntry[]>(patternEntries);
+  const localOverrideSlotsRef = useRef<TimeSlot[]>(localOverrideSlots);
+
+  // Track if we're in a user-initiated edit (to prevent useEffect from overwriting)
+  const isUserEditingRef = useRef(false);
+  const userEditTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // AI input state
   const [aiInput, setAiInput] = useState("");
@@ -310,6 +293,9 @@ export function AvailabilityEditor({
 
   // Track last timezone used to reinitialize patterns on timezone change
   const lastTimezoneRef = useRef(timezone);
+
+  // Track if patterns have been initialized from server
+  const patternsInitializedRef = useRef(false);
 
   // Date range for the grid
   const dateRange: DateRange = useMemo(
@@ -321,45 +307,110 @@ export function AvailabilityEditor({
   );
 
   // Convert rules to TimeSlots for VirtualizedAvailabilityGrid
+  // Use local pattern state when user has edited (for immediate feedback)
+  // Fall back to server rules for initial load
   const timeSlots = useMemo(() => {
-    const slots = rulesToTimeSlots(effectiveRules, dateRange);
-    // DEBUG: Log computed slots
-    console.log("[AvailabilityEditor] Computed timeSlots from rules:", {
-      rulesCount: effectiveRules.length,
-      ruleTypes: effectiveRules.reduce((acc, r) => {
-        acc[r.ruleType] = (acc[r.ruleType] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>),
-      slotsCount: slots.length,
-      sampleSlots: slots.slice(0, 5),
-      dateRange,
-    });
-    return slots;
-  }, [effectiveRules, dateRange]);
-
-  // Initialize pattern entries from rules - re-extract when timezone changes
-  useEffect(() => {
-    if (effectiveRules.length > 0) {
-      const extracted = extractPatternEntries(effectiveRules, timezone);
-      // DEBUG: Log pattern extraction
-      console.log("[AvailabilityEditor] Extracted patterns:", {
-        rulesCount: effectiveRules.length,
-        patternRulesCount: effectiveRules.filter(r =>
-          r.ruleType === "available_pattern" || r.ruleType === "blocked_pattern"
-        ).length,
-        extractedPatterns: extracted,
-        timezone,
-      });
-      setPatternEntries(extracted);
-      setHasPatternChanges(false);
+    // If we have local pattern edits, compute from local state for immediate feedback
+    if (patternsInitializedRef.current && patternEntries.length > 0) {
+      // Convert local patterns to rules format for computation
+      const localPatternRules = patternEntriesToRules(patternEntries, participantId, timezone);
+      // Convert to AvailabilityRule format with placeholder IDs for computation
+      const computeRules: AvailabilityRule[] = localPatternRules.map((r, i) => ({
+        id: `local-${i}`,
+        participantId: r.participantId,
+        ruleType: r.ruleType,
+        dayOfWeek: r.dayOfWeek,
+        specificDate: r.specificDate,
+        startTime: r.startTime,
+        endTime: r.endTime,
+        originalTimezone: r.originalTimezone,
+        originalDayOfWeek: r.originalDayOfWeek,
+        reason: null,
+        source: r.source || "manual",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+      // Add local override slots as rules too
+      const overrideRules: AvailabilityRule[] = localOverrideSlots.map((slot, i) => ({
+        id: `local-override-${i}`,
+        participantId,
+        ruleType: "available_override" as const,
+        dayOfWeek: null,
+        specificDate: slot.date,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        originalTimezone: timezone,
+        originalDayOfWeek: null,
+        reason: null,
+        source: "manual" as const,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+      const allLocalRules = [...computeRules, ...overrideRules];
+      return rulesToTimeSlots(allLocalRules, dateRange);
     }
-    lastTimezoneRef.current = timezone;
+    // Initial load - use server rules
+    return rulesToTimeSlots(effectiveRules, dateRange);
+  }, [effectiveRules, dateRange, patternEntries, localOverrideSlots, participantId, timezone]);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    patternEntriesRef.current = patternEntries;
+  }, [patternEntries]);
+
+  useEffect(() => {
+    localOverrideSlotsRef.current = localOverrideSlots;
+  }, [localOverrideSlots]);
+
+  // Initialize pattern entries from server rules ONLY on first load or timezone change
+  // Skip if user is actively editing (to prevent overwriting their changes)
+  useEffect(() => {
+    // Skip if user is editing
+    if (isUserEditingRef.current) {
+      return;
+    }
+
+    // Skip if no rules (not loaded yet)
+    if (effectiveRules.length === 0 && !patternsInitializedRef.current) {
+      return;
+    }
+
+    // Check if timezone changed
+    const timezoneChanged = lastTimezoneRef.current !== timezone;
+
+    // Only initialize if first time OR timezone changed
+    if (!patternsInitializedRef.current || timezoneChanged) {
+      const extracted = extractPatternEntries(effectiveRules, timezone);
+      setPatternEntries(extracted);
+      patternEntriesRef.current = extracted;
+
+      // Also extract override slots (specific date rules) for local tracking
+      const overrideRules = effectiveRules.filter(
+        r => r.ruleType === "available_override" || r.ruleType === "blocked_override"
+      );
+      const overrideSlots: TimeSlot[] = overrideRules
+        .filter(r => r.specificDate && r.ruleType === "available_override")
+        .map(r => ({
+          date: r.specificDate!,
+          startTime: r.startTime,
+          endTime: r.endTime,
+        }));
+      setLocalOverrideSlots(overrideSlots);
+      localOverrideSlotsRef.current = overrideSlots;
+
+      patternsInitializedRef.current = true;
+      lastTimezoneRef.current = timezone;
+    }
   }, [effectiveRules, timezone]);
 
   // Handle grid save - optimistic, skip refetch to avoid flashing
   const handleGridSave = useCallback(
     async (slots: TimeSlot[]) => {
       setSaveStatus("saving");
+
+      // Store grid slots locally so they're available when patterns are saved
+      // These slots are in UTC (the grid converts before calling onSave)
+      setLocalOverrideSlots(slots);
 
       // Keep existing pattern rules
       const patternRules = patternEntriesToRules(patternEntries, participantId, timezone);
@@ -387,100 +438,39 @@ export function AvailabilityEditor({
     [patternEntries, participantId, timezone, replaceRules, onSaveComplete]
   );
 
-  // Pattern editor handlers
-  const addPatternEntry = useCallback((days: number[], isAvailable: boolean = true) => {
-    const newEntry: PatternEntry = {
-      id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      days,
-      startTime: "17:00",
-      endTime: "21:00",
-      isAvailable,
-    };
-    setPatternEntries((prev) => [...prev, newEntry]);
-    setHasPatternChanges(true);
-    setShowAddMenu(false);
-  }, []);
+  // Debounced save for pattern changes - must be defined before handlers that use it
+  const patternSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const removePatternEntry = useCallback((id: string) => {
-    setPatternEntries((prev) => prev.filter((e) => e.id !== id));
-    setHasPatternChanges(true);
-  }, []);
-
-  const togglePatternDay = useCallback((entryId: string, dayValue: number) => {
-    setPatternEntries((prev) =>
-      prev.map((e) => {
-        if (e.id !== entryId) return e;
-        const hasDay = e.days.includes(dayValue);
-        let newDays: number[];
-        if (hasDay) {
-          newDays = e.days.filter((d) => d !== dayValue);
-          if (newDays.length === 0) return e;
-        } else {
-          newDays = [...e.days, dayValue].sort((a, b) => a - b);
-        }
-        return { ...e, days: newDays };
-      })
-    );
-    setHasPatternChanges(true);
-  }, []);
-
-  const updatePatternEntry = useCallback(
-    (id: string, field: "startTime" | "endTime", value: string) => {
-      setPatternEntries((prev) =>
-        prev.map((e) => (e.id === id ? { ...e, [field]: value } : e))
-      );
-      setHasPatternChanges(true);
-    },
-    []
-  );
-
-  const togglePatternAvailability = useCallback((id: string) => {
-    setPatternEntries((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, isAvailable: !e.isAvailable } : e))
-    );
-    setHasPatternChanges(true);
+  // Mark that user is editing (prevents useEffect from overwriting state)
+  const markUserEditing = useCallback(() => {
+    isUserEditingRef.current = true;
+    // Clear any existing timeout
+    if (userEditTimeoutRef.current) {
+      clearTimeout(userEditTimeoutRef.current);
+    }
+    // Keep editing flag for 3 seconds after last edit (covers debounce + network)
+    userEditTimeoutRef.current = setTimeout(() => {
+      isUserEditingRef.current = false;
+    }, 3000);
   }, []);
 
   const savePatterns = useCallback(async () => {
     setIsSaving(true);
     setSaveStatus("saving");
     try {
-      // Keep existing override rules
-      const overrideRules = effectiveRules
-        .filter((r) => r.ruleType === "available_override" || r.ruleType === "blocked_override")
-        .map((r) => ({
-          participantId: r.participantId,
-          ruleType: r.ruleType,
-          dayOfWeek: r.dayOfWeek,
-          specificDate: r.specificDate,
-          startTime: r.startTime,
-          endTime: r.endTime,
-          originalTimezone: r.originalTimezone,
-          originalDayOfWeek: r.originalDayOfWeek,
-          source: r.source,
-        }));
+      // Use refs to get latest state (avoids stale closure issues)
+      const currentPatterns = patternEntriesRef.current;
+      const currentOverrideSlots = localOverrideSlotsRef.current;
 
       // Convert pattern entries to rules (will convert to UTC)
-      const patternRules = patternEntriesToRules(patternEntries, participantId, timezone);
+      const patternRules = patternEntriesToRules(currentPatterns, participantId, timezone);
 
-      // DEBUG: Log what we're saving
-      console.log("[AvailabilityEditor] savePatterns:", {
-        patternEntries,
-        patternRulesCount: patternRules.length,
-        patternRulesSample: patternRules.slice(0, 5).map(r => ({
-          ruleType: r.ruleType,
-          dayOfWeek: r.dayOfWeek,
-          originalDayOfWeek: r.originalDayOfWeek,
-          startTime: r.startTime,
-          endTime: r.endTime,
-        })),
-        overrideRulesCount: overrideRules.length,
-        timezone,
-      });
+      // Use locally tracked override slots (from grid saves) instead of effectiveRules
+      const overrideRules = timeSlotsToRules(currentOverrideSlots, participantId, timezone);
 
-      const success = await replaceRules([...patternRules, ...overrideRules]);
+      // Skip refetch to avoid overwriting local state
+      const success = await replaceRules([...patternRules, ...overrideRules], true);
       if (success) {
-        setHasPatternChanges(false);
         setSaveStatus("saved");
         onSaveComplete?.();
         setTimeout(() => setSaveStatus("idle"), 1500);
@@ -492,7 +482,113 @@ export function AvailabilityEditor({
     } finally {
       setIsSaving(false);
     }
-  }, [effectiveRules, patternEntries, participantId, timezone, replaceRules, onSaveComplete]);
+  }, [participantId, timezone, replaceRules, onSaveComplete]);
+
+  const debouncedSavePatterns = useCallback(() => {
+    if (patternSaveTimeoutRef.current) {
+      clearTimeout(patternSaveTimeoutRef.current);
+    }
+    patternSaveTimeoutRef.current = setTimeout(() => {
+      savePatterns();
+    }, 500);
+  }, [savePatterns]);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (patternSaveTimeoutRef.current) {
+        clearTimeout(patternSaveTimeoutRef.current);
+      }
+      if (userEditTimeoutRef.current) {
+        clearTimeout(userEditTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Pattern editor handlers - all call markUserEditing to prevent useEffect overwrite
+  const addPatternEntry = useCallback((days: number[], isAvailable: boolean = true) => {
+    markUserEditing();
+    const newEntry: PatternEntry = {
+      id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      days,
+      startTime: "17:00",
+      endTime: "21:00",
+      isAvailable,
+    };
+    setPatternEntries((prev) => {
+      const updated = [...prev, newEntry];
+      patternEntriesRef.current = updated;
+      return updated;
+    });
+    debouncedSavePatterns();
+    setShowAddMenu(false);
+  }, [markUserEditing, debouncedSavePatterns]);
+
+  const removePatternEntry = useCallback((id: string) => {
+    markUserEditing();
+    setPatternEntries((prev) => {
+      const updated = prev.filter((e) => e.id !== id);
+      patternEntriesRef.current = updated;
+      return updated;
+    });
+    debouncedSavePatterns();
+  }, [markUserEditing, debouncedSavePatterns]);
+
+  const togglePatternDay = useCallback((entryId: string, dayValue: number) => {
+    markUserEditing();
+    setPatternEntries((prev) => {
+      const updated = prev.map((e) => {
+        if (e.id !== entryId) return e;
+        const hasDay = e.days.includes(dayValue);
+        let newDays: number[];
+        if (hasDay) {
+          newDays = e.days.filter((d) => d !== dayValue);
+          if (newDays.length === 0) return e;
+        } else {
+          newDays = [...e.days, dayValue].sort((a, b) => a - b);
+        }
+        return { ...e, days: newDays };
+      });
+      patternEntriesRef.current = updated;
+      return updated;
+    });
+    debouncedSavePatterns();
+  }, [markUserEditing, debouncedSavePatterns]);
+
+  const updatePatternEntry = useCallback(
+    (id: string, field: "startTime" | "endTime", value: string) => {
+      markUserEditing();
+      setPatternEntries((prev) => {
+        const updated = prev.map((e) => (e.id === id ? { ...e, [field]: value } : e));
+        patternEntriesRef.current = updated;
+        return updated;
+      });
+      debouncedSavePatterns();
+    },
+    [markUserEditing, debouncedSavePatterns]
+  );
+
+  const togglePatternAvailability = useCallback((id: string) => {
+    markUserEditing();
+    setPatternEntries((prev) => {
+      const updated = prev.map((e) => (e.id === id ? { ...e, isAvailable: !e.isAvailable } : e));
+      patternEntriesRef.current = updated;
+      return updated;
+    });
+    debouncedSavePatterns();
+  }, [markUserEditing, debouncedSavePatterns]);
+
+  // Force re-extraction of patterns from server rules (used after AI adds rules)
+  const forceReExtract = useCallback(() => {
+    // Clear user editing flag so useEffect doesn't skip extraction
+    isUserEditingRef.current = false;
+    if (userEditTimeoutRef.current) {
+      clearTimeout(userEditTimeoutRef.current);
+      userEditTimeoutRef.current = null;
+    }
+    // Force re-initialization
+    patternsInitializedRef.current = false;
+  }, []);
 
   // Handle AI input
   const handleAIParse = useCallback(async () => {
@@ -523,6 +619,8 @@ export function AvailabilityEditor({
       const result = await response.json();
 
       if (result.rules && result.rules.length > 0) {
+        // Force re-extraction after AI adds rules so patterns update in UI
+        forceReExtract();
         const success = await addRules(result.rules);
         if (success) {
           setAiInput("");
@@ -535,7 +633,7 @@ export function AvailabilityEditor({
     } finally {
       setIsParsingAI(false);
     }
-  }, [aiInput, timezone, participantId, addRules]);
+  }, [aiInput, timezone, participantId, addRules, forceReExtract]);
 
   return (
     <div className="space-y-6">
@@ -566,15 +664,6 @@ export function AvailabilityEditor({
             </span>
           )}
         </div>
-      </div>
-
-      {/* Timezone selector - robust autocomplete */}
-      <div className="max-w-md">
-        <TimezoneAutocomplete
-          value={timezone}
-          onChange={setTimezone}
-          label="Your Timezone"
-        />
       </div>
 
       {/* AI Input */}
@@ -630,17 +719,14 @@ export function AvailabilityEditor({
               <div>
                 <h3 className="font-medium text-gray-900 dark:text-gray-100">Recurring Schedule</h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Set your typical weekly availability (displayed in your timezone)
+                  Set your typical weekly availability (changes save automatically)
                 </p>
               </div>
-              {hasPatternChanges && (
-                <button
-                  onClick={savePatterns}
-                  disabled={isSaving}
-                  className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {isSaving ? "Saving..." : "Save Schedule"}
-                </button>
+              {saveStatus === "saving" && (
+                <span className="text-xs text-gray-500">Saving...</span>
+              )}
+              {saveStatus === "saved" && (
+                <span className="text-xs text-green-600 dark:text-green-400">Saved</span>
               )}
             </div>
 

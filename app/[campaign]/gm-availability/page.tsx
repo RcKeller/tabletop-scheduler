@@ -5,9 +5,9 @@ interface Props {
 }
 
 /**
- * Legacy GM availability page - redirects to unified availability page
+ * Legacy GM availability page - redirects to new GM page
  */
 export default async function Page({ params }: Props) {
   const { campaign: slug } = await params;
-  redirect(`/${slug}/availability?role=gm`);
+  redirect(`/${slug}/gm`);
 }

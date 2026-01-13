@@ -8,6 +8,7 @@ interface TimezoneAutocompleteProps {
   onChange: (timezone: string) => void;
   className?: string;
   label?: string;
+  compact?: boolean; // Smaller size for navbar
 }
 
 // Get ALL IANA timezones - this is critical for inclusivity
@@ -290,11 +291,27 @@ function getSortedTimezones(): string[] {
   return sortedTimezones;
 }
 
+// Compact display format (just abbreviation and offset)
+function formatTimezoneCompact(tz: string): string {
+  const offset = getUtcOffset(tz);
+  const abbr = getTimezoneAbbreviation(tz);
+  const sign = offset >= 0 ? "+" : "";
+  const hours = Math.floor(Math.abs(offset));
+  const minutes = Math.round((Math.abs(offset) - hours) * 60);
+  const offsetStr = minutes === 0 ? `${sign}${offset}` : `${sign}${Math.floor(offset)}:${minutes.toString().padStart(2, "0")}`;
+
+  if (abbr && !abbr.includes("GMT")) {
+    return `${abbr} (${offsetStr})`;
+  }
+  return `GMT${offsetStr}`;
+}
+
 export function TimezoneAutocomplete({
   value,
   onChange,
   className = "",
   label,
+  compact = false,
 }: TimezoneAutocompleteProps) {
   const [mounted, setMounted] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -427,13 +444,13 @@ export function TimezoneAutocomplete({
             {label}
           </label>
         )}
-        <div className="h-10 animate-pulse rounded-md bg-zinc-100 dark:bg-zinc-800" />
+        <div className={`${compact ? "h-8" : "h-10"} animate-pulse rounded-md bg-zinc-100 dark:bg-zinc-800`} />
       </div>
     );
   }
 
   const currentOffset = getUtcOffset(value);
-  const displayValue = isOpen ? search : formatTimezoneWithOffset(value);
+  const displayValue = isOpen ? search : (compact ? formatTimezoneCompact(value) : formatTimezoneWithOffset(value));
 
   return (
     <div className={className} ref={containerRef}>
@@ -453,8 +470,10 @@ export function TimezoneAutocomplete({
             setSearch("");
           }}
           onKeyDown={handleKeyDown}
-          placeholder="Search by city or GMT offset..."
-          className="block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+          placeholder={compact ? "Timezone..." : "Search by city or GMT offset..."}
+          className={`block w-full rounded-md border border-zinc-300 bg-white text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 ${
+            compact ? "px-2 py-1 text-xs" : "px-3 py-2 text-sm"
+          }`}
         />
         <button
           type="button"

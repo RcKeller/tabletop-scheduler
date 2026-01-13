@@ -106,6 +106,82 @@ export async function PUT(
   }
 }
 
+/**
+ * PATCH - Update participant display name (for rename functionality)
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const body = await request.json();
+
+    const existing = await prisma.participant.findUnique({
+      where: { id },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: "Participant not found" }, { status: 404 });
+    }
+
+    const updateData: { displayName?: string } = {};
+
+    if (body.displayName !== undefined) {
+      const displayName = body.displayName?.trim();
+      if (!displayName) {
+        return NextResponse.json(
+          { error: "Display name cannot be empty" },
+          { status: 400 }
+        );
+      }
+
+      // Check for duplicate name in same event
+      const duplicate = await prisma.participant.findFirst({
+        where: {
+          eventId: existing.eventId,
+          displayName: displayName,
+          id: { not: id },
+        },
+      });
+
+      if (duplicate) {
+        return NextResponse.json(
+          { error: "A player with this name already exists in this campaign" },
+          { status: 400 }
+        );
+      }
+
+      updateData.displayName = displayName;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({
+        id: existing.id,
+        displayName: existing.displayName,
+        isGm: existing.isGm,
+      });
+    }
+
+    const updated = await prisma.participant.update({
+      where: { id },
+      data: updateData,
+    });
+
+    return NextResponse.json({
+      id: updated.id,
+      displayName: updated.displayName,
+      isGm: updated.isGm,
+    });
+  } catch (error) {
+    console.error("Error updating participant:", error);
+    return NextResponse.json(
+      { error: "Failed to update participant" },
+      { status: 500 }
+    );
+  }
+}
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

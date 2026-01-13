@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { parseISO, format } from "date-fns";
-import { TimezoneAutocomplete } from "@/components/timezone/TimezoneAutocomplete";
 import { JoinEventForm } from "@/components/participant/JoinEventForm";
 import { VirtualizedAvailabilityGrid } from "@/components/availability/VirtualizedAvailabilityGrid";
 import { HoverDetailPanel } from "@/components/heatmap/HoverDetailPanel";
@@ -14,8 +13,9 @@ import { EmptyPartyList } from "@/components/empty-states/EmptyPartyList";
 import { EmptyHeatmap } from "@/components/empty-states/EmptyHeatmap";
 import { CtaBanner } from "@/components/ui/CtaBanner";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
+import { useTimezone } from "@/components/layout/TimezoneProvider";
 import type { MeetingType, CampaignType, Participant, ParticipantWithAvailability } from "@/lib/types";
-import { getBrowserTimezone, convertDateTime } from "@/lib/utils/timezone";
+import { convertDateTime } from "@/lib/utils/timezone";
 
 // Tabs removed - all content now stacked vertically
 
@@ -49,27 +49,9 @@ interface CampaignPageProps {
 export function CampaignPage({ event }: CampaignPageProps) {
   const router = useRouter();
 
-  // Persist timezone globally in localStorage
-  // Default to event.timezone for SSR, then update client-side
-  const [timezone, setTimezoneState] = useState(event.timezone);
+  // Use shared timezone from context (managed by navbar)
+  const { timezone } = useTimezone();
 
-  // Load timezone from localStorage on mount, or default to browser timezone
-  useEffect(() => {
-    const stored = localStorage.getItem("when2play-timezone");
-    if (stored) {
-      setTimezoneState(stored);
-    } else {
-      // If no stored timezone, default to browser's local timezone (not event timezone)
-      const browserTz = getBrowserTimezone();
-      setTimezoneState(browserTz);
-      localStorage.setItem("when2play-timezone", browserTz);
-    }
-  }, []);
-
-  const setTimezone = useCallback((tz: string) => {
-    setTimezoneState(tz);
-    localStorage.setItem("when2play-timezone", tz);
-  }, []);
   const [participantsWithAvailability, setParticipantsWithAvailability] = useState<ParticipantWithAvailability[]>([]);
   const [currentParticipant, setCurrentParticipant] = useState<Participant | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -404,14 +386,10 @@ export function CampaignPage({ event }: CampaignPageProps) {
 
         {/* Group Availability Section - responsive (hide sidebar on mobile) */}
         <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-700">
+          <div className="border-b border-zinc-200 px-3 py-2 dark:border-zinc-700">
             <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
               Group Availability
             </span>
-            <TimezoneAutocomplete
-              value={timezone}
-              onChange={setTimezone}
-            />
           </div>
           <div className="p-3">
             {/* GM Availability Status Callout */}
@@ -694,7 +672,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
           actionLabel={copiedLink ? "Link Copied!" : "Copy Invite Link"}
           onAction={handleCopyLink}
           secondaryActionLabel="Edit Availability"
-          secondaryActionHref={`/${event.slug}/${encodeURIComponent(currentParticipant.displayName.toLowerCase().replace(/\s+/g, "-"))}`}
+          secondaryActionHref={`/${event.slug}/gm`}
           variant="info"
         />
       )}
@@ -704,10 +682,10 @@ export function CampaignPage({ event }: CampaignPageProps) {
         <CtaBanner
           message={`Joined as ${currentParticipant.displayName}${currentParticipant.isGm ? " (GM)" : ""}`}
           actionLabel="Edit Availability"
-          actionHref={`/${event.slug}/${encodeURIComponent(currentParticipant.displayName.toLowerCase().replace(/\s+/g, "-"))}`}
+          actionHref={currentParticipant.isGm ? `/${event.slug}/gm` : `/${event.slug}/${currentParticipant.id}`}
           secondaryActionLabel={!currentParticipant.isGm ? "Edit Character" : undefined}
           secondaryActionHref={!currentParticipant.isGm
-            ? `/${event.slug}/${encodeURIComponent(currentParticipant.displayName.toLowerCase().replace(/\s+/g, "-"))}/character`
+            ? `/${event.slug}/${currentParticipant.id}/character`
             : undefined
           }
           variant="success"
