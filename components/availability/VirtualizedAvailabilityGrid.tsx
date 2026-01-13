@@ -25,6 +25,7 @@ import { utcToLocal, localToUTC, convertDateTime } from "@/lib/utils/timezone";
 /**
  * Convert availability array from UTC to local timezone for display
  * Handles slots that cross midnight when converted (splits them into two slots)
+ * Also handles "24:00" endTime which represents "end of this day" (midnight)
  */
 function convertAvailabilityToLocal(
   availability: TimeSlot[],
@@ -36,7 +37,17 @@ function convertAvailabilityToLocal(
 
   for (const slot of availability) {
     const start = utcToLocal(slot.startTime, slot.date, timezone);
-    const end = utcToLocal(slot.endTime, slot.date, timezone);
+
+    // Handle "24:00" as "end of this day" = "00:00 of next day"
+    let end;
+    if (slot.endTime === "24:00") {
+      const nextDate = new Date(slot.date + "T12:00:00Z");
+      nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+      const nextDateStr = nextDate.toISOString().split("T")[0];
+      end = utcToLocal("00:00", nextDateStr, timezone);
+    } else {
+      end = utcToLocal(slot.endTime, slot.date, timezone);
+    }
 
     if (start.date === end.date) {
       // Same day - simple case
@@ -53,7 +64,7 @@ function convertAvailabilityToLocal(
       result.push({
         date: start.date,
         startTime: start.time,
-        endTime: "23:59",
+        endTime: "24:00",
       });
       // Second part: from midnight to end time on end date
       if (end.time > "00:00") {
@@ -64,6 +75,51 @@ function convertAvailabilityToLocal(
         });
       }
     }
+  }
+
+  // Merge adjacent slots on the same date
+  return mergeAdjacentSlots(result);
+}
+
+/**
+ * Merge adjacent slots on the same date to create continuous ranges
+ */
+function mergeAdjacentSlots(slots: TimeSlot[]): TimeSlot[] {
+  if (slots.length === 0) return [];
+
+  // Group by date
+  const byDate = new Map<string, { startTime: string; endTime: string }[]>();
+  for (const slot of slots) {
+    if (!byDate.has(slot.date)) {
+      byDate.set(slot.date, []);
+    }
+    byDate.get(slot.date)!.push({ startTime: slot.startTime, endTime: slot.endTime });
+  }
+
+  const result: TimeSlot[] = [];
+
+  for (const [date, daySlots] of byDate) {
+    // Sort by start time
+    daySlots.sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+    // Merge adjacent/overlapping slots
+    let current = daySlots[0];
+    for (let i = 1; i < daySlots.length; i++) {
+      const next = daySlots[i];
+      // Check if adjacent or overlapping (endTime >= next.startTime)
+      if (current.endTime >= next.startTime) {
+        // Merge: extend current's end time
+        current = {
+          startTime: current.startTime,
+          endTime: current.endTime > next.endTime ? current.endTime : next.endTime,
+        };
+      } else {
+        // Gap: push current and start new
+        result.push({ date, ...current });
+        current = next;
+      }
+    }
+    result.push({ date, ...current });
   }
 
   return result;

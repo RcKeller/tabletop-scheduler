@@ -12,95 +12,51 @@ After each task, ask: Decision made? >10 tool calls? Feature done?
 *Last updated: 2026-01-13*
 
 ## Active Task
-**COMPLETED**: Availability system UI simplification and fixes
+**COMPLETED**: Fixed recurring availability pattern bug with overnight UTC conversion
 
-## Current Status
-- **Phase**: Complete - unified grid system, pattern editor, AI parsing fixed
-- **Progress**: 100% complete
-- **Blocking Issues**: None
+## Bug Report (FIXED)
+User reported: "If I put 2am-1pm M-F and then 5pm-10pm every day, it shows me as available from 1pm-5pm M-F which is incorrect"
 
-## What Was Completed
+This was caused by overnight slots in UTC being incorrectly split, leaving gaps when converted back to local time.
 
-### New Availability System
-- New `availability_rules` table with 4 rule types
-- UTC-first storage with original timezone preservation
-- Range-based computation algorithm (O(rules × days))
-- 101 unit tests passing
+## Root Cause
+When a pattern like "7am-9am Manila (UTC+8)" is stored, it becomes "23:00-01:00 UTC" (crosses midnight). The previous code split this into:
+- 23:00-23:30 (ending early!)
+- 00:00-01:00 (next day)
 
-### API Updates
-- `/api/availability/[participantId]/rules` - new rules API (GET/PUT/PATCH)
-- `/api/availability/parse` - server-side AI parsing API (fixes ANTHROPIC_API_KEY error)
-- `/api/events/[slug]/heatmap` - updated to use new rules
-- `/api/events/[slug]` - updated to use new rules for GM bounds
+This created a 30-minute gap (23:30-00:00) that showed up as a gap in the user's availability when converted back to local time.
 
-### UI Components (Simplified)
-- `TimezoneContext.tsx` - global timezone state
-- `useDragSelection.ts` - drag selection hook
-- `useAvailabilityRules.ts` - rules data fetching hook
-- `VirtualizedAvailabilityGrid.tsx` - **SINGLE grid component** (AG Grid-based, working drag selection)
-- `AvailabilityEditor.tsx` - unified editor with:
-  - Calendar View tab (using VirtualizedAvailabilityGrid with auto-save)
-  - Recurring Schedule tab (pattern editor with day selection, time dropdowns)
-  - AI natural language input
-  - Timezone selector
-- Unified `/[campaign]/availability` page with `?role=gm` or `?role=player&id=xxx`
+## Fix Applied
 
-### Removed (Simplification)
-- `UnifiedGrid.tsx` - removed broken custom grid (had coordinate calculation bugs)
-- `GeneralAvailabilityEditor.tsx` - pattern editor merged into AvailabilityEditor
+### 1. Use "24:00" to represent "end of day"
+Changed `rulesToTimeSlots()` to use `endTime: "24:00"` instead of `"23:30"` when splitting overnight ranges. "24:00" is a special value meaning "midnight at the END of this day".
 
-### Removed (Old System)
-**Database Tables Dropped:**
-- `availability` (162 rows)
-- `availability_exceptions` (394 rows)
-- `general_availability` (229 rows)
+### 2. Update timezone conversion functions
+Updated both:
+- `VirtualizedAvailabilityGrid.convertAvailabilityToLocal()`
+- Test helper `convertSlotsToLocal()`
 
-**Files Removed:**
-- `app/api/availability/[participantId]/route.ts`
-- `app/api/events/[slug]/availability/route.ts`
-- `app/[campaign]/gm-availability/GmAvailabilityPage.tsx`
-- `app/[campaign]/[player]/[[...method]]/PlayerAvailabilityPage.tsx`
-- `components/availability/AvailabilityAI.tsx`
-- `components/availability/AvailabilitySection.tsx`
-- `components/availability/GeneralAvailabilityEditor.tsx`
-- `components/availability/AvailabilityGrid.tsx`
-- `lib/utils/overlap.ts`
-- `lib/utils/availability-expander.ts`
-- `lib/utils/availability-priority.ts`
-- `lib/utils/gm-availability.ts`
-- `scripts/migrate-availability-rules.ts`
+To handle "24:00" by treating it as "00:00 of the next day" for timezone conversion.
 
-### Legacy Routes (Redirect Only)
-- `/[campaign]/gm-availability` → redirects to `/[campaign]/availability?role=gm`
-- `/[campaign]/[player]/[[...method]]` → redirects to `/[campaign]/availability?role=player&id=xxx`
+### 3. Merge adjacent slots after conversion
+Added `mergeAdjacentSlots()` function to combine slots that are adjacent after timezone conversion (e.g., 07:00-08:00 + 08:00-09:00 → 07:00-09:00).
 
-## Files Still in Use
+## Files Modified This Session
 
-These utility files are still used by remaining components:
-- `lib/utils/timezone.ts` - used by VirtualizedAvailabilityGrid, CampaignPage, etc.
-- `lib/utils/time-slots.ts` - used by VirtualizedAvailabilityGrid, CombinedHeatmap
-- `lib/utils/timezones.ts` - used by parse route
+- `components/availability/AvailabilityEditor.tsx` - Use "24:00" for overnight splits
+- `components/availability/VirtualizedAvailabilityGrid.tsx` - Handle "24:00" and merge adjacent slots
+- `__tests__/integration/pattern-availability.test.ts` - Handle "24:00" and merge adjacent slots
 
-These could be consolidated with `lib/availability/` in a future cleanup.
-
-## Key Architecture
-
-1. **Single table**: `availability_rules` with 4 rule types
-2. **UTC storage**: All times in UTC, original timezone preserved
-3. **Range-based**: Computation happens on ranges, slot expansion at render time
-4. **Priority**: blocked_override > blocked_pattern > available_override > available_pattern
-5. **Unified page**: `/[campaign]/availability` serves both GM and players
+## Test Results
+- **107 tests pass** (including 6 integration tests for pattern availability)
+- Type checks pass (`npx tsc --noEmit`)
 
 ## Verification
+The fix was verified by integration tests showing:
+- Manila timezone: "7am-9am" pattern correctly shows as `07:00-09:00` (merged, not fragmented)
+- LA timezone: "2am-1pm M-F + 5pm-10pm every day" correctly shows both ranges with NO gap in between
 
-```bash
-# All tests pass
-NODE_OPTIONS="--max-old-space-size=8192" npm test -- --runInBand
-# Output: 101 passed
-
-# Type check passes
-npx tsc --noEmit
-
-# Build succeeds
-npm run build
-```
+## Next Steps
+The bug should be fixed. User can test by:
+1. Setting patterns: "2am-1pm M-F" + "5pm-10pm every day"
+2. Verifying the grid shows these time ranges (not the 1pm-5pm gap)

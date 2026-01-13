@@ -55,20 +55,20 @@ export function CampaignPage({ event }: CampaignPageProps) {
 
   // Load timezone from localStorage on mount, or default to browser timezone
   useEffect(() => {
-    const stored = localStorage.getItem("when2play_timezone");
+    const stored = localStorage.getItem("when2play-timezone");
     if (stored) {
       setTimezoneState(stored);
     } else {
       // If no stored timezone, default to browser's local timezone (not event timezone)
       const browserTz = getBrowserTimezone();
       setTimezoneState(browserTz);
-      localStorage.setItem("when2play_timezone", browserTz);
+      localStorage.setItem("when2play-timezone", browserTz);
     }
   }, []);
 
   const setTimezone = useCallback((tz: string) => {
     setTimezoneState(tz);
-    localStorage.setItem("when2play_timezone", tz);
+    localStorage.setItem("when2play-timezone", tz);
   }, []);
   const [participantsWithAvailability, setParticipantsWithAvailability] = useState<ParticipantWithAvailability[]>([]);
   const [currentParticipant, setCurrentParticipant] = useState<Participant | null>(null);

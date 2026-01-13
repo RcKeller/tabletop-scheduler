@@ -73,9 +73,16 @@ export async function GET(
     const debugInfo: Record<string, unknown> = {};
 
     // Date range for computing availability
+    // Expand by ±1 day to handle timezone shifts - a local day might need UTC
+    // data from the day before (eastern TZ) or after (western TZ)
+    const expandedStart = new Date(rangeStart);
+    expandedStart.setDate(expandedStart.getDate() - 1);
+    const expandedEnd = new Date(rangeEnd);
+    expandedEnd.setDate(expandedEnd.getDate() + 1);
+
     const dateRange: DateRange = {
-      startDate: format(rangeStart, "yyyy-MM-dd"),
-      endDate: format(rangeEnd, "yyyy-MM-dd"),
+      startDate: format(expandedStart, "yyyy-MM-dd"),
+      endDate: format(expandedEnd, "yyyy-MM-dd"),
     };
 
     // Build availability data for each participant using new rules system

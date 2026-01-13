@@ -2,17 +2,21 @@
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { VirtualizedAvailabilityGrid } from "./VirtualizedAvailabilityGrid";
-import { useTimezoneWithFallback } from "./TimezoneContext";
+import { TimezoneAutocomplete } from "@/components/timezone/TimezoneAutocomplete";
 import { useAvailabilityRules } from "@/lib/hooks/useAvailabilityRules";
 import {
   computeEffectiveRanges,
   minutesToTime,
   prepareRuleForStorage,
+  convertPatternFromUTC,
+  getBrowserTimezone,
   type AvailabilityRule,
   type CreateAvailabilityRuleInput,
   type DateRange,
 } from "@/lib/availability";
 import type { TimeSlot } from "@/lib/types";
+
+const TIMEZONE_STORAGE_KEY = "when2play-timezone";
 
 interface AvailabilityEditorProps {
   participantId: string;
@@ -65,20 +69,59 @@ interface PatternEntry {
 }
 
 // Convert AvailabilityRule[] to TimeSlot[] for the grid
+// NOTE: Rules are stored in UTC. When displaying in a local timezone, we need
+// to compute a wider UTC range to capture times that appear on different days.
+// For example, "Monday 5pm Pacific" is "Tuesday 1am UTC", so we need to include
+// Tuesday UTC to show Monday evening in Pacific.
 function rulesToTimeSlots(
   rules: AvailabilityRule[],
   dateRange: DateRange
 ): TimeSlot[] {
-  const effectiveRanges = computeEffectiveRanges(rules, dateRange);
+  // Expand the date range by 1 day on each end to handle timezone shifts
+  // A local day might need UTC data from the day before (eastern TZ) or after (western TZ)
+  const expandedStart = new Date(dateRange.startDate + "T12:00:00Z");
+  expandedStart.setUTCDate(expandedStart.getUTCDate() - 1);
+  const expandedEnd = new Date(dateRange.endDate + "T12:00:00Z");
+  expandedEnd.setUTCDate(expandedEnd.getUTCDate() + 1);
+
+  const expandedRange: DateRange = {
+    startDate: expandedStart.toISOString().split("T")[0],
+    endDate: expandedEnd.toISOString().split("T")[0],
+  };
+
+  const effectiveRanges = computeEffectiveRanges(rules, expandedRange);
   const slots: TimeSlot[] = [];
 
   for (const [date, dayAvail] of effectiveRanges) {
     for (const range of dayAvail.availableRanges) {
-      slots.push({
-        date,
-        startTime: minutesToTime(range.startMinutes),
-        endTime: minutesToTime(range.endMinutes),
-      });
+      // Handle overnight ranges (endMinutes >= 1440)
+      if (range.endMinutes >= 1440) {
+        // Split into two slots: one ending at midnight, one starting at midnight next day
+        // First part: startTime to midnight (24:00 represents end of day)
+        slots.push({
+          date,
+          startTime: minutesToTime(range.startMinutes),
+          endTime: "24:00", // Special value meaning "end of this day" (midnight)
+        });
+        // Second part: 00:00 to endTime on next day
+        const nextDate = new Date(date + "T12:00:00Z");
+        nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+        const nextDateStr = nextDate.toISOString().split("T")[0];
+        const wrappedEnd = range.endMinutes - 1440;
+        if (wrappedEnd > 0) {
+          slots.push({
+            date: nextDateStr,
+            startTime: "00:00",
+            endTime: minutesToTime(wrappedEnd),
+          });
+        }
+      } else {
+        slots.push({
+          date,
+          startTime: minutesToTime(range.startMinutes),
+          endTime: minutesToTime(range.endMinutes),
+        });
+      }
     }
   }
 
@@ -120,8 +163,11 @@ function timeSlotsToRules(
   return rules;
 }
 
-// Extract pattern rules from AvailabilityRule[]
-function extractPatternEntries(rules: AvailabilityRule[]): PatternEntry[] {
+// Extract pattern rules from AvailabilityRule[] and convert from UTC to display timezone
+function extractPatternEntries(
+  rules: AvailabilityRule[],
+  displayTimezone: string
+): PatternEntry[] {
   const patternRules = rules.filter(
     (r) => r.ruleType === "available_pattern" || r.ruleType === "blocked_pattern"
   );
@@ -131,21 +177,30 @@ function extractPatternEntries(rules: AvailabilityRule[]): PatternEntry[] {
   for (const rule of patternRules) {
     if (rule.dayOfWeek === null) continue;
 
+    // Convert from UTC to display timezone
+    const converted = convertPatternFromUTC(
+      rule.dayOfWeek,
+      rule.startTime,
+      rule.endTime,
+      displayTimezone
+    );
+
     const isAvailable = rule.ruleType === "available_pattern";
-    const key = `${rule.startTime}-${rule.endTime}-${isAvailable}`;
+    // Group by DISPLAY timezone times, not UTC
+    const key = `${converted.startTime}-${converted.endTime}-${isAvailable}`;
     const existing = groups.get(key);
 
     if (existing) {
-      if (!existing.days.includes(rule.dayOfWeek)) {
-        existing.days.push(rule.dayOfWeek);
+      if (!existing.days.includes(converted.dayOfWeek)) {
+        existing.days.push(converted.dayOfWeek);
         existing.days.sort((a, b) => a - b);
       }
     } else {
       groups.set(key, {
         id: `pattern-${rule.id}`,
-        days: [rule.dayOfWeek],
-        startTime: rule.startTime,
-        endTime: rule.endTime,
+        days: [converted.dayOfWeek],
+        startTime: converted.startTime,
+        endTime: converted.endTime,
         isAvailable,
       });
     }
@@ -199,7 +254,33 @@ export function AvailabilityEditor({
   initialRules,
   onSaveComplete,
 }: AvailabilityEditorProps) {
-  const { timezone, setTimezone, commonTimezones } = useTimezoneWithFallback();
+  // Timezone state - synced with localStorage
+  const [timezone, setTimezoneState] = useState<string>(() => {
+    if (typeof window === "undefined") return event.timezone || "UTC";
+    const stored = localStorage.getItem(TIMEZONE_STORAGE_KEY);
+    return stored || getBrowserTimezone();
+  });
+
+  const setTimezone = useCallback((tz: string) => {
+    setTimezoneState(tz);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(TIMEZONE_STORAGE_KEY, tz);
+    }
+  }, []);
+
+  // Sync timezone from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(TIMEZONE_STORAGE_KEY);
+      if (stored && stored !== timezone) {
+        setTimezoneState(stored);
+      } else if (!stored) {
+        const browserTz = getBrowserTimezone();
+        localStorage.setItem(TIMEZONE_STORAGE_KEY, browserTz);
+        setTimezoneState(browserTz);
+      }
+    }
+  }, []);
 
   const {
     rules,
@@ -207,7 +288,6 @@ export function AvailabilityEditor({
     error,
     replaceRules,
     addRules,
-    setLocalRules,
   } = useAvailabilityRules({
     participantId,
     fetchOnMount: !initialRules,
@@ -228,8 +308,8 @@ export function AvailabilityEditor({
   const [isParsingAI, setIsParsingAI] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
-  // Track if we've initialized patterns
-  const patternsInitialized = useRef(false);
+  // Track last timezone used to reinitialize patterns on timezone change
+  const lastTimezoneRef = useRef(timezone);
 
   // Date range for the grid
   const dateRange: DateRange = useMemo(
@@ -242,16 +322,39 @@ export function AvailabilityEditor({
 
   // Convert rules to TimeSlots for VirtualizedAvailabilityGrid
   const timeSlots = useMemo(() => {
-    return rulesToTimeSlots(effectiveRules, dateRange);
+    const slots = rulesToTimeSlots(effectiveRules, dateRange);
+    // DEBUG: Log computed slots
+    console.log("[AvailabilityEditor] Computed timeSlots from rules:", {
+      rulesCount: effectiveRules.length,
+      ruleTypes: effectiveRules.reduce((acc, r) => {
+        acc[r.ruleType] = (acc[r.ruleType] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>),
+      slotsCount: slots.length,
+      sampleSlots: slots.slice(0, 5),
+      dateRange,
+    });
+    return slots;
   }, [effectiveRules, dateRange]);
 
-  // Initialize pattern entries from rules (only once)
+  // Initialize pattern entries from rules - re-extract when timezone changes
   useEffect(() => {
-    if (!patternsInitialized.current && effectiveRules.length > 0) {
-      setPatternEntries(extractPatternEntries(effectiveRules));
-      patternsInitialized.current = true;
+    if (effectiveRules.length > 0) {
+      const extracted = extractPatternEntries(effectiveRules, timezone);
+      // DEBUG: Log pattern extraction
+      console.log("[AvailabilityEditor] Extracted patterns:", {
+        rulesCount: effectiveRules.length,
+        patternRulesCount: effectiveRules.filter(r =>
+          r.ruleType === "available_pattern" || r.ruleType === "blocked_pattern"
+        ).length,
+        extractedPatterns: extracted,
+        timezone,
+      });
+      setPatternEntries(extracted);
+      setHasPatternChanges(false);
     }
-  }, [effectiveRules]);
+    lastTimezoneRef.current = timezone;
+  }, [effectiveRules, timezone]);
 
   // Handle grid save - optimistic, skip refetch to avoid flashing
   const handleGridSave = useCallback(
@@ -357,8 +460,23 @@ export function AvailabilityEditor({
           source: r.source,
         }));
 
-      // Convert pattern entries to rules
+      // Convert pattern entries to rules (will convert to UTC)
       const patternRules = patternEntriesToRules(patternEntries, participantId, timezone);
+
+      // DEBUG: Log what we're saving
+      console.log("[AvailabilityEditor] savePatterns:", {
+        patternEntries,
+        patternRulesCount: patternRules.length,
+        patternRulesSample: patternRules.slice(0, 5).map(r => ({
+          ruleType: r.ruleType,
+          dayOfWeek: r.dayOfWeek,
+          originalDayOfWeek: r.originalDayOfWeek,
+          startTime: r.startTime,
+          endTime: r.endTime,
+        })),
+        overrideRulesCount: overrideRules.length,
+        timezone,
+      });
 
       const success = await replaceRules([...patternRules, ...overrideRules]);
       if (success) {
@@ -391,7 +509,7 @@ export function AvailabilityEditor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: aiInput,
-          timezone,
+          timezone, // Pass the currently selected timezone to the AI
           participantId,
           currentDate: today,
         }),
@@ -408,8 +526,6 @@ export function AvailabilityEditor({
         const success = await addRules(result.rules);
         if (success) {
           setAiInput("");
-          // Re-initialize patterns from the updated rules
-          patternsInitialized.current = false;
         }
       }
     } catch (err) {
@@ -420,19 +536,6 @@ export function AvailabilityEditor({
       setIsParsingAI(false);
     }
   }, [aiInput, timezone, participantId, addRules]);
-
-  const formatDaysLabel = (days: number[]) => {
-    if (days.length === 5 && [1, 2, 3, 4, 5].every((d) => days.includes(d))) {
-      return "Weekdays";
-    }
-    if (days.length === 2 && days.includes(0) && days.includes(6)) {
-      return "Weekends";
-    }
-    if (days.length === 7) {
-      return "Every day";
-    }
-    return days.map((d) => DAYS[d].short).join(", ");
-  };
 
   return (
     <div className="space-y-6">
@@ -462,23 +565,16 @@ export function AvailabilityEditor({
               {saveStatus === "error" && "Error saving"}
             </span>
           )}
-
-          {/* Timezone selector */}
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-600 dark:text-gray-400">Timezone:</label>
-            <select
-              value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
-              className="text-sm border border-gray-300 dark:border-gray-600 rounded-md px-2 py-1 bg-white dark:bg-gray-800"
-            >
-              {commonTimezones.map((tz) => (
-                <option key={tz.value} value={tz.value}>
-                  {tz.label}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
+      </div>
+
+      {/* Timezone selector - robust autocomplete */}
+      <div className="max-w-md">
+        <TimezoneAutocomplete
+          value={timezone}
+          onChange={setTimezone}
+          label="Your Timezone"
+        />
       </div>
 
       {/* AI Input */}
@@ -533,7 +629,9 @@ export function AvailabilityEditor({
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-medium text-gray-900 dark:text-gray-100">Recurring Schedule</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Set your typical weekly availability</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Set your typical weekly availability (displayed in your timezone)
+                </p>
               </div>
               {hasPatternChanges && (
                 <button

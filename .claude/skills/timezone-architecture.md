@@ -13,7 +13,7 @@ All times displayed to users are converted to their selected timezone.
 
 - Default timezone: Browser's local timezone (detected automatically)
 - User can change timezone via `TimezoneAutocomplete` component
-- Selected timezone persists in `localStorage` as `when2play_timezone`
+- Selected timezone persists in `localStorage` as `when2play-timezone`
 
 ### 3. Conversion Boundaries
 Timezone conversion happens at clear boundaries:

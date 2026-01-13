@@ -1,5 +1,12 @@
 # Base Skill - Universal Patterns
 
+## CRITICAL: No User QA Assistance
+The user will NOT assist with manual testing or QA. All debugging must be done through:
+- Comprehensive automated tests that cover edge cases
+- Detailed logging analyzed independently
+- Thorough code review and static analysis
+Never ask the user to test and report back.
+
 ## Core Principle
 
 Complexity is the enemy. Every line of code is a liability. The goal is software simple enough that any engineer (or AI) can understand the entire system in one session.

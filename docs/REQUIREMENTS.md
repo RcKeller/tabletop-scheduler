@@ -239,7 +239,7 @@ getBrowserTimezone(): string
 
 1. **Default**: Browser's timezone via `Intl.DateTimeFormat().resolvedOptions().timeZone`
 2. **Override**: User can select different timezone via dropdown
-3. **Persistence**: Stored in `localStorage` key `when2play_timezone`
+3. **Persistence**: Stored in `localStorage` key `when2play-timezone`
 4. **Scope**: Per-user, applies globally to all campaigns
 
 ### Debugging Timezone Issues
