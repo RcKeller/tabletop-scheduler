@@ -12,120 +12,95 @@ After each task, ask: Decision made? >10 tool calls? Feature done?
 *Last updated: 2026-01-13*
 
 ## Active Task
-**COMPLETED**: Availability system rip-and-replace refactor
+**COMPLETED**: Availability system UI simplification and fixes
 
 ## Current Status
-- **Phase**: All phases complete
-- **Progress**: Full implementation done, data migrated, build passing
+- **Phase**: Complete - unified grid system, pattern editor, AI parsing fixed
+- **Progress**: 100% complete
 - **Blocking Issues**: None
 
 ## What Was Completed
 
-### Phase 1: Foundation (COMPLETE)
-- Created new availability types in `lib/types/availability.ts`
-  - 4 rule types: `available_pattern`, `available_override`, `blocked_pattern`, `blocked_override`
-  - TimeRange, DayAvailability, DisplaySlot, GridCellState types
-  - API request/response types
-  - Type guards for rule types
+### New Availability System
+- New `availability_rules` table with 4 rule types
+- UTC-first storage with original timezone preservation
+- Range-based computation algorithm (O(rules × days))
+- 101 unit tests passing
 
-- Implemented `lib/availability/range-math.ts`
-  - Time/minutes conversion utilities
-  - Range operations: merge, subtract, add, intersect
-  - Slot expansion: rangesToSlots, slotsToRanges
-  - Window clamping for time bounds
+### API Updates
+- `/api/availability/[participantId]/rules` - new rules API (GET/PUT/PATCH)
+- `/api/availability/parse` - server-side AI parsing API (fixes ANTHROPIC_API_KEY error)
+- `/api/events/[slug]/heatmap` - updated to use new rules
+- `/api/events/[slug]` - updated to use new rules for GM bounds
 
-- Implemented `lib/availability/timezone.ts`
-  - localToUTC / utcToLocal conversions
-  - convertPatternToUTC / convertPatternFromUTC (handles day-of-week shifts)
-  - convertOverrideToUTC / convertOverrideFromUTC
-  - Day of week and date range utilities
+### UI Components (Simplified)
+- `TimezoneContext.tsx` - global timezone state
+- `useDragSelection.ts` - drag selection hook
+- `useAvailabilityRules.ts` - rules data fetching hook
+- `VirtualizedAvailabilityGrid.tsx` - **SINGLE grid component** (AG Grid-based, working drag selection)
+- `AvailabilityEditor.tsx` - unified editor with:
+  - Calendar View tab (using VirtualizedAvailabilityGrid with auto-save)
+  - Recurring Schedule tab (pattern editor with day selection, time dropdowns)
+  - AI natural language input
+  - Timezone selector
+- Unified `/[campaign]/availability` page with `?role=gm` or `?role=player&id=xxx`
 
-- Implemented `lib/availability/compute-effective.ts`
-  - Core algorithm: computeEffectiveForDate, computeEffectiveRanges
-  - Priority: blocked > available, override > pattern
-  - Heatmap computation: computeHeatmap
-  - Session finding: findOverlappingSlots, findSessionSlots
+### Removed (Simplification)
+- `UnifiedGrid.tsx` - removed broken custom grid (had coordinate calculation bugs)
+- `GeneralAvailabilityEditor.tsx` - pattern editor merged into AvailabilityEditor
 
-- Created comprehensive test suite (101 tests passing)
-  - `__tests__/lib/availability/range-math.test.ts` (49 tests)
-  - `__tests__/lib/availability/timezone.test.ts` (31 tests)
-  - `__tests__/lib/availability/compute-effective.test.ts` (21 tests)
+### Removed (Old System)
+**Database Tables Dropped:**
+- `availability` (162 rows)
+- `availability_exceptions` (394 rows)
+- `general_availability` (229 rows)
 
-- Updated Prisma schema with new AvailabilityRule model
+**Files Removed:**
+- `app/api/availability/[participantId]/route.ts`
+- `app/api/events/[slug]/availability/route.ts`
+- `app/[campaign]/gm-availability/GmAvailabilityPage.tsx`
+- `app/[campaign]/[player]/[[...method]]/PlayerAvailabilityPage.tsx`
+- `components/availability/AvailabilityAI.tsx`
+- `components/availability/AvailabilitySection.tsx`
+- `components/availability/GeneralAvailabilityEditor.tsx`
+- `components/availability/AvailabilityGrid.tsx`
+- `lib/utils/overlap.ts`
+- `lib/utils/availability-expander.ts`
+- `lib/utils/availability-priority.ts`
+- `lib/utils/gm-availability.ts`
+- `scripts/migrate-availability-rules.ts`
 
-### Phase 2: API Layer (COMPLETE)
-- Created `/api/availability/[participantId]/rules` endpoint
-  - GET: Fetch all rules for a participant
-  - PUT: Replace all rules (full sync)
-  - PATCH: Incremental add/remove rules
+### Legacy Routes (Redirect Only)
+- `/[campaign]/gm-availability` → redirects to `/[campaign]/availability?role=gm`
+- `/[campaign]/[player]/[[...method]]` → redirects to `/[campaign]/availability?role=player&id=xxx`
 
-- Updated AI parser with `convertToRules()` and `parseAvailabilityWithRules()`
+## Files Still in Use
 
-### Phase 3: UI Components (COMPLETE)
-- Created `components/availability/TimezoneContext.tsx` - Global timezone state
-- Created `lib/hooks/useDragSelection.ts` - Drag selection hook
-- Created `lib/hooks/useAvailabilityRules.ts` - Rules data fetching hook
-- Created `components/availability/UnifiedGrid.tsx` - Main grid component
-- Created `components/availability/AvailabilityEditor.tsx` - Unified editor component
-- Created `app/[campaign]/availability/page.tsx` - Server component
-- Created `app/[campaign]/availability/AvailabilityPageClient.tsx` - Client component
+These utility files are still used by remaining components:
+- `lib/utils/timezone.ts` - used by VirtualizedAvailabilityGrid, CampaignPage, etc.
+- `lib/utils/time-slots.ts` - used by VirtualizedAvailabilityGrid, CombinedHeatmap
+- `lib/utils/timezones.ts` - used by parse route
 
-### Phase 4: Migration & Cleanup (COMPLETE)
-- Created `scripts/migrate-availability-rules.ts` - Data migration script
-- Ran migration: 778 rules created from 44 participants
-  - 213 available patterns
-  - 162 available overrides
-  - 9 blocked patterns
-  - 394 blocked overrides
+These could be consolidated with `lib/availability/` in a future cleanup.
 
-## Files Created/Modified
+## Key Architecture
 
-### New Files
-- `lib/types/availability.ts` - New availability types
-- `lib/availability/range-math.ts` - Range math utilities
-- `lib/availability/timezone.ts` - Timezone conversion utilities
-- `lib/availability/compute-effective.ts` - Core algorithm
-- `lib/availability/index.ts` - Module exports
-- `__tests__/lib/availability/*.test.ts` - Test files (3 files, 101 tests)
-- `app/api/availability/[participantId]/rules/route.ts` - New rules API
-- `components/availability/TimezoneContext.tsx` - Timezone context
-- `lib/hooks/useDragSelection.ts` - Drag selection hook
-- `lib/hooks/useAvailabilityRules.ts` - Rules fetching hook
-- `components/availability/UnifiedGrid.tsx` - Unified grid
-- `components/availability/AvailabilityEditor.tsx` - Unified editor
-- `app/[campaign]/availability/page.tsx` - Unified availability page
-- `app/[campaign]/availability/AvailabilityPageClient.tsx` - Client component
-- `scripts/migrate-availability-rules.ts` - Migration script
+1. **Single table**: `availability_rules` with 4 rule types
+2. **UTC storage**: All times in UTC, original timezone preserved
+3. **Range-based**: Computation happens on ranges, slot expansion at render time
+4. **Priority**: blocked_override > blocked_pattern > available_override > available_pattern
+5. **Unified page**: `/[campaign]/availability` serves both GM and players
 
-### Modified Files
-- `prisma/schema.prisma` - Added AvailabilityRule model and enums
-- `lib/ai/availability-parser.ts` - Added convertToRules, parseAvailabilityWithRules
-
-## Verification Commands
+## Verification
 
 ```bash
-# Run all availability tests
+# All tests pass
 NODE_OPTIONS="--max-old-space-size=8192" npm test -- --runInBand
+# Output: 101 passed
 
-# Type check
+# Type check passes
 npx tsc --noEmit
 
-# Build
+# Build succeeds
 npm run build
 ```
-
-## Key Architecture Decisions
-
-1. **UTC-first storage**: All times stored in UTC, original timezone preserved for display
-2. **Four rule types**: available_pattern, available_override, blocked_pattern, blocked_override
-3. **Range-based computation**: O(rules × days) not O(rules × days × slots)
-4. **Priority system**: blocked_override > blocked_pattern > available_override > available_pattern
-5. **Unified route**: `/[campaign]/availability` with `?role=gm` or `?role=player&id=xxx`
-
-## Remaining Work (Optional Cleanup)
-
-If desired in future sessions:
-1. Remove old files: `AvailabilityGrid.tsx`, `VirtualizedAvailabilityGrid.tsx`, old utilities
-2. Remove old database tables after verifying migration
-3. Update heatmap API to use new algorithm
-4. Add component tests for UnifiedGrid and AvailabilityEditor

@@ -23,8 +23,8 @@ interface UseAvailabilityRulesReturn {
   error: string | null;
   /** Refetch rules from server */
   refetch: () => Promise<void>;
-  /** Replace all rules */
-  replaceRules: (rules: CreateAvailabilityRuleInput[]) => Promise<boolean>;
+  /** Replace all rules (skipRefetch=true to avoid re-rendering) */
+  replaceRules: (rules: CreateAvailabilityRuleInput[], skipRefetch?: boolean) => Promise<boolean>;
   /** Add new rules */
   addRules: (rules: CreateAvailabilityRuleInput[]) => Promise<boolean>;
   /** Remove rules by ID */
@@ -66,10 +66,13 @@ export function useAvailabilityRules({
   }, [participantId]);
 
   const replaceRules = useCallback(
-    async (newRules: CreateAvailabilityRuleInput[]): Promise<boolean> => {
+    async (newRules: CreateAvailabilityRuleInput[], skipRefetch = false): Promise<boolean> => {
       if (!participantId) return false;
 
-      setIsLoading(true);
+      // Don't set isLoading if skipping refetch (to avoid flashing)
+      if (!skipRefetch) {
+        setIsLoading(true);
+      }
       setError(null);
 
       try {
@@ -86,14 +89,18 @@ export function useAvailabilityRules({
           throw new Error("Failed to update availability rules");
         }
 
-        // Refetch to get server-generated IDs
-        await refetch();
+        // Only refetch if not skipping (for pattern saves we need IDs, for grid saves we don't)
+        if (!skipRefetch) {
+          await refetch();
+        }
         return true;
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unknown error");
         return false;
       } finally {
-        setIsLoading(false);
+        if (!skipRefetch) {
+          setIsLoading(false);
+        }
       }
     },
     [participantId, refetch]

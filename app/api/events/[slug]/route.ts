@@ -2,9 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { MeetingType } from "@/lib/generated/prisma";
 import { badRequest, notFound, success, handleApiError } from "@/lib/api/response";
-import { getGmAvailabilityBounds } from "@/lib/utils/gm-availability";
-import { utcToLocal, convertPatternFromUTC } from "@/lib/utils/timezone";
-import type { GeneralAvailability, TimeSlot } from "@/lib/types";
 
 export async function GET(
   request: NextRequest,
@@ -30,45 +27,35 @@ export async function GET(
       latest: null,
     };
 
-    // Fetch GM participant separately with their availability
+    // Fetch GM participant with their availability rules
     const gmParticipant = await prisma.participant.findFirst({
       where: { eventId: event.id, isGm: true },
       include: {
-        availability: true,
-        generalAvailability: true,
+        availabilityRules: true,
       },
     });
 
-    if (gmParticipant) {
-      const gmTz = gmParticipant.timezone || "UTC";
+    if (gmParticipant && gmParticipant.availabilityRules.length > 0) {
+      // Calculate bounds from rules
+      const startTimes: string[] = [];
+      const endTimes: string[] = [];
 
-      // Patterns are stored in UTC - convert to GM's local timezone for bounds calculation
-      const patterns = gmParticipant.generalAvailability.map((ga) => {
-        const converted = convertPatternFromUTC(ga.dayOfWeek, ga.startTime, ga.endTime, gmTz);
-        return {
-          id: ga.id,
-          participantId: ga.participantId,
-          dayOfWeek: converted.dayOfWeek,
-          startTime: converted.startTime,
-          endTime: converted.endTime,
-          isAvailable: ga.isAvailable,
+      for (const rule of gmParticipant.availabilityRules) {
+        // Only consider available rules
+        if (rule.ruleType === "available_pattern" || rule.ruleType === "available_override") {
+          startTimes.push(rule.startTime);
+          endTimes.push(rule.endTime);
+        }
+      }
+
+      if (startTimes.length > 0) {
+        startTimes.sort();
+        endTimes.sort();
+        gmAvailabilityBounds = {
+          earliest: startTimes[0],
+          latest: endTimes[endTimes.length - 1],
         };
-      }) as GeneralAvailability[];
-
-      // Slots are stored in UTC - convert to GM's local timezone for consistency
-      const slots = gmParticipant.availability.map((a) => {
-        const dateStr = a.date.toISOString().split("T")[0];
-        const startLocal = utcToLocal(a.startTime, dateStr, gmTz);
-        const endLocal = utcToLocal(a.endTime, dateStr, gmTz);
-        return {
-          date: startLocal.date,
-          startTime: startLocal.time,
-          endTime: endLocal.time,
-        };
-      }) as TimeSlot[];
-
-      // Both patterns and slots are now in GM's local timezone
-      gmAvailabilityBounds = getGmAvailabilityBounds(patterns, slots);
+      }
     }
 
     return success({
