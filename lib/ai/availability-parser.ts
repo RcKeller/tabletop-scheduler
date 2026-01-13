@@ -1,4 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
+import type { CreateAvailabilityRuleInput } from "@/lib/types/availability";
+import { prepareRuleForStorage } from "@/lib/availability/timezone";
 
 interface ParsedPattern {
   dayOfWeek: number; // 0=Sunday, 1=Monday, etc.
@@ -319,5 +321,158 @@ export function convertLegacyResult(result: { slots: ParsedPattern[]; interpreta
     routineRemovals: [],
     interpretation: result.interpretation,
     mode: "replace",
+  };
+}
+
+/**
+ * Convert ParseResult to new availability rules format
+ *
+ * @param result - The parsed result from the AI
+ * @param userTimezone - User's timezone for storage conversion
+ * @param participantId - The participant ID (required for rule creation)
+ * @returns Array of CreateAvailabilityRuleInput ready for API
+ */
+export function convertToRules(
+  result: ParseResult,
+  userTimezone: string,
+  participantId: string
+): CreateAvailabilityRuleInput[] {
+  const rules: CreateAvailabilityRuleInput[] = [];
+
+  // Convert patterns to available_pattern rules
+  for (const pattern of result.patterns) {
+    const prepared = prepareRuleForStorage(
+      {
+        ruleType: "available_pattern",
+        dayOfWeek: pattern.dayOfWeek,
+        startTime: pattern.startTime,
+        endTime: pattern.endTime,
+      },
+      userTimezone
+    );
+
+    rules.push({
+      participantId,
+      ruleType: "available_pattern",
+      dayOfWeek: prepared.dayOfWeek,
+      specificDate: null,
+      startTime: prepared.startTime,
+      endTime: prepared.endTime,
+      originalTimezone: prepared.originalTimezone,
+      originalDayOfWeek: prepared.originalDayOfWeek,
+      source: "ai",
+    });
+  }
+
+  // Convert additions to available_override rules
+  for (const addition of result.additions) {
+    const prepared = prepareRuleForStorage(
+      {
+        ruleType: "available_override",
+        specificDate: addition.date,
+        startTime: addition.startTime,
+        endTime: addition.endTime,
+      },
+      userTimezone
+    );
+
+    rules.push({
+      participantId,
+      ruleType: "available_override",
+      dayOfWeek: null,
+      specificDate: prepared.specificDate,
+      startTime: prepared.startTime,
+      endTime: prepared.endTime,
+      originalTimezone: prepared.originalTimezone,
+      originalDayOfWeek: null,
+      source: "ai",
+    });
+  }
+
+  // Convert exclusions to blocked_override rules
+  for (const exclusion of result.exclusions) {
+    // Handle whole-day exclusions
+    const startTime = exclusion.startTime || "00:00";
+    const endTime = exclusion.endTime || "23:30";
+
+    const prepared = prepareRuleForStorage(
+      {
+        ruleType: "blocked_override",
+        specificDate: exclusion.date,
+        startTime,
+        endTime,
+      },
+      userTimezone
+    );
+
+    rules.push({
+      participantId,
+      ruleType: "blocked_override",
+      dayOfWeek: null,
+      specificDate: prepared.specificDate,
+      startTime: prepared.startTime,
+      endTime: prepared.endTime,
+      originalTimezone: prepared.originalTimezone,
+      originalDayOfWeek: null,
+      reason: exclusion.reason || null,
+      source: "ai",
+    });
+  }
+
+  // Convert routineRemovals to blocked_pattern rules
+  for (const removal of result.routineRemovals) {
+    // Handle whole-day removals
+    const startTime = removal.startTime || "00:00";
+    const endTime = removal.endTime || "23:30";
+
+    const prepared = prepareRuleForStorage(
+      {
+        ruleType: "blocked_pattern",
+        dayOfWeek: removal.dayOfWeek,
+        startTime,
+        endTime,
+      },
+      userTimezone
+    );
+
+    rules.push({
+      participantId,
+      ruleType: "blocked_pattern",
+      dayOfWeek: prepared.dayOfWeek,
+      specificDate: null,
+      startTime: prepared.startTime,
+      endTime: prepared.endTime,
+      originalTimezone: prepared.originalTimezone,
+      originalDayOfWeek: prepared.originalDayOfWeek,
+      source: "ai",
+    });
+  }
+
+  return rules;
+}
+
+/**
+ * Result type that includes both legacy format and new rules
+ */
+export interface ParseResultWithRules extends ParseResult {
+  rules: CreateAvailabilityRuleInput[];
+}
+
+/**
+ * Parse availability text and return both legacy format and new rules
+ */
+export async function parseAvailabilityWithRules(
+  text: string,
+  timezone: string,
+  participantId: string,
+  currentDate?: string,
+  currentDay?: string
+): Promise<ParseResultWithRules> {
+  const result = await parseAvailabilityText(text, timezone, currentDate, currentDay);
+  const rules = convertToRules(result, timezone, participantId);
+
+  return {
+    ...result,
+    rules,
   };
 }

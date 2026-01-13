@@ -39,7 +39,9 @@
       "Bash(npm test:*)",
       "Bash(NODE_OPTIONS=\"--max-old-space-size=4096\" npx jest:*)",
       "Bash(NODE_OPTIONS=\"--max-old-space-size=8192\" npm test:*)",
-      "Bash(npx prisma:*)"
+      "Bash(npx prisma:*)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=8192\" npx jest:*)",
+      "Bash(npx tsx:*)"
     ]
   }
 }

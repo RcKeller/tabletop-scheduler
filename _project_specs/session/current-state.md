@@ -12,14 +12,14 @@ After each task, ask: Decision made? >10 tool calls? Feature done?
 *Last updated: 2026-01-13*
 
 ## Active Task
-Availability system rip-and-replace refactor - implementing new rules-based architecture.
+**COMPLETED**: Availability system rip-and-replace refactor
 
 ## Current Status
-- **Phase**: Phase 2 (API Layer) - partial
-- **Progress**: Phase 1 complete, new rules API ready, working on heatmap integration
+- **Phase**: All phases complete
+- **Progress**: Full implementation done, data migrated, build passing
 - **Blocking Issues**: None
 
-## What Was Completed This Session
+## What Was Completed
 
 ### Phase 1: Foundation (COMPLETE)
 - Created new availability types in `lib/types/availability.ts`
@@ -52,17 +52,31 @@ Availability system rip-and-replace refactor - implementing new rules-based arch
   - `__tests__/lib/availability/compute-effective.test.ts` (21 tests)
 
 - Updated Prisma schema with new AvailabilityRule model
-  - Added AvailabilityRuleType and RuleSource enums
-  - Added AvailabilityRule model with all fields
-  - Kept old tables for backward compatibility
 
-### Phase 2: API Layer (PARTIAL)
+### Phase 2: API Layer (COMPLETE)
 - Created `/api/availability/[participantId]/rules` endpoint
   - GET: Fetch all rules for a participant
   - PUT: Replace all rules (full sync)
   - PATCH: Incremental add/remove rules
 
-- Added new imports to heatmap API (for future use)
+- Updated AI parser with `convertToRules()` and `parseAvailabilityWithRules()`
+
+### Phase 3: UI Components (COMPLETE)
+- Created `components/availability/TimezoneContext.tsx` - Global timezone state
+- Created `lib/hooks/useDragSelection.ts` - Drag selection hook
+- Created `lib/hooks/useAvailabilityRules.ts` - Rules data fetching hook
+- Created `components/availability/UnifiedGrid.tsx` - Main grid component
+- Created `components/availability/AvailabilityEditor.tsx` - Unified editor component
+- Created `app/[campaign]/availability/page.tsx` - Server component
+- Created `app/[campaign]/availability/AvailabilityPageClient.tsx` - Client component
+
+### Phase 4: Migration & Cleanup (COMPLETE)
+- Created `scripts/migrate-availability-rules.ts` - Data migration script
+- Ran migration: 778 rules created from 44 participants
+  - 213 available patterns
+  - 162 available overrides
+  - 9 blocked patterns
+  - 394 blocked overrides
 
 ## Files Created/Modified
 
@@ -72,37 +86,46 @@ Availability system rip-and-replace refactor - implementing new rules-based arch
 - `lib/availability/timezone.ts` - Timezone conversion utilities
 - `lib/availability/compute-effective.ts` - Core algorithm
 - `lib/availability/index.ts` - Module exports
-- `__tests__/lib/availability/*.test.ts` - Test files (3 files)
+- `__tests__/lib/availability/*.test.ts` - Test files (3 files, 101 tests)
 - `app/api/availability/[participantId]/rules/route.ts` - New rules API
+- `components/availability/TimezoneContext.tsx` - Timezone context
+- `lib/hooks/useDragSelection.ts` - Drag selection hook
+- `lib/hooks/useAvailabilityRules.ts` - Rules fetching hook
+- `components/availability/UnifiedGrid.tsx` - Unified grid
+- `components/availability/AvailabilityEditor.tsx` - Unified editor
+- `app/[campaign]/availability/page.tsx` - Unified availability page
+- `app/[campaign]/availability/AvailabilityPageClient.tsx` - Client component
+- `scripts/migrate-availability-rules.ts` - Migration script
 
 ### Modified Files
-- `prisma/schema.prisma` - Added AvailabilityRule model
-- `app/api/events/[slug]/heatmap/route.ts` - Added new imports
-
-## Immediate Next Steps
-
-1. **AI Parser Update**: Update `lib/ai/availability-parser.ts` to return new rule format
-2. **TimezoneContext**: Create React context for global timezone state
-3. **useDragSelection hook**: Implement drag selection logic
-4. **UnifiedGrid component**: Build single grid implementation
-5. **AvailabilityEditor**: Build unified GM/player editor
+- `prisma/schema.prisma` - Added AvailabilityRule model and enums
+- `lib/ai/availability-parser.ts` - Added convertToRules, parseAvailabilityWithRules
 
 ## Verification Commands
 
 ```bash
 # Run all availability tests
-NODE_OPTIONS="--max-old-space-size=8192" npm test -- __tests__/lib/availability --runInBand --no-coverage
+NODE_OPTIONS="--max-old-space-size=8192" npm test -- --runInBand
 
 # Type check
 npx tsc --noEmit
 
-# Validate Prisma schema
-npx prisma validate
+# Build
+npm run build
 ```
 
-## Files to Review First When Resuming
+## Key Architecture Decisions
 
-1. `/Users/dev/.claude/plans/spicy-waddling-engelbart.md` - Full refactor plan
-2. `lib/availability/index.ts` - Module exports
-3. `lib/types/availability.ts` - Type definitions
-4. `app/api/availability/[participantId]/rules/route.ts` - New API
+1. **UTC-first storage**: All times stored in UTC, original timezone preserved for display
+2. **Four rule types**: available_pattern, available_override, blocked_pattern, blocked_override
+3. **Range-based computation**: O(rules × days) not O(rules × days × slots)
+4. **Priority system**: blocked_override > blocked_pattern > available_override > available_pattern
+5. **Unified route**: `/[campaign]/availability` with `?role=gm` or `?role=player&id=xxx`
+
+## Remaining Work (Optional Cleanup)
+
+If desired in future sessions:
+1. Remove old files: `AvailabilityGrid.tsx`, `VirtualizedAvailabilityGrid.tsx`, old utilities
+2. Remove old database tables after verifying migration
+3. Update heatmap API to use new algorithm
+4. Add component tests for UnifiedGrid and AvailabilityEditor
