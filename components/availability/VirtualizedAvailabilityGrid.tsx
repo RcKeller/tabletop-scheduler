@@ -194,6 +194,9 @@ interface VirtualizedAvailabilityGridProps {
   onHoverSlot?: (date: string, time: string, available: Participant[], unavailable: Participant[]) => void;
   onLeaveSlot?: () => void;
   timezone?: string;  // User's display timezone (defaults to UTC)
+  gmAvailability?: TimeSlot[];  // GM's availability for visual indication (in UTC)
+  disabled?: boolean;  // Disable interactions (view-only mode)
+  compact?: boolean;  // Use smaller cell sizes
 }
 
 // Build availability lookup from TimeSlot array
@@ -308,6 +311,9 @@ export function VirtualizedAvailabilityGrid({
   onHoverSlot,
   onLeaveSlot,
   timezone = "UTC",
+  gmAvailability = [],
+  disabled = false,
+  compact = false,
 }: VirtualizedAvailabilityGridProps) {
   // UTC-first architecture:
   // - Availability data is always in UTC, convert to user's timezone for display
@@ -327,6 +333,16 @@ export function VirtualizedAvailabilityGrid({
       availability: convertAvailabilityToLocal(p.availability, userTimezone),
     }));
   }, [participants, userTimezone]);
+
+  // Convert GM availability from UTC to user's timezone for visual indication
+  const displayGmAvailability = useMemo(() => {
+    return convertAvailabilityToLocal(gmAvailability, userTimezone);
+  }, [gmAvailability, userTimezone]);
+
+  // Build set of GM available slots for quick lookup
+  const gmAvailableSlots = useMemo(() => {
+    return buildAvailabilitySet(displayGmAvailability);
+  }, [displayGmAvailability]);
 
   const gridRef = useRef<AgGridReact>(null);
   const gridApiRef = useRef<GridApi | null>(null);
@@ -577,7 +593,7 @@ export function VirtualizedAvailabilityGrid({
 
   // Mouse down handler
   const handleCellMouseDown = useCallback((event: CellMouseDownEvent) => {
-    if (mode !== "edit") return;
+    if (mode !== "edit" || disabled) return;
     const field = event.colDef.field;
     if (!field || field === "time" || field === "_timeDisplay") return;
 
@@ -591,7 +607,7 @@ export function VirtualizedAvailabilityGrid({
     pendingCellsRef.current = new Set([key]);
 
     refreshGrid();
-  }, [mode, timeSlots, refreshGrid]);
+  }, [mode, timeSlots, refreshGrid, disabled]);
 
   // Mouse over handler
   const handleCellMouseOver = useCallback((event: CellMouseOverEvent) => {
@@ -626,7 +642,7 @@ export function VirtualizedAvailabilityGrid({
     }
 
     // Edit mode drag
-    if (!isDraggingRef.current || mode !== "edit" || !dragStartRef.current) return;
+    if (!isDraggingRef.current || mode !== "edit" || !dragStartRef.current || disabled) return;
 
     const rowIndex = event.data.rowIndex as number;
     const newPending = calculatePendingCells(
@@ -642,7 +658,7 @@ export function VirtualizedAvailabilityGrid({
       pendingCellsRef.current = newPending;
       refreshGrid();
     }
-  }, [mode, calculatePendingCells, heatmapData, participants, onHoverSlot, timeSlots, refreshGrid, isOvernightWindow, displayTimeWindow.latest, dateStrings, allDates, userTimezone]);
+  }, [mode, calculatePendingCells, heatmapData, participants, onHoverSlot, timeSlots, refreshGrid, isOvernightWindow, displayTimeWindow.latest, dateStrings, allDates, userTimezone, disabled]);
 
   // Mouse up handler
   const handleMouseUp = useCallback(() => {
@@ -757,16 +773,32 @@ export function VirtualizedAvailabilityGrid({
     };
   }, [mode, timeSlots]);
 
-  // Heatmap cell style
+  // Heatmap cell style with GM availability indication
   const getHeatmapCellStyle = useCallback((params: CellClassParams) => {
     const field = params.colDef.field;
     if (!field || field === "time" || field === "_timeDisplay") return undefined;
+    const rowIndex = params.data?.rowIndex as number;
+    const time = timeSlots[rowIndex];
     const count = params.value as number;
-    return {
+    const isGmAvailable = time && gmAvailableSlots.has(`${field}-${time}`);
+
+    // Base style
+    const style: Record<string, string> = {
       backgroundColor: getHeatmapBgColor(count, participants.length, isDarkMode),
-      cursor: "pointer",
+      cursor: disabled ? "default" : "pointer",
     };
-  }, [participants.length, isDarkMode]);
+
+    // Add blue border for GM available times
+    if (isGmAvailable) {
+      style.boxShadow = `inset 0 0 0 2px ${isDarkMode ? "#3b82f6" : "#2563eb"}`;
+    }
+
+    return style;
+  }, [participants.length, isDarkMode, timeSlots, gmAvailableSlots, disabled]);
+
+  // Cell sizes - smaller in compact mode
+  const cellWidth = compact ? 32 : 48;
+  const timeColWidth = compact ? 40 : 50;
 
   // Column definitions grouped by week
   const columnDefs = useMemo((): (ColDef | ColGroupDef)[] => {
@@ -774,7 +806,7 @@ export function VirtualizedAvailabilityGrid({
       {
         field: "_timeDisplay",
         headerName: "",
-        width: 50,
+        width: timeColWidth,
         pinned: "left",
         lockPosition: true,
         suppressMovable: true,
@@ -795,14 +827,14 @@ export function VirtualizedAvailabilityGrid({
 
         const colDef: ColDef = {
           field: dateStr,
-          headerName: `${dayName} ${dayNum}`,
-          width: 48,
+          headerName: compact ? dayNum : `${dayName} ${dayNum}`,
+          width: cellWidth,
           suppressMovable: true,
           cellRenderer: () => null,
           headerClass: "date-header",
         };
 
-        if (mode === "edit") {
+        if (mode === "edit" && !disabled) {
           colDef.cellClassRules = cellClassRules;
         } else {
           colDef.cellStyle = getHeatmapCellStyle;
@@ -819,7 +851,7 @@ export function VirtualizedAvailabilityGrid({
     }
 
     return cols;
-  }, [allDates, mode, cellClassRules, getHeatmapCellStyle, userTimezone]);
+  }, [allDates, mode, cellClassRules, getHeatmapCellStyle, userTimezone, compact, cellWidth, timeColWidth, disabled]);
 
   // Default column definition
   const defaultColDef = useMemo((): ColDef => ({
@@ -838,6 +870,10 @@ export function VirtualizedAvailabilityGrid({
     lastAvailabilityRef.current = serializeAvailability(displayAvailability);
   }, [displayAvailability]);
 
+  // Row height - smaller in compact mode
+  const rowHeight = compact ? 18 : 24;
+  const headerHeight = compact ? 24 : 32;
+
   // AG Grid theme
   const gridTheme = useMemo(() => {
     return themeQuartz.withParams({
@@ -848,37 +884,37 @@ export function VirtualizedAvailabilityGrid({
       borderColor: isDarkMode ? "#3f3f46" : "#e4e4e7",
       rowBorder: isDarkMode ? "#27272a" : "#f4f4f5",
       oddRowBackgroundColor: isDarkMode ? "#18181b" : "#ffffff",
-      headerFontSize: 11,
-      fontSize: 11,
-      rowHeight: 24,
-      headerHeight: 32,
+      headerFontSize: compact ? 9 : 11,
+      fontSize: compact ? 9 : 11,
+      rowHeight,
+      headerHeight,
     });
-  }, [isDarkMode]);
+  }, [isDarkMode, compact, rowHeight, headerHeight]);
 
   // Calculate grid height
   const gridHeight = useMemo(() => {
     const rowCount = timeSlots.length;
-    const headerHeight = 64;
-    const rowsHeight = rowCount * 24;
-    return Math.min(headerHeight + rowsHeight + 20, 600);
-  }, [timeSlots.length]);
+    const totalHeaderHeight = compact ? 48 : 64;
+    const rowsHeight = rowCount * rowHeight;
+    return Math.min(totalHeaderHeight + rowsHeight + 20, compact ? 500 : 600);
+  }, [timeSlots.length, compact, rowHeight]);
 
   // CSS for cell states
   const cellStyles = useMemo(() => `
     .virtualized-availability-grid .ag-header-group-cell {
       font-weight: 600 !important;
-      font-size: 11px !important;
+      font-size: ${compact ? "9px" : "11px"} !important;
       justify-content: center !important;
     }
     .virtualized-availability-grid .ag-header-cell {
-      padding: 0 2px !important;
+      padding: 0 ${compact ? "1px" : "2px"} !important;
     }
     .virtualized-availability-grid .ag-header-cell-label {
       justify-content: center !important;
-      font-size: 10px !important;
+      font-size: ${compact ? "8px" : "10px"} !important;
     }
     .virtualized-availability-grid .ag-cell {
-      padding: 1px !important;
+      padding: ${compact ? "0px" : "1px"} !important;
       border-right: 1px solid ${isDarkMode ? "#27272a" : "#f4f4f5"} !important;
       border-bottom: 1px solid ${isDarkMode ? "#27272a" : "#f4f4f5"} !important;
     }
@@ -886,19 +922,19 @@ export function VirtualizedAvailabilityGrid({
       display: flex !important;
       align-items: flex-start !important;
       justify-content: flex-end !important;
-      padding-right: 8px !important;
-      font-size: 10px !important;
+      padding-right: ${compact ? "4px" : "8px"} !important;
+      font-size: ${compact ? "8px" : "10px"} !important;
       font-weight: 500 !important;
       color: ${isDarkMode ? "#a1a1aa" : "#71717a"} !important;
       background-color: ${isDarkMode ? "#18181b" : "#fafafa"} !important;
       border-right: 2px solid ${isDarkMode ? "#3f3f46" : "#e4e4e7"} !important;
-      line-height: 24px !important;
+      line-height: ${rowHeight}px !important;
       position: relative !important;
     }
     .virtualized-availability-grid .time-cell .ag-cell-value {
       position: absolute !important;
       top: 0 !important;
-      right: 8px !important;
+      right: ${compact ? "4px" : "8px"} !important;
       transform: translateY(-50%) !important;
     }
     .virtualized-availability-grid .ag-pinned-left-cols-container .ag-cell {
@@ -908,10 +944,10 @@ export function VirtualizedAvailabilityGrid({
       border-bottom-color: ${isDarkMode ? "#3f3f46" : "#e4e4e7"} !important;
     }
     .virtualized-availability-grid .ag-body-horizontal-scroll {
-      height: 10px !important;
+      height: ${compact ? "6px" : "10px"} !important;
     }
     .virtualized-availability-grid .ag-root-wrapper {
-      border-radius: 8px !important;
+      border-radius: ${compact ? "6px" : "8px"} !important;
       border: 1px solid ${isDarkMode ? "#3f3f46" : "#e4e4e7"} !important;
     }
     .virtualized-availability-grid .week-group-header {
@@ -919,31 +955,31 @@ export function VirtualizedAvailabilityGrid({
       border-bottom: 1px solid ${isDarkMode ? "#3f3f46" : "#e4e4e7"} !important;
     }
     .virtualized-availability-grid .date-header {
-      font-size: 10px !important;
+      font-size: ${compact ? "8px" : "10px"} !important;
     }
     .virtualized-availability-grid .time-header {
       background-color: ${isDarkMode ? "#18181b" : "#fafafa"} !important;
     }
     .virtualized-availability-grid .cell-selected {
       background-color: ${isDarkMode ? "#16a34a" : "#4ade80"} !important;
-      cursor: pointer !important;
+      cursor: ${disabled ? "default" : "pointer"} !important;
     }
     .virtualized-availability-grid .cell-pending-add {
       background-color: ${isDarkMode ? "#22c55e" : "#86efac"} !important;
-      cursor: pointer !important;
+      cursor: ${disabled ? "default" : "pointer"} !important;
     }
     .virtualized-availability-grid .cell-pending-remove {
       background-color: ${isDarkMode ? "#ef4444" : "#fca5a5"} !important;
-      cursor: pointer !important;
+      cursor: ${disabled ? "default" : "pointer"} !important;
     }
     .virtualized-availability-grid .cell-unselected {
       background-color: ${isDarkMode ? "#18181b" : "#ffffff"} !important;
-      cursor: pointer !important;
+      cursor: ${disabled ? "default" : "pointer"} !important;
     }
     .virtualized-availability-grid .cell-unselected:hover {
-      background-color: ${isDarkMode ? "#27272a" : "#f4f4f5"} !important;
+      background-color: ${disabled ? (isDarkMode ? "#18181b" : "#ffffff") : (isDarkMode ? "#27272a" : "#f4f4f5")} !important;
     }
-  `, [isDarkMode]);
+  `, [isDarkMode, compact, rowHeight, disabled]);
 
   return (
     <div className="virtualized-availability-grid">
@@ -972,7 +1008,7 @@ export function VirtualizedAvailabilityGrid({
         />
       </div>
 
-      {mode === "edit" && (
+      {mode === "edit" && !disabled && (
         <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center gap-4 text-xs text-zinc-500 dark:text-zinc-400">
             <div className="flex items-center gap-1.5">
@@ -1000,6 +1036,23 @@ export function VirtualizedAvailabilityGrid({
               {isSaving ? "Saving..." : "Save"}
             </button>
           )}
+        </div>
+      )}
+
+      {mode === "heatmap" && gmAvailability.length > 0 && (
+        <div className="mt-2 flex items-center gap-4 text-xs text-zinc-500 dark:text-zinc-400">
+          <div className="flex items-center gap-1.5">
+            <div className="h-3 w-3 rounded border-2 border-blue-600 bg-green-400 dark:border-blue-500 dark:bg-green-600" />
+            <span>GM available</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="h-3 w-3 rounded bg-green-400 dark:bg-green-600" />
+            <span>Players available</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="h-3 w-3 rounded border border-zinc-200 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800" />
+            <span>No availability</span>
+          </div>
         </div>
       )}
     </div>

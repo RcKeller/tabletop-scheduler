@@ -298,6 +298,13 @@ export function CampaignPage({ event }: CampaignPageProps) {
     return gmWithAvailability && gmWithAvailability.availability.length > 0;
   }, [gmParticipant, participantsWithAvailability]);
 
+  // Extract GM availability slots for visual indication on heatmap
+  const gmAvailabilitySlots = useMemo(() => {
+    if (!gmParticipant) return [];
+    const gmWithAvailability = participantsWithAvailability.find(p => p.id === gmParticipant.id);
+    return gmWithAvailability?.availability || [];
+  }, [gmParticipant, participantsWithAvailability]);
+
   const formatDateRange = () => {
     if (!event.startDate || !event.endDate) return null;
     const start = parseISO(event.startDate);
@@ -483,11 +490,13 @@ export function CampaignPage({ event }: CampaignPageProps) {
                       name: p.name,
                       availability: p.availability,
                     }))}
+                    gmAvailability={gmAvailabilitySlots}
                     onHoverSlot={(date, time, available, unavailable) => {
                       setHoveredSlotInfo({ date, time, available, unavailable });
                     }}
                     onLeaveSlot={() => setHoveredSlotInfo(null)}
                     timezone={timezone}
+                    compact
                   />
                 </div>
                 {/* Hover detail panel - hidden on mobile */}
