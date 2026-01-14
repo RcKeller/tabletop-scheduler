@@ -889,12 +889,14 @@ export function VirtualizedAvailabilityGrid({
     });
   }, [isDarkMode, compact, rowHeight, headerHeight]);
 
-  // Calculate grid height - no constraints, show all rows
+  // Calculate grid height - capped at 60vh for scrollability
   const gridHeight = useMemo(() => {
     const rowCount = timeSlots.length;
     const totalHeaderHeight = compact ? 48 : 64;
     const rowsHeight = rowCount * rowHeight;
-    return totalHeaderHeight + rowsHeight + 4;
+    const naturalHeight = totalHeaderHeight + rowsHeight + 4;
+    // Cap at 60vh - will be applied via CSS
+    return naturalHeight;
   }, [timeSlots.length, compact, rowHeight]);
 
   // CSS for cell states - more compact styling
@@ -988,7 +990,7 @@ export function VirtualizedAvailabilityGrid({
       <style dangerouslySetInnerHTML={{ __html: cellStyles }} />
 
       <div
-        style={{ height: gridHeight, width: "100%" }}
+        style={{ height: gridHeight, maxHeight: "60vh", width: "100%", overflowY: "auto" }}
         onMouseLeave={handleMouseLeave}
       >
         <AgGridReact

@@ -291,19 +291,43 @@ function getSortedTimezones(): string[] {
   return sortedTimezones;
 }
 
-// Compact display format (just abbreviation and offset)
+// Compact display format - show city name with abbreviation
 function formatTimezoneCompact(tz: string): string {
-  const offset = getUtcOffset(tz);
+  // Extract the city/region name (last part of the timezone ID)
+  const parts = tz.split("/");
+  const cityPart = parts[parts.length - 1].replace(/_/g, " ");
   const abbr = getTimezoneAbbreviation(tz);
+
+  // For common cases, return city name with abbreviation
+  if (abbr && !abbr.includes("GMT") && !abbr.startsWith("UTC")) {
+    return `${cityPart} (${abbr})`;
+  }
+
+  // For UTC/GMT cases, include offset
+  const offset = getUtcOffset(tz);
   const sign = offset >= 0 ? "+" : "";
   const hours = Math.floor(Math.abs(offset));
   const minutes = Math.round((Math.abs(offset) - hours) * 60);
   const offsetStr = minutes === 0 ? `${sign}${offset}` : `${sign}${Math.floor(offset)}:${minutes.toString().padStart(2, "0")}`;
+  return `${cityPart} (GMT${offsetStr})`;
+}
 
-  if (abbr && !abbr.includes("GMT")) {
-    return `${abbr} (${offsetStr})`;
+// Readable display for the timezone
+function formatTimezoneReadable(tz: string): string {
+  const parts = tz.split("/");
+  const cityPart = parts[parts.length - 1].replace(/_/g, " ");
+  const region = parts.length > 1 ? parts[0].replace(/_/g, " ") : "";
+  const abbr = getTimezoneAbbreviation(tz);
+  const offset = getUtcOffset(tz);
+  const sign = offset >= 0 ? "+" : "";
+  const hours = Math.floor(Math.abs(offset));
+  const minutes = Math.round((Math.abs(offset) - hours) * 60);
+  const offsetStr = minutes === 0 ? `GMT${sign}${offset}` : `GMT${sign}${Math.floor(offset)}:${minutes.toString().padStart(2, "0")}`;
+
+  if (abbr && !abbr.includes("GMT") && !abbr.startsWith("UTC")) {
+    return `${cityPart}, ${region} · ${abbr} (${offsetStr})`;
   }
-  return `GMT${offsetStr}`;
+  return `${cityPart}, ${region} · ${offsetStr}`;
 }
 
 export function TimezoneAutocomplete({

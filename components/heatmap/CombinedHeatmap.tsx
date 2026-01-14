@@ -169,9 +169,9 @@ export function CombinedHeatmap({
                     {gmAvailability.length > 0 && (
                       <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
                         <div
-                          className="w-4 h-4 rounded bg-green-400"
+                          className="w-4 h-4 rounded bg-zinc-300 dark:bg-zinc-600"
                           style={{
-                            backgroundImage: "repeating-linear-gradient(-45deg, transparent, transparent 2px, rgba(59, 130, 246, 0.4) 2px, rgba(59, 130, 246, 0.4) 4px)",
+                            backgroundImage: "repeating-linear-gradient(-45deg, transparent, transparent 2px, rgba(59, 130, 246, 0.5) 2px, rgba(59, 130, 246, 0.5) 4px)",
                             backgroundSize: "6px 6px"
                           }}
                         />

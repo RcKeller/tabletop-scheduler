@@ -14,11 +14,13 @@ import {
   type CreateAvailabilityRuleInput,
   type DateRange,
 } from "@/lib/availability";
+import { GmCompleteCta, PlayerCompleteCta } from "@/components/ui/FloatingGlassCta";
 import type { TimeSlot } from "@/lib/types";
 
 interface AvailabilityEditorProps {
   participantId: string;
   event: {
+    slug?: string;
     title: string;
     timezone: string;
     startDate: string;
@@ -29,6 +31,7 @@ interface AvailabilityEditorProps {
   isGm?: boolean;
   initialRules?: AvailabilityRule[];
   onSaveComplete?: () => void;
+  hasCharacter?: boolean;
 }
 
 // Day configuration
@@ -128,35 +131,53 @@ function rulesToTimeSlots(
 }
 
 // Convert TimeSlot[] to CreateAvailabilityRuleInput[] (as override rules)
+// If alreadyUTC is true, slots are already in UTC and should not be converted
 function timeSlotsToRules(
   slots: TimeSlot[],
   participantId: string,
-  timezone: string
+  timezone: string,
+  alreadyUTC: boolean = false
 ): CreateAvailabilityRuleInput[] {
   const rules: CreateAvailabilityRuleInput[] = [];
 
   for (const slot of slots) {
-    const prepared = prepareRuleForStorage(
-      {
+    if (alreadyUTC) {
+      // Slots are already in UTC (e.g., from grid save) - use directly
+      rules.push({
+        participantId,
         ruleType: "available_override",
+        dayOfWeek: null,
         specificDate: slot.date,
         startTime: slot.startTime,
         endTime: slot.endTime,
-      },
-      timezone
-    );
+        originalTimezone: timezone,
+        originalDayOfWeek: null,
+        source: "manual",
+      });
+    } else {
+      // Slots are in local timezone - convert to UTC
+      const prepared = prepareRuleForStorage(
+        {
+          ruleType: "available_override",
+          specificDate: slot.date,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+        },
+        timezone
+      );
 
-    rules.push({
-      participantId,
-      ruleType: "available_override",
-      dayOfWeek: null,
-      specificDate: prepared.specificDate,
-      startTime: prepared.startTime,
-      endTime: prepared.endTime,
-      originalTimezone: prepared.originalTimezone,
-      originalDayOfWeek: null,
-      source: "manual",
-    });
+      rules.push({
+        participantId,
+        ruleType: "available_override",
+        dayOfWeek: null,
+        specificDate: prepared.specificDate,
+        startTime: prepared.startTime,
+        endTime: prepared.endTime,
+        originalTimezone: prepared.originalTimezone,
+        originalDayOfWeek: null,
+        source: "manual",
+      });
+    }
   }
 
   return rules;
@@ -252,6 +273,7 @@ export function AvailabilityEditor({
   isGm = false,
   initialRules,
   onSaveComplete,
+  hasCharacter = false,
 }: AvailabilityEditorProps) {
   // Use shared timezone from context (managed by navbar)
   const { timezone } = useTimezone();
@@ -272,6 +294,11 @@ export function AvailabilityEditor({
   // Pattern editor state
   const [patternEntries, setPatternEntries] = useState<PatternEntry[]>([]);
   const [showAddMenu, setShowAddMenu] = useState(false);
+
+  // CTA state
+  const [showSaveCta, setShowSaveCta] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const ctaTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Track current grid slots locally to avoid losing overrides when patterns are saved
   // This is updated when the grid saves, and used when patterns are saved
@@ -432,12 +459,13 @@ export function AvailabilityEditor({
       // Store grid slots locally so they're available when patterns are saved
       // These slots are in UTC (the grid converts before calling onSave)
       setLocalOverrideSlots(slots);
+      localOverrideSlotsRef.current = slots;
 
       // Keep existing pattern rules
       const patternRules = patternEntriesToRules(patternEntries, participantId, timezone);
 
-      // Convert new slots to override rules
-      const overrideRules = timeSlotsToRules(slots, participantId, timezone);
+      // Slots from grid are already in UTC - pass alreadyUTC=true to avoid double-conversion
+      const overrideRules = timeSlotsToRules(slots, participantId, timezone, true);
 
       // Combine all rules
       const allRules = [...patternRules, ...overrideRules];
@@ -471,6 +499,9 @@ export function AvailabilityEditor({
     }, 3000);
   }, []);
 
+  // Show save CTA ref (to call from savePatterns)
+  const showSaveCtaRef = useRef<() => void>(() => {});
+
   const savePatterns = useCallback(async () => {
     try {
       // Use refs to get latest state (avoids stale closure issues)
@@ -480,13 +511,14 @@ export function AvailabilityEditor({
       // Convert pattern entries to rules (will convert to UTC)
       const patternRules = patternEntriesToRules(currentPatterns, participantId, timezone);
 
-      // Use locally tracked override slots (from grid saves) instead of effectiveRules
-      const overrideRules = timeSlotsToRules(currentOverrideSlots, participantId, timezone);
+      // Override slots from grid are already in UTC - pass alreadyUTC=true
+      const overrideRules = timeSlotsToRules(currentOverrideSlots, participantId, timezone, true);
 
       // Skip refetch to avoid overwriting local state
       const success = await replaceRules([...patternRules, ...overrideRules], true);
       if (success) {
         onSaveComplete?.();
+        showSaveCtaRef.current(); // Trigger CTA
       }
     } catch {
       // Silently handle errors - user can retry
@@ -511,8 +543,35 @@ export function AvailabilityEditor({
       if (userEditTimeoutRef.current) {
         clearTimeout(userEditTimeoutRef.current);
       }
+      if (ctaTimeoutRef.current) {
+        clearTimeout(ctaTimeoutRef.current);
+      }
     };
   }, []);
+
+  // Show save CTA briefly after saves
+  const triggerSaveCta = useCallback(() => {
+    setShowSaveCta(true);
+    if (ctaTimeoutRef.current) {
+      clearTimeout(ctaTimeoutRef.current);
+    }
+    ctaTimeoutRef.current = setTimeout(() => {
+      setShowSaveCta(false);
+    }, 8000); // Show for 8 seconds
+  }, []);
+
+  // Keep ref updated
+  showSaveCtaRef.current = triggerSaveCta;
+
+  // Handle copy link for GM
+  const handleCopyLink = useCallback(() => {
+    if (event.slug) {
+      const url = `${window.location.origin}/${event.slug}`;
+      navigator.clipboard.writeText(url);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    }
+  }, [event.slug]);
 
   // Pattern editor handlers - all call markUserEditing to prevent useEffect overwrite
   const addPatternEntry = useCallback((days: number[], isAvailable: boolean = true) => {
@@ -703,7 +762,8 @@ export function AvailabilityEditor({
         const currentPatterns = patternEntriesRef.current;
         const currentOverrides = localOverrideSlotsRef.current;
         const patternRules = patternEntriesToRules(currentPatterns, participantId, timezone);
-        const overrideRules = timeSlotsToRules(currentOverrides, participantId, timezone);
+        // Override slots are in UTC (both from grid and AI) - pass alreadyUTC=true
+        const overrideRules = timeSlotsToRules(currentOverrides, participantId, timezone, true);
         await replaceRules([...patternRules, ...overrideRules], true);
 
         setAiInput("");
@@ -829,113 +889,212 @@ export function AvailabilityEditor({
             </div>
           )}
 
-          {/* Add Schedule Button - Blue outline style */}
-          <div className="flex items-center justify-between max-w-2xl">
+          {/* Add Schedule Button and Clear All */}
+          <div className="flex items-center gap-4">
             <div className="relative">
               <button
                 onClick={() => setShowAddMenu(!showAddMenu)}
-                className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 border-2 border-blue-300 dark:border-blue-700 hover:border-blue-400 dark:hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition-colors"
+                className="group flex items-center gap-2.5 px-4 py-2 text-sm font-medium rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400 hover:border-blue-400 hover:text-blue-600 dark:hover:border-blue-500 dark:hover:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-all"
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
+                <div className="flex h-5 w-5 items-center justify-center rounded-md bg-zinc-100 dark:bg-zinc-800 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-colors">
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                </div>
                 Add Schedule
               </button>
 
               {showAddMenu && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setShowAddMenu(false)} />
-                  <div className="absolute left-0 top-full z-20 mt-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-xl min-w-[220px]">
-                    <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Available</div>
-                    {DAY_PRESETS.map((preset) => (
+                  <div className="fixed sm:absolute inset-x-4 bottom-4 sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full z-20 sm:mt-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl sm:shadow-xl overflow-hidden sm:min-w-[280px] max-h-[70vh] overflow-y-auto">
+                    {/* Available section */}
+                    <div className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-green-600 dark:text-green-400 bg-green-50/50 dark:bg-green-950/20 border-b border-zinc-100 dark:border-zinc-800 sticky top-0">
+                      Available
+                    </div>
+                    <div className="p-2">
+                      {/* Presets */}
+                      {DAY_PRESETS.map((preset) => (
+                        <button
+                          key={preset.value}
+                          onClick={() => addPatternEntry(preset.days, true)}
+                          className="flex w-full items-center justify-between px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-green-50 dark:hover:bg-green-950/30 rounded-lg transition-colors"
+                        >
+                          <span className="font-medium">{preset.label}</span>
+                          <span className="text-xs text-zinc-400">{preset.days.length} days</span>
+                        </button>
+                      ))}
+                      {/* Individual days */}
+                      <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                        <div className="flex flex-wrap gap-1.5">
+                          {DAYS.map((day) => (
+                            <button
+                              key={day.value}
+                              onClick={() => addPatternEntry([day.value], true)}
+                              className="px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-green-100 hover:text-green-700 dark:hover:bg-green-900/30 dark:hover:text-green-400 rounded-lg transition-colors"
+                            >
+                              {day.short}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Blocked section */}
+                    <div className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-red-600 dark:text-red-400 bg-red-50/50 dark:bg-red-950/20 border-y border-zinc-100 dark:border-zinc-800 sticky top-0">
+                      Blocked
+                    </div>
+                    <div className="p-2">
+                      {/* Presets */}
+                      {DAY_PRESETS.map((preset) => (
+                        <button
+                          key={`blocked-${preset.value}`}
+                          onClick={() => addPatternEntry(preset.days, false)}
+                          className="flex w-full items-center justify-between px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors"
+                        >
+                          <span className="font-medium">{preset.label}</span>
+                          <span className="text-xs text-zinc-400">{preset.days.length} days</span>
+                        </button>
+                      ))}
+                      {/* Individual days */}
+                      <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                        <div className="flex flex-wrap gap-1.5">
+                          {DAYS.map((day) => (
+                            <button
+                              key={`blocked-${day.value}`}
+                              onClick={() => addPatternEntry([day.value], false)}
+                              className="px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-red-100 hover:text-red-700 dark:hover:bg-red-900/30 dark:hover:text-red-400 rounded-lg transition-colors"
+                            >
+                              {day.short}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Close button for mobile */}
+                    <div className="sm:hidden p-3 border-t border-zinc-100 dark:border-zinc-800">
                       <button
-                        key={preset.value}
-                        onClick={() => addPatternEntry(preset.days, true)}
-                        className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-green-50 dark:hover:bg-green-950/30"
+                        onClick={() => setShowAddMenu(false)}
+                        className="w-full py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 rounded-lg"
                       >
-                        <span>{preset.label}</span>
-                        <span className="text-xs font-medium text-green-600">available</span>
+                        Cancel
                       </button>
-                    ))}
-                    <div className="my-1 border-t border-gray-100 dark:border-gray-700" />
-                    <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Blocked</div>
-                    {DAY_PRESETS.map((preset) => (
-                      <button
-                        key={`blocked-${preset.value}`}
-                        onClick={() => addPatternEntry(preset.days, false)}
-                        className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-950/30"
-                      >
-                        <span>{preset.label}</span>
-                        <span className="text-xs font-medium text-red-600">blocked</span>
-                      </button>
-                    ))}
+                    </div>
                   </div>
                 </>
               )}
             </div>
 
-            {/* Clear All - subtle link */}
+            {/* Clear All */}
             {(patternEntries.length > 0 || localOverrideSlots.length > 0) && (
               <button
                 onClick={handleClearAll}
-                className="text-xs text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                className="text-xs text-zinc-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
               >
                 Clear all
               </button>
             )}
           </div>
 
-          {/* AI Assistant - Floating box */}
-          <div className="max-w-2xl mt-6 p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <svg className="h-4 w-4 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714a2.25 2.25 0 00.659 1.591L19 14.5M14.25 3.104c.251.023.501.05.75.082M19 14.5l-2.47-2.47a3.75 3.75 0 00-5.06 0L9 14.5m10 0v4.25a2.25 2.25 0 01-2.25 2.25h-9.5A2.25 2.25 0 015 18.75V14.5m0 0l2.47-2.47a3.75 3.75 0 015.06 0L15 14.5" />
+          {/* AI Assistant - Modern card with gradient accent */}
+          <div className="mt-8 relative overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-gradient-to-br from-zinc-50 to-zinc-100/50 dark:from-zinc-900 dark:to-zinc-900/50">
+            {/* Subtle gradient accent */}
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500" />
+
+            <div className="p-5">
+              <div className="flex items-start gap-4">
+                {/* AI Icon */}
+                <div className="flex-shrink-0 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-purple-500/20">
+                  <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
                   </svg>
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">AI Assistant</span>
                 </div>
-                <textarea
-                  value={aiInput}
-                  onChange={(e) => setAiInput(e.target.value)}
-                  placeholder="e.g. 'free weekday evenings 6-10pm, busy Mondays'"
-                  className="w-full border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500 placeholder:text-gray-400 resize-none"
-                  rows={2}
-                  disabled={isParsingAI}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleAIParse();
-                    }
-                  }}
-                />
-                {aiError && <p className="mt-1 text-xs text-red-600">{aiError}</p>}
-              </div>
-              <div className="flex flex-col gap-2 sm:w-40">
-                <button
-                  onClick={handleAIParse}
-                  disabled={isParsingAI || !aiInput.trim()}
-                  className="px-4 py-2 text-sm font-medium bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {isParsingAI ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-3">
+                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">AI Schedule Assistant</h3>
+                    <span className="px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">Beta</span>
+                  </div>
+
+                  <div className="relative">
+                    <textarea
+                      value={aiInput}
+                      onChange={(e) => setAiInput(e.target.value)}
+                      placeholder="Try: &quot;Available weekday evenings 6-10pm except Mondays&quot; or &quot;Free all day Saturday and Sunday&quot;"
+                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:border-purple-400 focus:ring-2 focus:ring-purple-400/20 resize-none transition-all"
+                      rows={2}
+                      disabled={isParsingAI}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleAIParse();
+                        }
+                      }}
+                    />
+
+                    {/* Submit button inside textarea area */}
+                    <div className="absolute right-2 bottom-2">
+                      <button
+                        onClick={handleAIParse}
+                        disabled={isParsingAI || !aiInput.trim()}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-sm hover:from-violet-500 hover:to-purple-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all disabled:hover:from-violet-600 disabled:hover:to-purple-600"
+                      >
+                        {isParsingAI ? (
+                          <>
+                            <svg className="animate-spin h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                            Add
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {aiError && (
+                    <p className="mt-2 text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      Adding...
-                    </span>
-                  ) : (
-                    "Add with AI"
+                      {aiError}
+                    </p>
                   )}
-                </button>
-                <p className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">
-                  Describe your schedule in plain English
-                </p>
+
+                  <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                    Describe your availability in plain English. Press Enter to submit.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Floating Glass CTAs */}
+      {showSaveCta && event.slug && (
+        isGm ? (
+          <GmCompleteCta
+            campaignSlug={event.slug}
+            onCopyLink={handleCopyLink}
+            linkCopied={linkCopied}
+          />
+        ) : (
+          <PlayerCompleteCta
+            campaignSlug={event.slug}
+            participantId={participantId}
+            hasCharacter={hasCharacter}
+          />
+        )
       )}
     </div>
   );
