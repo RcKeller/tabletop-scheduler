@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import type { ReactNode } from "react";
 
 interface GameSystem {
@@ -24,20 +23,25 @@ export function CampaignHeader({
   description,
   children,
 }: CampaignHeaderProps) {
-  const hasImage = !!campaignImageBase64;
+  // Use campaign image first, then game system image, then gradient
+  const coverImage = campaignImageBase64 || gameSystem?.imageBase64 || null;
 
   return (
     <div className="relative overflow-hidden">
       {/* Background */}
-      {hasImage ? (
-        <div className="aspect-[21/9] max-h-[320px] w-full overflow-hidden">
-          <img
-            src={campaignImageBase64}
-            alt={title}
-            className="h-full w-full object-cover object-top"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
-        </div>
+      {coverImage ? (
+        <>
+          {/* Cover image with blur effect */}
+          <div className="absolute inset-0">
+            <img
+              src={coverImage}
+              alt=""
+              className="h-full w-full object-cover object-center scale-110 blur-sm"
+            />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/60 to-black/80" />
+          </div>
+          <div className="relative min-h-[220px] sm:min-h-[260px]" />
+        </>
       ) : (
         <div className="bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800">
           {/* Dot pattern overlay for non-image headers */}
@@ -51,42 +55,45 @@ export function CampaignHeader({
               <rect width="100%" height="100%" fill="url(#hero-pattern-campaign)" />
             </svg>
           </div>
-          <div className="relative min-h-[180px] sm:min-h-[200px]" />
+          <div className="relative min-h-[220px] sm:min-h-[260px]" />
         </div>
       )}
 
       {/* Content Overlay */}
-      <div className="absolute bottom-0 left-0 right-0 px-4 pb-4 pt-8 md:pb-6">
-        <div className="mx-auto max-w-5xl">
-          {/* Title section */}
-          <div className="flex items-end gap-3 mb-4">
+      <div className="absolute inset-0 flex flex-col justify-end px-4 pb-5 pt-8 md:pb-6">
+        <div className="mx-auto w-full max-w-5xl">
+          {/* Title section with icon */}
+          <div className="flex items-end gap-4 mb-4">
+            {/* Game system icon - show if different from cover or no cover */}
             {gameSystem?.imageBase64 && (
-              <img
-                src={gameSystem.imageBase64}
-                alt={gameSystem.name}
-                className="h-14 w-14 rounded-xl border-2 border-white/20 object-cover shadow-lg sm:h-16 sm:w-16"
-              />
+              <div className="shrink-0">
+                <img
+                  src={gameSystem.imageBase64}
+                  alt={gameSystem.name}
+                  className="h-16 w-16 rounded-xl border-2 border-white/30 object-cover shadow-xl sm:h-20 sm:w-20"
+                />
+              </div>
             )}
             <div className="min-w-0 flex-1">
               {gameSystem && (
-                <p className="text-sm font-medium text-white/70 mb-0.5">
+                <p className="text-sm font-medium text-white/80 mb-1">
                   {gameSystem.name}
                 </p>
               )}
-              <h1 className="text-2xl font-bold text-white md:text-3xl truncate">
+              <h1 className="text-2xl font-bold text-white md:text-3xl lg:text-4xl line-clamp-2">
                 {title}
               </h1>
               {description && (
-                <p className="mt-1 text-sm text-white/70 line-clamp-2 max-w-2xl">
+                <p className="mt-2 text-sm text-white/80 line-clamp-2 max-w-2xl">
                   {description}
                 </p>
               )}
             </div>
           </div>
 
-          {/* Info cards slot */}
+          {/* Info cards slot - glass effect cards */}
           {children && (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-3">
               {children}
             </div>
           )}

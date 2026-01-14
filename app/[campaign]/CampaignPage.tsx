@@ -14,6 +14,8 @@ import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import { useTimezone } from "@/components/layout/TimezoneProvider";
 import type { MeetingType, CampaignType, Participant, ParticipantWithAvailability } from "@/lib/types";
 import { convertDateTime } from "@/lib/utils/timezone";
+import { fromZonedTime } from "date-fns-tz";
+import { parse } from "date-fns";
 
 // Tabs removed - all content now stacked vertically
 
@@ -85,11 +87,16 @@ export function CampaignPage({ event }: CampaignPageProps) {
     return event.endDate ? parseISO(event.endDate) : eventStartDate;
   }, [event.endDate, eventStartDate]);
 
-  // Hovered slot info for the hover panel
+  // Hovered slot info for the hover panel - enhanced for session-length awareness
   const [hoveredSlotInfo, setHoveredSlotInfo] = useState<{
     date: string;
     time: string;
-    available: { id: string; name: string }[];
+    sessionEndTime: string;
+    // Players fully available for entire session
+    fullyAvailable: { id: string; name: string }[];
+    // Players partially available (with their available time range)
+    partiallyAvailable: { id: string; name: string; availableFrom: string; availableTo: string; coverageMinutes: number }[];
+    // Players not available at all during the session
     unavailable: { id: string; name: string }[];
   } | null>(null);
 
@@ -451,8 +458,25 @@ export function CampaignPage({ event }: CampaignPageProps) {
                     availability: p.availability,
                   }))}
                   gmAvailability={gmAvailabilitySlots}
-                  onHoverSlot={(date, time, available, unavailable) => {
-                    setHoveredSlotInfo({ date, time, available, unavailable });
+                  onHoverSlot={(date, time) => {
+                    // Calculate session coverage for all participants
+                    // Note: date and time are in user's display timezone, availability is in UTC
+                    const sessionEndTime = addMinutes(time, event.sessionLengthMinutes);
+                    const coverage = calculateSessionCoverage(
+                      time,
+                      date,
+                      event.sessionLengthMinutes,
+                      participantsWithAvailability,
+                      timezone // Pass user's timezone for proper conversion
+                    );
+                    setHoveredSlotInfo({
+                      date,
+                      time,
+                      sessionEndTime,
+                      fullyAvailable: coverage.fullyAvailable,
+                      partiallyAvailable: coverage.partiallyAvailable,
+                      unavailable: coverage.unavailable,
+                    });
                   }}
                   onLeaveSlot={() => setHoveredSlotInfo(null)}
                   timezone={timezone}
@@ -468,29 +492,45 @@ export function CampaignPage({ event }: CampaignPageProps) {
                         Party
                       </span>
                       <span className="text-xs text-zinc-400 dark:text-zinc-500">
-                        {participants.length}
+                        {hoveredSlotInfo
+                          ? `${hoveredSlotInfo.fullyAvailable.length}/${participants.length}`
+                          : participants.length}
                       </span>
                     </div>
-                    {/* Show time range when hovering */}
+                    {/* Show session time range when hovering */}
                     {hoveredSlotInfo && (
                       <div className="mt-1 flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
                         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <span className="font-medium">
-                          {formatTime(hoveredSlotInfo.time)}–{formatTime(addMinutes(hoveredSlotInfo.time, 30))}
-                        </span>
-                        <span className="text-zinc-400 dark:text-zinc-500">
-                          ({hoveredSlotInfo.available.length}/{participants.length})
+                          {formatTime(hoveredSlotInfo.time)}–{formatTime(hoveredSlotInfo.sessionEndTime)}
                         </span>
                       </div>
                     )}
                   </div>
 
-                  <div className="space-y-1.5">
+                  <div className="space-y-1">
                     {participants.map((p) => {
-                      const isAvailable = hoveredSlotInfo?.available.some(a => a.id === p.id);
                       const isHovering = !!hoveredSlotInfo;
+                      const isFullyAvailable = hoveredSlotInfo?.fullyAvailable.some(a => a.id === p.id);
+                      const partialInfo = hoveredSlotInfo?.partiallyAvailable.find(a => a.id === p.id);
+                      const isPartiallyAvailable = !!partialInfo;
+
+                      // Determine subtitle text: character name, "No character yet", or partial availability warning
+                      let subtitleText = p.characterName || (p.isGm ? null : "No character yet");
+                      let subtitleStyle = "text-zinc-400 dark:text-zinc-500 italic";
+
+                      if (isHovering && isPartiallyAvailable && partialInfo) {
+                        // Show partial availability warning instead
+                        const coverageHours = Math.floor(partialInfo.coverageMinutes / 60);
+                        const coverageMins = partialInfo.coverageMinutes % 60;
+                        const coverageStr = coverageHours > 0
+                          ? coverageMins > 0 ? `${coverageHours}h ${coverageMins}m` : `${coverageHours}h`
+                          : `${coverageMins}m`;
+                        subtitleText = `Only ${coverageStr} available`;
+                        subtitleStyle = "text-amber-600 dark:text-amber-400";
+                      }
 
                       return (
                         <button
@@ -498,9 +538,11 @@ export function CampaignPage({ event }: CampaignPageProps) {
                           onClick={() => handleOpenProfile(p)}
                           className={`group flex w-full items-center gap-2 rounded-lg p-1.5 text-left transition-all ${
                             isHovering
-                              ? isAvailable
+                              ? isFullyAvailable
                                 ? "bg-green-50 ring-1 ring-green-200 dark:bg-green-900/20 dark:ring-green-800"
-                                : "opacity-40"
+                                : isPartiallyAvailable
+                                  ? "bg-amber-50 ring-1 ring-amber-200 dark:bg-amber-900/20 dark:ring-amber-800"
+                                  : "opacity-40"
                               : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
                           }`}
                         >
@@ -528,27 +570,38 @@ export function CampaignPage({ event }: CampaignPageProps) {
                                 </svg>
                               </div>
                             )}
-                            {/* Available indicator */}
-                            {isHovering && isAvailable && (
+                            {/* Status indicator */}
+                            {isHovering && isFullyAvailable && (
                               <div className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-green-500 ring-1 ring-white dark:ring-zinc-900" />
+                            )}
+                            {isHovering && isPartiallyAvailable && (
+                              <div className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-amber-500 ring-1 ring-white dark:ring-zinc-900" />
                             )}
                           </div>
 
-                          {/* Name */}
+                          {/* Name and subtitle - consistent height layout */}
                           <div className="min-w-0 flex-1">
-                            <p className={`truncate text-sm font-medium ${
-                              isHovering && isAvailable
+                            <p className={`truncate text-sm font-medium leading-tight ${
+                              isHovering && isFullyAvailable
                                 ? "text-green-700 dark:text-green-300"
-                                : "text-zinc-700 dark:text-zinc-300"
+                                : isHovering && isPartiallyAvailable
+                                  ? "text-amber-700 dark:text-amber-300"
+                                  : "text-zinc-700 dark:text-zinc-300"
                             }`}>
-                              {p.characterName || p.displayName}
+                              {p.displayName}
                             </p>
-                            {p.characterName && (
-                              <p className="truncate text-xs text-zinc-400 dark:text-zinc-500">
-                                {p.displayName}
-                              </p>
-                            )}
+                            {/* Subtitle: always reserve space for consistent height */}
+                            <p className={`truncate text-xs leading-tight h-4 ${subtitleStyle}`}>
+                              {subtitleText || "\u00A0"}
+                            </p>
                           </div>
+
+                          {/* Warning icon for partial availability */}
+                          {isHovering && isPartiallyAvailable && (
+                            <svg className="h-4 w-4 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                          )}
                         </button>
                       );
                     })}
@@ -669,48 +722,46 @@ export function CampaignPage({ event }: CampaignPageProps) {
       {/* Status CTA for registered users - always show edit options */}
       {currentParticipant && !(currentParticipant.isGm && playerCount === 0) && (
         <FloatingGlassCta>
-          <div className="p-4 sm:p-5">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 shadow-lg shadow-green-500/25">
-                  <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-zinc-900 dark:text-white">
-                    Joined as {currentParticipant.displayName}
-                    {currentParticipant.isGm && " (GM)"}
-                  </p>
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400 truncate">You&apos;re part of this campaign</p>
-                </div>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 shadow-lg shadow-green-500/25">
+                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
               </div>
-              <div className="flex items-center gap-2 sm:shrink-0">
-                {/* Only show character edit if there are pre-session instructions */}
-                {!currentParticipant.isGm && event.customPreSessionInstructions && (
-                  <a
-                    href={`/${event.slug}/${currentParticipant.id}/character`}
-                    className="px-4 py-2 rounded-xl text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-white/50 dark:bg-zinc-800/50 border border-zinc-200/50 dark:border-zinc-700/50 hover:bg-white dark:hover:bg-zinc-800 transition-colors"
-                  >
-                    Edit Character
-                  </a>
-                )}
-                <button
-                  onClick={handleCopyLink}
-                  className="px-4 py-2 rounded-xl text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-white/50 dark:bg-zinc-800/50 border border-zinc-200/50 dark:border-zinc-700/50 hover:bg-white dark:hover:bg-zinc-800 transition-colors"
-                >
-                  {copiedLink ? "Copied!" : "Share"}
-                </button>
+              <div className="min-w-0">
+                <p className="font-medium text-zinc-900 dark:text-white text-sm">
+                  Joined as {currentParticipant.displayName}
+                  {currentParticipant.isGm && " (GM)"}
+                </p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">You&apos;re part of this campaign</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Only show character edit if there are pre-session instructions */}
+              {!currentParticipant.isGm && event.customPreSessionInstructions && (
                 <a
-                  href={currentParticipant.isGm ? `/${event.slug}/gm` : `/${event.slug}/${currentParticipant.id}`}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-lg shadow-blue-500/25 transition-all"
+                  href={`/${event.slug}/${currentParticipant.id}/character`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
                 >
-                  Edit Availability
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                  </svg>
+                  Edit Character
                 </a>
-              </div>
+              )}
+              <button
+                onClick={handleCopyLink}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+              >
+                {copiedLink ? "Copied!" : "Share"}
+              </button>
+              <a
+                href={currentParticipant.isGm ? `/${event.slug}/gm` : `/${event.slug}/${currentParticipant.id}`}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-md shadow-blue-500/25 transition-all"
+              >
+                Edit Availability
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </a>
             </div>
           </div>
         </FloatingGlassCta>
@@ -762,4 +813,104 @@ function addMinutes(time: string, minutes: number): string {
   const hour = Math.floor(totalMinutes / 60);
   const minute = totalMinutes % 60;
   return `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`;
+}
+
+function timeToMinutes(time: string): number {
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+// Convert a date+time from one timezone to UTC, returning absolute minutes since epoch
+function dateTimeToAbsoluteMinutes(date: string, time: string, fromTz: string): number {
+  if (fromTz === "UTC") {
+    const d = new Date(`${date}T${time}:00Z`);
+    return d.getTime() / (60 * 1000);
+  }
+  // Parse as a local time in the given timezone and convert to UTC milliseconds
+  const dateTime = parse(`${date} ${time}`, "yyyy-MM-dd HH:mm", new Date());
+  const utcDate = fromZonedTime(dateTime, fromTz);
+  return utcDate.getTime() / (60 * 1000);
+}
+
+// Calculate session coverage for all participants given a session start time and duration
+// sessionStart and sessionDate are in userTimezone, participant availability is in UTC
+function calculateSessionCoverage(
+  sessionStart: string,
+  sessionDate: string,
+  sessionLengthMinutes: number,
+  participants: { id: string; name: string; availability: { date: string; startTime: string; endTime: string }[] }[],
+  userTimezone: string
+): {
+  fullyAvailable: { id: string; name: string }[];
+  partiallyAvailable: { id: string; name: string; availableFrom: string; availableTo: string; coverageMinutes: number }[];
+  unavailable: { id: string; name: string }[];
+} {
+  // Convert session window from user timezone to absolute minutes
+  const sessionStartAbsolute = dateTimeToAbsoluteMinutes(sessionDate, sessionStart, userTimezone);
+  const sessionEndAbsolute = sessionStartAbsolute + sessionLengthMinutes;
+
+  const fullyAvailable: { id: string; name: string }[] = [];
+  const partiallyAvailable: { id: string; name: string; availableFrom: string; availableTo: string; coverageMinutes: number }[] = [];
+  const unavailable: { id: string; name: string }[] = [];
+
+  for (const participant of participants) {
+    // Convert all participant availability slots to absolute minutes (they're stored in UTC)
+    const availSlots = participant.availability
+      .map(slot => {
+        const startAbsolute = dateTimeToAbsoluteMinutes(slot.date, slot.startTime, "UTC");
+        let endAbsolute = dateTimeToAbsoluteMinutes(slot.date, slot.endTime, "UTC");
+        // Handle overnight slots where endTime < startTime
+        if (endAbsolute <= startAbsolute && slot.endTime !== slot.startTime) {
+          endAbsolute += 24 * 60; // Add a day
+        }
+        return { startAbsolute, endAbsolute };
+      })
+      .filter(slot => slot.endAbsolute > slot.startAbsolute);
+
+    if (availSlots.length === 0) {
+      unavailable.push({ id: participant.id, name: participant.name });
+      continue;
+    }
+
+    // Calculate coverage within the session window
+    let coveredMinutes = 0;
+    let earliestCoveredAbsolute = sessionEndAbsolute;
+    let latestCoveredAbsolute = sessionStartAbsolute;
+
+    // Check each 30-minute slot in the session
+    for (let slotStartAbs = sessionStartAbsolute; slotStartAbs < sessionEndAbsolute; slotStartAbs += 30) {
+      const slotEndAbs = slotStartAbs + 30;
+
+      // Check if this slot is covered by any availability
+      const isCovered = availSlots.some(avail =>
+        avail.startAbsolute <= slotStartAbs && avail.endAbsolute >= slotEndAbs
+      );
+
+      if (isCovered) {
+        coveredMinutes += 30;
+        if (slotStartAbs < earliestCoveredAbsolute) earliestCoveredAbsolute = slotStartAbs;
+        if (slotEndAbs > latestCoveredAbsolute) latestCoveredAbsolute = slotEndAbs;
+      }
+    }
+
+    if (coveredMinutes === 0) {
+      unavailable.push({ id: participant.id, name: participant.name });
+    } else if (coveredMinutes >= sessionLengthMinutes) {
+      fullyAvailable.push({ id: participant.id, name: participant.name });
+    } else {
+      // Partially available - calculate their available window relative to session start
+      const offsetFromSessionStart = earliestCoveredAbsolute - sessionStartAbsolute;
+      const coverageDuration = latestCoveredAbsolute - earliestCoveredAbsolute;
+      partiallyAvailable.push({
+        id: participant.id,
+        name: participant.name,
+        // Convert back to display time relative to session start
+        availableFrom: addMinutes(sessionStart, offsetFromSessionStart),
+        availableTo: addMinutes(sessionStart, offsetFromSessionStart + coverageDuration),
+        coverageMinutes: coveredMinutes,
+      });
+    }
+  }
+
+  return { fullyAvailable, partiallyAvailable, unavailable };
 }

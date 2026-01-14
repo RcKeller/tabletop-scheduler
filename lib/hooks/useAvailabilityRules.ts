@@ -38,7 +38,9 @@ export function useAvailabilityRules({
   fetchOnMount = true,
 }: UseAvailabilityRulesOptions): UseAvailabilityRulesReturn {
   const [rules, setRules] = useState<AvailabilityRule[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  // Start as loading if we're going to fetch on mount - prevents race condition
+  // where consumers see isLoading=false before fetch starts
+  const [isLoading, setIsLoading] = useState(fetchOnMount);
   const [error, setError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {

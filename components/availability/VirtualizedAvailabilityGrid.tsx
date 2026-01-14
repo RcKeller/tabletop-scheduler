@@ -21,6 +21,7 @@ import type {
 import type { TimeSlot } from "@/lib/types";
 import { generateTimeSlots, addThirtyMinutes } from "@/lib/utils/time-slots";
 import { utcToLocal, localToUTC, convertDateTime } from "@/lib/utils/timezone";
+import { timeToMinutes, minutesToTime } from "@/lib/availability/range-math";
 
 /**
  * Convert availability array from UTC to local timezone for display

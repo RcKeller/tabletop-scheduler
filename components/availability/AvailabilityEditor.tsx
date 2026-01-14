@@ -717,27 +717,36 @@ export function AvailabilityEditor({
         );
 
         // Convert AI pattern rules to pattern entries and add to local state
+        // IMPORTANT: AI rules are returned in UTC, must convert to user's timezone for display
         if (aiPatternRules.length > 0) {
           markUserEditing();
-          // Group AI patterns by time range and type
+          // Group AI patterns by time range and type (after converting from UTC)
           const newPatterns: PatternEntry[] = [];
           const groups = new Map<string, PatternEntry>();
 
           for (const rule of aiPatternRules) {
+            // Convert from UTC to user's display timezone
+            const converted = convertPatternFromUTC(
+              rule.dayOfWeek,
+              rule.startTime,
+              rule.endTime,
+              timezone
+            );
+
             const isAvailable = rule.ruleType === "available_pattern";
-            const key = `${rule.startTime}-${rule.endTime}-${isAvailable}`;
+            const key = `${converted.startTime}-${converted.endTime}-${isAvailable}`;
             const existing = groups.get(key);
             if (existing) {
-              if (!existing.days.includes(rule.dayOfWeek)) {
-                existing.days.push(rule.dayOfWeek);
+              if (!existing.days.includes(converted.dayOfWeek)) {
+                existing.days.push(converted.dayOfWeek);
                 existing.days.sort((a: number, b: number) => a - b);
               }
             } else {
               groups.set(key, {
                 id: `ai-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                days: [rule.dayOfWeek],
-                startTime: rule.startTime,
-                endTime: rule.endTime,
+                days: [converted.dayOfWeek],
+                startTime: converted.startTime,
+                endTime: converted.endTime,
                 isAvailable,
               });
             }
@@ -997,15 +1006,13 @@ export function AvailabilityEditor({
               )}
             </div>
 
-            {/* Clear All */}
-            {(patternEntries.length > 0 || hasGridSlots) && (
-              <button
-                onClick={handleClearAll}
-                className="text-xs text-zinc-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
-              >
-                Clear all
-              </button>
-            )}
+            {/* Clear All - always visible, right-aligned */}
+            <button
+              onClick={handleClearAll}
+              className="shrink-0 text-xs text-zinc-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+            >
+              Clear all
+            </button>
           </div>
 
           {/* AI Assistant - Modern card with gradient accent */}
@@ -1014,23 +1021,23 @@ export function AvailabilityEditor({
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500" />
 
             <div className="p-5">
-              <div className="flex items-start gap-4">
+              {/* Header row - icon aligned with title */}
+              <div className="flex items-center gap-3 mb-4">
                 {/* AI Icon */}
                 <div className="flex-shrink-0 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-purple-500/20">
                   <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
                   </svg>
                 </div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">AI Schedule Assistant</h3>
+                  <span className="px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">Beta</span>
+                </div>
+              </div>
 
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-3">
-                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">AI Schedule Assistant</h3>
-                    <span className="px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">Beta</span>
-                  </div>
-
-                  <div className="space-y-3">
-                    <textarea
+              {/* Content area */}
+              <div className="space-y-3">
+                <textarea
                       value={aiInput}
                       onChange={(e) => setAiInput(e.target.value)}
                       placeholder="Try: &quot;Available weekday evenings 6-10pm except Mondays&quot; or &quot;Free all day Saturday and Sunday&quot;"
@@ -1069,23 +1076,21 @@ export function AvailabilityEditor({
                           </>
                         )}
                       </button>
-                    </div>
-                  </div>
-
-                  {aiError && (
-                    <p className="mt-2 text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
-                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      {aiError}
-                    </p>
-                  )}
-
-                  <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                    Describe your availability in plain English. Press Enter to submit.
-                  </p>
                 </div>
               </div>
+
+              {aiError && (
+                <p className="mt-3 text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {aiError}
+                </p>
+              )}
+
+              <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+                Describe your availability in plain English. Press Enter to submit.
+              </p>
             </div>
           </div>
         </div>
