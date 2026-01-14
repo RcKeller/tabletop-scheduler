@@ -153,7 +153,7 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
       }
 
       // Continue to GM availability page (step 3)
-      router.push(`/${event.slug}/gm-availability`);
+      router.push(`/${event.slug}/gm`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
@@ -188,7 +188,7 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
             </div>
             <div className="h-px w-6 bg-zinc-300 dark:bg-zinc-700" />
             <Link
-              href={`/${event.slug}/gm-availability`}
+              href={`/${event.slug}/gm`}
               className="flex items-center gap-1 transition-colors hover:opacity-80"
             >
               <div className="flex h-6 w-6 items-center justify-center rounded-full bg-zinc-200 text-xs font-medium text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400">
@@ -449,7 +449,7 @@ export function CampaignSettingsPage({ event }: CampaignSettingsPageProps) {
         {/* Actions */}
         <div className="mt-6 flex items-center justify-between">
           <Link
-            href={`/${event.slug}/gm-availability`}
+            href={`/${event.slug}/gm`}
             className="text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
           >
             Skip this step

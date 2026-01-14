@@ -239,8 +239,9 @@ export function CampaignPage({ event }: CampaignPageProps) {
 
   const handleJoined = (participant: { id: string; displayName: string; isGm: boolean }) => {
     localStorage.setItem(`participant_${event.id}`, participant.id);
-    const playerSlug = encodeURIComponent(participant.displayName.toLowerCase().replace(/\s+/g, "-"));
-    router.push(`/${event.slug}/${playerSlug}`);
+    // Use "gm" for GM participants, otherwise use participant ID
+    const participantPath = participant.isGm ? "gm" : participant.id;
+    router.push(`/${event.slug}/${participantPath}`);
   };
 
   const handleCopyLink = () => {

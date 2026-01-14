@@ -97,9 +97,8 @@ export function PartyList({
     <div className="grid gap-3 sm:grid-cols-2">
       {participants.map((p) => {
         const isCurrentUser = currentUserId === p.id;
-        const playerSlug = encodeURIComponent(
-          p.displayName.toLowerCase().replace(/\s+/g, "-")
-        );
+        // Use "gm" for GM participants, otherwise use participant ID
+        const participantPath = p.isGm ? "gm" : p.id;
 
         const content = (
           <div className="flex items-start gap-3">
@@ -179,7 +178,7 @@ export function PartyList({
           return (
             <Link
               key={p.id}
-              href={`/${eventSlug}/${playerSlug}`}
+              href={`/${eventSlug}/${participantPath}`}
               className="flex items-start gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-left transition-colors hover:border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-zinc-600 dark:hover:bg-zinc-750"
             >
               {content}

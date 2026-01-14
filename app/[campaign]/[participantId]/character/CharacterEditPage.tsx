@@ -147,7 +147,7 @@ export function CharacterEditPage({
                   {otherParticipants.map((p) => (
                     <Link
                       key={p.id}
-                      href={`/${event.slug}/${encodeURIComponent(p.displayName.toLowerCase().replace(/\s+/g, "-"))}/character`}
+                      href={`/${event.slug}/${p.isGm ? "gm" : p.id}/character`}
                       className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800"
                     >
                       {p.characterTokenBase64 ? (

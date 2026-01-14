@@ -20,9 +20,8 @@ export function PlayerDetailModal({
   isCurrentUser,
 }: PlayerDetailModalProps) {
   const router = useRouter();
-  const playerSlug = encodeURIComponent(
-    participant.displayName.toLowerCase().replace(/\s+/g, "-")
-  );
+  // Use "gm" for GM participants, otherwise use participant ID
+  const participantPath = participant.isGm ? "gm" : participant.id;
 
   // Close on escape
   useEffect(() => {
@@ -180,7 +179,7 @@ export function PlayerDetailModal({
             type="button"
             onClick={() => {
               onClose();
-              router.push(`/${eventSlug}/${playerSlug}`);
+              router.push(`/${eventSlug}/${participantPath}`);
             }}
             className="flex flex-1 items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
           >
@@ -204,7 +203,7 @@ export function PlayerDetailModal({
               type="button"
               onClick={() => {
                 onClose();
-                router.push(`/${eventSlug}/${playerSlug}/character`);
+                router.push(`/${eventSlug}/${participantPath}/character`);
               }}
               className="flex flex-1 items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
             >
