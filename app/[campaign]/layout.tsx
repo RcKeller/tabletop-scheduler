@@ -12,7 +12,7 @@ export default async function CampaignLayout({ children, params }: LayoutProps) 
 
   const event = await prisma.event.findUnique({
     where: { slug },
-    select: { id: true, title: true, slug: true },
+    select: { id: true, title: true, slug: true, customPreSessionInstructions: true },
   });
 
   if (!event) {
@@ -24,6 +24,7 @@ export default async function CampaignLayout({ children, params }: LayoutProps) 
       campaignSlug={event.slug}
       campaignTitle={event.title}
       eventId={event.id}
+      hasCharacterSetup={!!event.customPreSessionInstructions}
     >
       {children}
     </CampaignLayoutClient>

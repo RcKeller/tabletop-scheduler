@@ -7,12 +7,13 @@ interface CampaignLayoutClientProps {
   campaignSlug: string;
   campaignTitle: string;
   eventId: string;
+  hasCharacterSetup: boolean;
 }
 
-export function CampaignLayoutClient({ children, campaignSlug, campaignTitle, eventId }: CampaignLayoutClientProps) {
+export function CampaignLayoutClient({ children, campaignSlug, campaignTitle, eventId, hasCharacterSetup }: CampaignLayoutClientProps) {
   return (
     <div className="min-h-screen">
-      <Navbar campaignSlug={campaignSlug} campaignTitle={campaignTitle} eventId={eventId} />
+      <Navbar campaignSlug={campaignSlug} campaignTitle={campaignTitle} eventId={eventId} hasCharacterSetup={hasCharacterSetup} />
       {children}
     </div>
   );

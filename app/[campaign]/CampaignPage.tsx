@@ -5,13 +5,11 @@ import { useRouter } from "next/navigation";
 import { parseISO, format } from "date-fns";
 import { JoinEventForm } from "@/components/participant/JoinEventForm";
 import { VirtualizedAvailabilityGrid } from "@/components/availability/VirtualizedAvailabilityGrid";
-import { HoverDetailPanel } from "@/components/heatmap/HoverDetailPanel";
 import { PlayerDetailModal } from "@/components/participant/PlayerDetailModal";
 import { CampaignHeader, HeroInfoCard } from "@/components/campaign/CampaignHeader";
 import { Footer } from "@/components/layout/Footer";
-import { EmptyPartyList } from "@/components/empty-states/EmptyPartyList";
 import { EmptyHeatmap } from "@/components/empty-states/EmptyHeatmap";
-import { FloatingGlassCta, JoinCta, InviteCta, StatusCta } from "@/components/ui/FloatingGlassCta";
+import { FloatingGlassCta, InviteCta } from "@/components/ui/FloatingGlassCta";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import { useTimezone } from "@/components/layout/TimezoneProvider";
 import type { MeetingType, CampaignType, Participant, ParticipantWithAvailability } from "@/lib/types";
@@ -95,13 +93,15 @@ export function CampaignPage({ event }: CampaignPageProps) {
     unavailable: { id: string; name: string }[];
   } | null>(null);
 
-  // Check for stored participant ID
+  // Check for stored participant ID and sync isGm status
   useEffect(() => {
     const storedId = localStorage.getItem(`participant_${event.id}`);
     if (storedId) {
       const found = participants.find((p) => p.id === storedId);
       if (found) {
         setCurrentParticipant(found);
+        // Sync isGm status to localStorage (for navbar to read)
+        localStorage.setItem(`participant_${event.id}_isGm`, found.isGm ? "true" : "false");
       }
     }
   }, [event.id, participants]);
@@ -325,7 +325,10 @@ export function CampaignPage({ event }: CampaignPageProps) {
         <HeroInfoCard
           icon={<svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
           label="Party"
-          value={`${participants.length} member${participants.length !== 1 ? 's' : ''}`}
+          value={event.minPlayers || event.maxPlayers
+            ? `${event.minPlayers || 1}–${event.maxPlayers || "∞"} players`
+            : `${participants.length} member${participants.length !== 1 ? 's' : ''}`
+          }
         />
         {meetingInfo && (
           <HeroInfoCard
@@ -334,11 +337,6 @@ export function CampaignPage({ event }: CampaignPageProps) {
             value={meetingInfo.type}
           />
         )}
-        <HeroInfoCard
-          icon={<svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
-          label="Time"
-          value={`${formatTime(effectiveTimeBounds?.earliestTime || event.earliestTime)}–${formatTime(effectiveTimeBounds?.latestTime || event.latestTime)}`}
-        />
       </CampaignHeader>
 
       {/* Main Content - Centered single column, all sections stacked */}
@@ -390,284 +388,235 @@ export function CampaignPage({ event }: CampaignPageProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
               </div>
-              <h2 className="font-semibold text-zinc-900 dark:text-zinc-100">
-                Group Availability
-              </h2>
-            </div>
-            <span className="text-xs text-zinc-500 dark:text-zinc-400">
-              {formatTime(effectiveTimeBounds?.earliestTime || event.earliestTime)} - {formatTime(effectiveTimeBounds?.latestTime || event.latestTime)}
-            </span>
-          </div>
-          <div className="p-4">
-            {/* GM availability info and view toggle */}
-            {!isLoading && gmHasAvailability && (
-              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <span className="text-sm text-zinc-600 dark:text-zinc-400">
-                  <span className="font-medium text-zinc-700 dark:text-zinc-300">{gmParticipant?.displayName}</span> (GM) is available
-                  {gmAvailability && gmAvailability.earliestTime && gmAvailability.latestTime && (() => {
-                    const refDate = format(eventStartDate, "yyyy-MM-dd");
-                    const localEarliest = gmAvailability.timezone !== timezone
-                      ? convertDateTime(gmAvailability.earliestTime, refDate, gmAvailability.timezone, timezone).time
-                      : gmAvailability.earliestTime;
-                    const localLatest = gmAvailability.timezone !== timezone
-                      ? convertDateTime(gmAvailability.latestTime, refDate, gmAvailability.timezone, timezone).time
-                      : gmAvailability.latestTime;
-                    return ` ${formatTime(localEarliest)}–${formatTime(localLatest)}`;
-                  })()}
-                </span>
-
-                {/* 24-hour toggle */}
-                <label className="flex cursor-pointer items-center gap-2">
-                  <div className="relative">
-                    <input
-                      type="checkbox"
-                      checked={showFullDay}
-                      onChange={(e) => setShowFullDay(e.target.checked)}
-                      className="peer sr-only"
-                    />
-                    <div className="h-5 w-9 rounded-full bg-zinc-200 transition-colors peer-checked:bg-blue-500 peer-focus:ring-2 peer-focus:ring-blue-500/20 dark:bg-zinc-700 dark:peer-checked:bg-blue-600" />
-                    <div className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4" />
-                  </div>
-                  <span className="text-sm text-zinc-600 dark:text-zinc-400">Full day</span>
-                </label>
+              <div>
+                <h2 className="font-semibold text-zinc-900 dark:text-zinc-100">
+                  Group Availability
+                </h2>
+                {!isLoading && gmHasAvailability && gmAvailability && gmAvailability.earliestTime && gmAvailability.latestTime && (
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {gmParticipant?.displayName} (GM) is available {(() => {
+                      const refDate = format(eventStartDate, "yyyy-MM-dd");
+                      const localEarliest = gmAvailability.timezone !== timezone
+                        ? convertDateTime(gmAvailability.earliestTime, refDate, gmAvailability.timezone, timezone).time
+                        : gmAvailability.earliestTime;
+                      const localLatest = gmAvailability.timezone !== timezone
+                        ? convertDateTime(gmAvailability.latestTime, refDate, gmAvailability.timezone, timezone).time
+                        : gmAvailability.latestTime;
+                      return `${formatTime(localEarliest)}–${formatTime(localLatest)}`;
+                    })()}
+                  </p>
+                )}
               </div>
-            )}
-
-            {isLoading ? (
-              <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "300px" }} />
-            ) : participantsWithAvailability.length === 0 ? (
-              <EmptyHeatmap hasPlayers={participants.length > 0} />
-            ) : (
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <VirtualizedAvailabilityGrid
-                    key={`heatmap-${timezone}-${showFullDay}-${effectiveTimeBounds?.earliestTime}-${effectiveTimeBounds?.latestTime}`}
-                    startDate={eventStartDate}
-                    endDate={eventEndDate}
-                    earliestTime={showFullDay ? "00:00" : (effectiveTimeBounds?.earliestTime || event.earliestTime)}
-                    latestTime={showFullDay ? "23:30" : (effectiveTimeBounds?.latestTime || event.latestTime)}
-                    timeWindowTimezone={effectiveTimeBounds?.timezone || event.timezone}
-                    mode="heatmap"
-                    participants={participantsWithAvailability.map(p => ({
-                      id: p.id,
-                      name: p.name,
-                      availability: p.availability,
-                    }))}
-                    gmAvailability={gmAvailabilitySlots}
-                    onHoverSlot={(date, time, available, unavailable) => {
-                      setHoveredSlotInfo({ date, time, available, unavailable });
-                    }}
-                    onLeaveSlot={() => setHoveredSlotInfo(null)}
-                    timezone={timezone}
-                    compact
+            </div>
+            {/* Show Full Day toggle */}
+            {!isLoading && gmHasAvailability && (
+              <label className="flex cursor-pointer items-center gap-2">
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">Full day</span>
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={showFullDay}
+                    onChange={(e) => setShowFullDay(e.target.checked)}
+                    className="peer sr-only"
                   />
+                  <div className="h-5 w-9 rounded-full bg-zinc-200 transition-colors peer-checked:bg-blue-500 peer-focus:ring-2 peer-focus:ring-blue-500/20 dark:bg-zinc-700 dark:peer-checked:bg-blue-600" />
+                  <div className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4" />
                 </div>
-                {/* Hover detail panel - hidden on mobile */}
-                <div className="hidden w-56 shrink-0 md:block">
-                  <div className="sticky top-20 min-h-[180px] rounded-xl border border-zinc-100 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/50">
-                    {hoveredSlotInfo ? (
-                      <HoverDetailPanel
-                        date={hoveredSlotInfo.date}
-                        time={hoveredSlotInfo.time}
-                        availableParticipants={hoveredSlotInfo.available}
-                        unavailableParticipants={hoveredSlotInfo.unavailable}
-                        totalParticipants={participantsWithAvailability.length}
-                      />
-                    ) : (
-                      <div className="flex h-[180px] flex-col items-center justify-center p-4 text-center">
-                        <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
-                          <svg className="h-5 w-5 text-zinc-400 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
-                          </svg>
-                        </div>
-                        <p className="text-sm text-zinc-400 dark:text-zinc-500">Hover a time slot</p>
+              </label>
+            )}
+          </div>
+          {isLoading ? (
+            <div className="p-4">
+              <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "300px" }} />
+            </div>
+          ) : participantsWithAvailability.length === 0 ? (
+            <div className="p-4">
+              <EmptyHeatmap hasPlayers={participants.length > 0} />
+            </div>
+          ) : (
+            <div className="flex gap-0 pb-2">
+              {/* Heatmap grid - no padding */}
+              <div className="flex-1 min-w-0">
+                <VirtualizedAvailabilityGrid
+                  key={`heatmap-${timezone}-${showFullDay}-${effectiveTimeBounds?.earliestTime}-${effectiveTimeBounds?.latestTime}`}
+                  startDate={eventStartDate}
+                  endDate={eventEndDate}
+                  earliestTime={showFullDay ? "00:00" : (effectiveTimeBounds?.earliestTime || event.earliestTime)}
+                  latestTime={showFullDay ? "23:30" : (effectiveTimeBounds?.latestTime || event.latestTime)}
+                  timeWindowTimezone={effectiveTimeBounds?.timezone || event.timezone}
+                  mode="heatmap"
+                  participants={participantsWithAvailability.map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    availability: p.availability,
+                  }))}
+                  gmAvailability={gmAvailabilitySlots}
+                  onHoverSlot={(date, time, available, unavailable) => {
+                    setHoveredSlotInfo({ date, time, available, unavailable });
+                  }}
+                  onLeaveSlot={() => setHoveredSlotInfo(null)}
+                  timezone={timezone}
+                />
+              </div>
+
+              {/* Party sidebar with live availability highlighting - hidden on mobile */}
+              <div className="hidden w-52 shrink-0 md:block border-l border-zinc-100 dark:border-zinc-800">
+                <div className="sticky top-20 p-3">
+                  <div className="mb-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                        Party
+                      </span>
+                      <span className="text-xs text-zinc-400 dark:text-zinc-500">
+                        {participants.length}
+                      </span>
+                    </div>
+                    {/* Show time range when hovering */}
+                    {hoveredSlotInfo && (
+                      <div className="mt-1 flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="font-medium">
+                          {formatTime(hoveredSlotInfo.time)}–{formatTime(addMinutes(hoveredSlotInfo.time, 30))}
+                        </span>
+                        <span className="text-zinc-400 dark:text-zinc-500">
+                          ({hoveredSlotInfo.available.length}/{participants.length})
+                        </span>
                       </div>
                     )}
                   </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
 
-        {/* Party Members Section */}
-        <div className="rounded-xl border border-zinc-200/80 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-50 dark:bg-purple-900/30">
-                <svg className="h-4 w-4 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-              </div>
-              <h2 className="font-semibold text-zinc-900 dark:text-zinc-100">
-                Party Members
-              </h2>
-              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                {participants.length}
-              </span>
-            </div>
-            {currentParticipant && !showAddPlayer && (
-              <button
-                onClick={() => setShowAddPlayer(true)}
-                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-                </svg>
-                Add
-              </button>
-            )}
-          </div>
+                  <div className="space-y-1.5">
+                    {participants.map((p) => {
+                      const isAvailable = hoveredSlotInfo?.available.some(a => a.id === p.id);
+                      const isHovering = !!hoveredSlotInfo;
 
-          <div className="p-4">
-            {/* Add Player Form - inline style */}
-            {showAddPlayer && (
-              <div className="mb-4">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800">
-                    <svg className="h-5 w-5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                  </div>
-                  <input
-                    type="text"
-                    value={newPlayerName}
-                    onChange={(e) => setNewPlayerName(e.target.value)}
-                    placeholder="Enter player name"
-                    className="flex-1 rounded-lg border-0 bg-zinc-100 px-3 py-2 text-sm placeholder:text-zinc-400 focus:ring-2 focus:ring-blue-500 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && newPlayerName.trim()) handleAddPlayer();
-                      if (e.key === "Escape") {
-                        setShowAddPlayer(false);
-                        setNewPlayerName("");
-                      }
-                    }}
-                    autoFocus
-                  />
-                  <button
-                    onClick={handleAddPlayer}
-                    disabled={isAddingPlayer || !newPlayerName.trim()}
-                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {isAddingPlayer ? "..." : "Add"}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowAddPlayer(false);
-                      setNewPlayerName("");
-                    }}
-                    className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                  >
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            )}
-
-              {participants.length === 0 ? (
-                <EmptyPartyList />
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {participants.map((p) => {
-                    const isCurrentUser = currentParticipant?.id === p.id;
-                    const hasCharacter = p.characterName || p.characterTokenBase64;
-
-                    return (
-                      <div
-                        key={p.id}
-                        className="group relative rounded-xl border border-zinc-100 bg-zinc-50/50 p-3 transition-colors hover:border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/30 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/50"
-                      >
+                      return (
                         <button
-                          type="button"
+                          key={p.id}
                           onClick={() => handleOpenProfile(p)}
-                          className="flex w-full items-start gap-3 text-left"
+                          className={`group flex w-full items-center gap-2 rounded-lg p-1.5 text-left transition-all ${
+                            isHovering
+                              ? isAvailable
+                                ? "bg-green-50 ring-1 ring-green-200 dark:bg-green-900/20 dark:ring-green-800"
+                                : "opacity-40"
+                              : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                          }`}
                         >
-                          {/* Avatar/Token */}
+                          {/* Avatar */}
                           <div className="relative shrink-0">
                             {p.characterTokenBase64 ? (
                               <img
                                 src={p.characterTokenBase64}
                                 alt={p.characterName || p.displayName}
-                                className="h-14 w-14 rounded-xl object-cover shadow-sm"
+                                className="h-8 w-8 rounded-lg object-cover"
                               />
                             ) : (
-                              <div className={`flex h-14 w-14 items-center justify-center rounded-xl text-lg font-semibold shadow-sm ${
+                              <div className={`flex h-8 w-8 items-center justify-center rounded-lg text-xs font-semibold ${
                                 p.isGm
                                   ? "bg-gradient-to-br from-purple-500 to-indigo-600 text-white"
-                                  : "bg-gradient-to-br from-zinc-200 to-zinc-300 text-zinc-600 dark:from-zinc-700 dark:to-zinc-600 dark:text-zinc-300"
+                                  : "bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300"
                               }`}>
                                 {p.displayName.charAt(0).toUpperCase()}
                               </div>
                             )}
                             {p.isGm && (
-                              <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-purple-600 ring-2 ring-white dark:ring-zinc-900">
-                                <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                              <div className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-purple-600 ring-1 ring-white dark:ring-zinc-900">
+                                <svg className="h-2 w-2 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                                 </svg>
                               </div>
                             )}
-                          </div>
-
-                          {/* Info */}
-                          <div className="min-w-0 flex-1 py-0.5">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-medium text-zinc-900 dark:text-zinc-100">
-                                {p.displayName}
-                              </span>
-                              {isCurrentUser && (
-                                <span className="text-xs text-zinc-400">(you)</span>
-                              )}
-                            </div>
-                            {hasCharacter ? (
-                              <div className="mt-0.5">
-                                <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                  {p.characterName}
-                                </p>
-                                {p.characterClass && (
-                                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                                    {p.characterClass}
-                                  </p>
-                                )}
-                              </div>
-                            ) : !p.isGm && (
-                              <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
-                                No character yet
-                              </p>
+                            {/* Available indicator */}
+                            {isHovering && isAvailable && (
+                              <div className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-green-500 ring-1 ring-white dark:ring-zinc-900" />
                             )}
                           </div>
 
-                          {/* Action indicator - only show if not deletable */}
-                          {!currentParticipant && (
-                            <svg className="h-4 w-4 shrink-0 self-center text-zinc-300 dark:text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
-                          )}
+                          {/* Name */}
+                          <div className="min-w-0 flex-1">
+                            <p className={`truncate text-sm font-medium ${
+                              isHovering && isAvailable
+                                ? "text-green-700 dark:text-green-300"
+                                : "text-zinc-700 dark:text-zinc-300"
+                            }`}>
+                              {p.characterName || p.displayName}
+                            </p>
+                            {p.characterName && (
+                              <p className="truncate text-xs text-zinc-400 dark:text-zinc-500">
+                                {p.displayName}
+                              </p>
+                            )}
+                          </div>
                         </button>
+                      );
+                    })}
+                  </div>
 
-                        {/* Remove button - replaces chevron when user is logged in */}
-                        {currentParticipant && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRemovePlayer(p.id, p.displayName);
+                  {/* Add Player - compact version */}
+                  {currentParticipant && (
+                    <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                      {showAddPlayer ? (
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={newPlayerName}
+                            onChange={(e) => setNewPlayerName(e.target.value)}
+                            placeholder="Player name"
+                            className="w-full rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-sm placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && newPlayerName.trim()) handleAddPlayer();
+                              if (e.key === "Escape") {
+                                setShowAddPlayer(false);
+                                setNewPlayerName("");
+                              }
                             }}
-                            className="absolute right-2 top-2 rounded-lg p-1.5 text-zinc-300 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                            title={`Remove ${p.displayName}`}
-                          >
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+                            autoFocus
+                          />
+                          <div className="flex gap-1.5">
+                            <button
+                              onClick={handleAddPlayer}
+                              disabled={isAddingPlayer || !newPlayerName.trim()}
+                              className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                            >
+                              {isAddingPlayer ? "..." : "Add"}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setShowAddPlayer(false);
+                                setNewPlayerName("");
+                              }}
+                              className="rounded-lg px-2 py-1.5 text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setShowAddPlayer(true)}
+                          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-500 hover:border-zinc-400 hover:text-zinc-600 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600"
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                          </svg>
+                          Add Player
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Hover hint when no slot selected */}
+                  {!hoveredSlotInfo && participants.length > 0 && (
+                    <p className="mt-3 text-center text-[10px] text-zinc-400 dark:text-zinc-500">
+                      Hover a time slot to see availability
+                    </p>
+                  )}
                 </div>
-              )}
-          </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Spacer for fixed CTA banner */}
@@ -737,7 +686,8 @@ export function CampaignPage({ event }: CampaignPageProps) {
                 </div>
               </div>
               <div className="flex items-center gap-2 sm:shrink-0">
-                {!currentParticipant.isGm && (
+                {/* Only show character edit if there are pre-session instructions */}
+                {!currentParticipant.isGm && event.customPreSessionInstructions && (
                   <a
                     href={`/${event.slug}/${currentParticipant.id}/character`}
                     className="px-4 py-2 rounded-xl text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-white/50 dark:bg-zinc-800/50 border border-zinc-200/50 dark:border-zinc-700/50 hover:bg-white dark:hover:bg-zinc-800 transition-colors"
@@ -745,6 +695,12 @@ export function CampaignPage({ event }: CampaignPageProps) {
                     Edit Character
                   </a>
                 )}
+                <button
+                  onClick={handleCopyLink}
+                  className="px-4 py-2 rounded-xl text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-white/50 dark:bg-zinc-800/50 border border-zinc-200/50 dark:border-zinc-700/50 hover:bg-white dark:hover:bg-zinc-800 transition-colors"
+                >
+                  {copiedLink ? "Copied!" : "Share"}
+                </button>
                 <a
                   href={currentParticipant.isGm ? `/${event.slug}/gm` : `/${event.slug}/${currentParticipant.id}`}
                   className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-lg shadow-blue-500/25 transition-all"
@@ -797,4 +753,13 @@ function formatTime(time: string): string {
   if (hour < 12) return `${hour}:${minute} AM`;
   if (hour === 12) return `12:${minute} PM`;
   return `${hour - 12}:${minute} PM`;
+}
+
+function addMinutes(time: string, minutes: number): string {
+  const [hourStr, minuteStr] = time.split(":");
+  let totalMinutes = parseInt(hourStr) * 60 + parseInt(minuteStr) + minutes;
+  if (totalMinutes >= 24 * 60) totalMinutes -= 24 * 60;
+  const hour = Math.floor(totalMinutes / 60);
+  const minute = totalMinutes % 60;
+  return `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`;
 }

@@ -7,6 +7,7 @@ import {
   timeToMinutes,
   minutesToTime,
   SLOT_DURATION_MINUTES,
+  utcToLocal,
 } from "@/lib/availability";
 import type { AvailabilityRule, DateRange } from "@/lib/types/availability";
 
@@ -185,24 +186,66 @@ export async function GET(
     }
 
     // Calculate effective time bounds based on GM's availability only
+    // Convert from UTC to event timezone to find the actual display bounds
     let effectiveEarliest: string | null = null;
     let effectiveLatest: string | null = null;
 
     if (gmParticipant && gmParticipant.availability.length > 0) {
-      const startTimes: string[] = [];
-      const endTimes: string[] = [];
+      let minMinutes = Infinity;
+      let maxMinutes = -Infinity;
 
       for (const slot of gmParticipant.availability) {
-        if (slot.startTime >= slot.endTime) continue;
-        startTimes.push(slot.startTime);
-        endTimes.push(slot.endTime);
+        // Skip truly invalid slots (same start and end)
+        if (slot.startTime === slot.endTime) continue;
+
+        // Convert UTC times to event timezone
+        const localStart = utcToLocal(slot.startTime, slot.date, eventTimezone);
+        const localEnd = utcToLocal(slot.endTime, slot.date, eventTimezone);
+
+        const startMins = timeToMinutes(localStart.time);
+        let endMins = timeToMinutes(localEnd.time);
+
+        // Handle overnight: if end appears before start, it wrapped to next day
+        // For bounds calculation, we care about the time-of-day range, not the date
+        // So 22:00-02:00 should contribute 22:00 as a start and 02:00 as an end
+        // But for min/max bounds, we want the earliest start and latest end
+
+        // Track both the start time and end time independently
+        if (startMins < minMinutes) minMinutes = startMins;
+        if (endMins > maxMinutes) maxMinutes = endMins;
+
+        // For overnight slots where end < start (e.g., 22:00-02:00)
+        // The end time wraps to next day, so also consider end as potentially
+        // extending past midnight (treat as next-day time)
+        if (endMins < startMins) {
+          // This is an overnight slot
+          // The actual end is on the next day, so for bounds we could either:
+          // 1. Treat the end as endMins + 1440 (next day)
+          // 2. Or just track that availability extends to this end time on some day
+          // For display purposes, we want to show the full range the GM is ever available
+          // So if GM is available 22:00-02:00, we want earliest=22:00, latest=02:00
+          // But 02:00 > 22:00 when sorted as times... this is tricky
+          //
+          // Actually, for the heatmap display bounds, we want the time window
+          // that encompasses all GM availability. If GM has 22:00-02:00,
+          // we'd want to show at least from 22:00 to 02:00 (which is actually overnight)
+          // For simplicity, let's also track overnight end times and take the max
+          // considering them as "24:00 + endMins"
+          if (endMins + 1440 > maxMinutes) maxMinutes = endMins + 1440;
+        }
       }
 
-      if (startTimes.length > 0) {
-        startTimes.sort();
-        endTimes.sort();
-        effectiveEarliest = startTimes[0];
-        effectiveLatest = endTimes[endTimes.length - 1];
+      if (minMinutes !== Infinity && maxMinutes !== -Infinity) {
+        // Normalize maxMinutes if it went over 24 hours
+        // For display, cap at 23:30 (last slot of the day)
+        if (maxMinutes >= 1440) {
+          // Overnight availability - for now, show full day
+          effectiveEarliest = minutesToTime(Math.min(minMinutes, 0));
+          effectiveLatest = "23:30";
+        } else {
+          effectiveEarliest = minutesToTime(minMinutes);
+          effectiveLatest = minutesToTime(maxMinutes);
+        }
       }
     }
 

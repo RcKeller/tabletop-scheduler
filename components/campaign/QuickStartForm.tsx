@@ -29,9 +29,9 @@ export function QuickStartForm() {
     setError(null);
 
     try {
-      // Set smart defaults - 4 weeks out for scheduling
+      // Set smart defaults - 6 weeks out for scheduling
       const today = new Date();
-      const defaultEndDate = format(addWeeks(today, 4), "yyyy-MM-dd");
+      const defaultEndDate = format(addWeeks(today, 6), "yyyy-MM-dd");
 
       const res = await fetch("/api/events", {
         method: "POST",

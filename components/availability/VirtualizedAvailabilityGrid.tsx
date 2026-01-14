@@ -763,13 +763,13 @@ export function VirtualizedAvailabilityGrid({
       cursor: disabled ? "default" : "pointer",
     };
 
-    // Add diagonal blue stripes for GM available times
+    // Add diagonal purple stripes for GM available times
     // Stripes always show when GM is available - darker on selected cells for visibility
     if (isGmAvailable) {
-      // Use pre-computed stripe colors to avoid string interpolation
+      // Use pre-computed stripe colors to avoid string interpolation (purple-500: 168, 85, 247)
       const stripeColor = (isSelected || isPendingAdd)
-        ? (isDarkMode ? "rgba(59,130,246,0.6)" : "rgba(59,130,246,0.5)")
-        : (isDarkMode ? "rgba(59,130,246,0.35)" : "rgba(59,130,246,0.25)");
+        ? (isDarkMode ? "rgba(168,85,247,0.6)" : "rgba(168,85,247,0.5)")
+        : (isDarkMode ? "rgba(168,85,247,0.35)" : "rgba(168,85,247,0.25)");
       style.backgroundImage = `repeating-linear-gradient(-45deg,transparent,transparent 3px,${stripeColor} 3px,${stripeColor} 6px)`;
       style.backgroundSize = "8px 8px";
     }
@@ -794,9 +794,9 @@ export function VirtualizedAvailabilityGrid({
       cursor: disabled ? "default" : "pointer",
     };
 
-    // Add diagonal blue stripes for GM available times
+    // Add diagonal purple stripes for GM available times
     if (isGmAvailable) {
-      const stripeColor = isDarkMode ? "rgba(59, 130, 246, 0.4)" : "rgba(59, 130, 246, 0.3)";
+      const stripeColor = isDarkMode ? "rgba(168, 85, 247, 0.4)" : "rgba(168, 85, 247, 0.3)";
       style.backgroundImage = `repeating-linear-gradient(
         -45deg,
         transparent,
