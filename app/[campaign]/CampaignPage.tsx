@@ -11,7 +11,7 @@ import { CampaignHeader } from "@/components/campaign/CampaignHeader";
 import { Footer } from "@/components/layout/Footer";
 import { EmptyPartyList } from "@/components/empty-states/EmptyPartyList";
 import { EmptyHeatmap } from "@/components/empty-states/EmptyHeatmap";
-import { FloatingGlassCta, JoinCta } from "@/components/ui/FloatingGlassCta";
+import { FloatingGlassCta, JoinCta, InviteCta, StatusCta } from "@/components/ui/FloatingGlassCta";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import { useTimezone } from "@/components/layout/TimezoneProvider";
 import type { MeetingType, CampaignType, Participant, ParticipantWithAvailability } from "@/lib/types";
@@ -714,51 +714,11 @@ export function CampaignPage({ event }: CampaignPageProps) {
 
       {/* GM invite CTA - highest priority for GMs with no players */}
       {currentParticipant?.isGm && playerCount === 0 && (
-        <FloatingGlassCta>
-          <div className="p-4 sm:p-5">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 shadow-lg shadow-purple-500/25">
-                  <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                  </svg>
-                </div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-zinc-900 dark:text-white">Campaign Ready!</p>
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400 truncate">Invite players to join your campaign</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 sm:shrink-0">
-                <a
-                  href={`/${event.slug}/gm`}
-                  className="px-4 py-2 rounded-xl text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-white/50 dark:bg-zinc-800/50 border border-zinc-200/50 dark:border-zinc-700/50 hover:bg-white dark:hover:bg-zinc-800 transition-colors"
-                >
-                  Edit Availability
-                </a>
-                <button
-                  onClick={handleCopyLink}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-lg shadow-purple-500/25 transition-all"
-                >
-                  {copiedLink ? (
-                    <>
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                      </svg>
-                      Share Link
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </FloatingGlassCta>
+        <InviteCta
+          campaignSlug={event.slug}
+          onCopyLink={handleCopyLink}
+          linkCopied={copiedLink}
+        />
       )}
 
       {/* Status CTA for registered users - always show edit options */}

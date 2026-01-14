@@ -405,7 +405,7 @@ export function VirtualizedAvailabilityGrid({
     }
   }, [displayAvailability]);
 
-  // Cleanup animation frame on unmount
+  // Cleanup animation frames and timeouts on unmount
   useEffect(() => {
     return () => {
       if (refreshFrameRef.current) {
@@ -572,11 +572,25 @@ export function VirtualizedAvailabilityGrid({
     return pending;
   }, [dateStrings, timeSlots]);
 
-  // Refresh only affected cells
+  // Batch refresh using requestAnimationFrame to prevent multiple refreshes per frame
+  const pendingRefreshRef = useRef<number | null>(null);
   const refreshGrid = useCallback(() => {
-    if (gridApiRef.current) {
-      gridApiRef.current.refreshCells({ force: true });
-    }
+    if (pendingRefreshRef.current) return; // Already scheduled
+    pendingRefreshRef.current = requestAnimationFrame(() => {
+      if (gridApiRef.current) {
+        gridApiRef.current.refreshCells({ force: true });
+      }
+      pendingRefreshRef.current = null;
+    });
+  }, []);
+
+  // Cleanup pending refresh on unmount
+  useEffect(() => {
+    return () => {
+      if (pendingRefreshRef.current) {
+        cancelAnimationFrame(pendingRefreshRef.current);
+      }
+    };
   }, []);
 
   // Mouse down handler
@@ -749,16 +763,14 @@ export function VirtualizedAvailabilityGrid({
       cursor: disabled ? "default" : "pointer",
     };
 
-    // Add diagonal blue stripes for GM available times (only on unselected cells)
-    if (isGmAvailable && !isSelected && !isPending) {
-      const stripeColor = isDarkMode ? "rgba(59, 130, 246, 0.35)" : "rgba(59, 130, 246, 0.25)";
-      style.backgroundImage = `repeating-linear-gradient(
-        -45deg,
-        transparent,
-        transparent 3px,
-        ${stripeColor} 3px,
-        ${stripeColor} 6px
-      )`;
+    // Add diagonal blue stripes for GM available times
+    // Stripes always show when GM is available - darker on selected cells for visibility
+    if (isGmAvailable) {
+      // Use pre-computed stripe colors to avoid string interpolation
+      const stripeColor = (isSelected || isPendingAdd)
+        ? (isDarkMode ? "rgba(59,130,246,0.6)" : "rgba(59,130,246,0.5)")
+        : (isDarkMode ? "rgba(59,130,246,0.35)" : "rgba(59,130,246,0.25)");
+      style.backgroundImage = `repeating-linear-gradient(-45deg,transparent,transparent 3px,${stripeColor} 3px,${stripeColor} 6px)`;
       style.backgroundSize = "8px 8px";
     }
 

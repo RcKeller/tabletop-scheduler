@@ -100,9 +100,18 @@ interface GmCtaProps {
   campaignSlug: string;
   onCopyLink?: () => void;
   linkCopied?: boolean;
+  savedAt?: Date | null;  // Timestamp of last save
 }
 
-export function GmCompleteCta({ campaignSlug, onCopyLink, linkCopied }: GmCtaProps) {
+function formatSaveTime(date: Date): string {
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const hour12 = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+  const ampm = hours < 12 ? "AM" : "PM";
+  return `${hour12}:${minutes.toString().padStart(2, "0")} ${ampm}`;
+}
+
+export function GmCompleteCta({ campaignSlug, onCopyLink, linkCopied, savedAt }: GmCtaProps) {
   const styles = getVariantStyles("success");
 
   return (
@@ -113,7 +122,9 @@ export function GmCompleteCta({ campaignSlug, onCopyLink, linkCopied }: GmCtaPro
             <CheckIcon className="h-4 w-4 text-white" />
           </div>
           <div className="min-w-0">
-            <p className="font-medium text-zinc-900 dark:text-white text-sm">Availability saved!</p>
+            <p className="font-medium text-zinc-900 dark:text-white text-sm">
+              {savedAt ? `Availability saved at ${formatSaveTime(savedAt)}` : "Availability saved!"}
+            </p>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">Share your campaign link with players</p>
           </div>
         </div>
@@ -151,9 +162,10 @@ interface PlayerCtaProps {
   campaignSlug: string;
   participantId: string;
   hasCharacter?: boolean;
+  savedAt?: Date | null;  // Timestamp of last save
 }
 
-export function PlayerCompleteCta({ campaignSlug, participantId, hasCharacter }: PlayerCtaProps) {
+export function PlayerCompleteCta({ campaignSlug, participantId, hasCharacter, savedAt }: PlayerCtaProps) {
   const styles = getVariantStyles("success");
 
   return (
@@ -164,7 +176,9 @@ export function PlayerCompleteCta({ campaignSlug, participantId, hasCharacter }:
             <CheckIcon className="h-4 w-4 text-white" />
           </div>
           <div className="min-w-0">
-            <p className="font-medium text-zinc-900 dark:text-white text-sm">Availability saved!</p>
+            <p className="font-medium text-zinc-900 dark:text-white text-sm">
+              {savedAt ? `Availability saved at ${formatSaveTime(savedAt)}` : "Availability saved!"}
+            </p>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
               {hasCharacter ? "Your GM can now see when you're free" : "Now set up your character"}
             </p>

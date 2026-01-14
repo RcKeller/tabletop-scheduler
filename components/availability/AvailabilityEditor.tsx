@@ -297,14 +297,15 @@ export function AvailabilityEditor({
   const [patternEntries, setPatternEntries] = useState<PatternEntry[]>([]);
   const [showAddMenu, setShowAddMenu] = useState(false);
 
-  // CTA state
-  const [showSaveCta, setShowSaveCta] = useState(false);
+  // CTA state - persistent once saved, with timestamp
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [linkCopied, setLinkCopied] = useState(false);
-  const ctaTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Track current grid slots locally to avoid losing overrides when patterns are saved
   // This is updated when the grid saves, and used when patterns are saved
   const [localOverrideSlots, setLocalOverrideSlots] = useState<TimeSlot[]>([]);
+  // Lightweight flag for UI (Clear All button visibility) - avoids expensive recomputes
+  const [hasGridSlots, setHasGridSlots] = useState(false);
 
   // Refs for latest state (to avoid stale closures in debounced saves)
   const patternEntriesRef = useRef<PatternEntry[]>(patternEntries);
@@ -362,8 +363,9 @@ export function AvailabilityEditor({
         createdAt: new Date(),
         updatedAt: new Date(),
       }));
-      // Add local override slots as rules too
-      const overrideRules: AvailabilityRule[] = localOverrideSlots.map((slot, i) => ({
+      // Add local override slots as rules too (use ref for current state)
+      // The ref is always kept current by both grid saves and AI adds
+      const overrideRules: AvailabilityRule[] = localOverrideSlotsRef.current.map((slot, i) => ({
         id: `local-override-${i}`,
         participantId,
         ruleType: "available_override" as const,
@@ -433,6 +435,11 @@ export function AvailabilityEditor({
       return;
     }
 
+    // Don't initialize until data is loaded (prevents initializing with empty data)
+    if (isLoading) {
+      return;
+    }
+
     const extracted = extractPatternEntries(effectiveRules, timezone);
     setPatternEntries(extracted);
     patternEntriesRef.current = extracted;
@@ -450,21 +457,25 @@ export function AvailabilityEditor({
       }));
     setLocalOverrideSlots(overrideSlots);
     localOverrideSlotsRef.current = overrideSlots;
+    setHasGridSlots(overrideSlots.length > 0);
 
     patternsInitializedRef.current = true;
     patternTimezoneRef.current = timezone;
-  }, [effectiveRules, timezone]);
+  }, [effectiveRules, timezone, isLoading]);
 
   // Handle grid save - optimistic, skip refetch to avoid flashing
+  // Uses ref to update override slots without triggering timeSlots recalc (grid already has correct state)
   const handleGridSave = useCallback(
     async (slots: TimeSlot[]) => {
-      // Store grid slots locally so they're available when patterns are saved
-      // These slots are in UTC (the grid converts before calling onSave)
-      setLocalOverrideSlots(slots);
+      // Store in ref only - don't trigger state update since grid manages its own display state
+      // This prevents unnecessary timeSlots recalculation during drag operations
       localOverrideSlotsRef.current = slots;
+      // Update lightweight flag for UI visibility (e.g., Clear All button)
+      setHasGridSlots(slots.length > 0);
 
-      // Keep existing pattern rules
-      const patternRules = patternEntriesToRules(patternEntries, participantId, timezone);
+      // Keep existing pattern rules - use patternTimezoneRef to ensure consistency
+      // (patterns are stored in the timezone referenced by patternTimezoneRef)
+      const patternRules = patternEntriesToRules(patternEntriesRef.current, participantId, patternTimezoneRef.current);
 
       // Slots from grid are already in UTC - pass alreadyUTC=true to avoid double-conversion
       const overrideRules = timeSlotsToRules(slots, participantId, timezone, true);
@@ -477,12 +488,14 @@ export function AvailabilityEditor({
         const success = await replaceRules(allRules, true);
         if (success) {
           onSaveComplete?.();
+          // Update save timestamp for CTA
+          setSavedAt(new Date());
         }
       } catch {
         // Silently handle errors - user can retry
       }
     },
-    [patternEntries, participantId, timezone, replaceRules, onSaveComplete]
+    [participantId, timezone, replaceRules, onSaveComplete]
   );
 
   // Debounced save for pattern changes - must be defined before handlers that use it
@@ -511,7 +524,8 @@ export function AvailabilityEditor({
       const currentOverrideSlots = localOverrideSlotsRef.current;
 
       // Convert pattern entries to rules (will convert to UTC)
-      const patternRules = patternEntriesToRules(currentPatterns, participantId, timezone);
+      // Use patternTimezoneRef to ensure we convert from the correct source timezone
+      const patternRules = patternEntriesToRules(currentPatterns, participantId, patternTimezoneRef.current);
 
       // Override slots from grid are already in UTC - pass alreadyUTC=true
       const overrideRules = timeSlotsToRules(currentOverrideSlots, participantId, timezone, true);
@@ -545,21 +559,12 @@ export function AvailabilityEditor({
       if (userEditTimeoutRef.current) {
         clearTimeout(userEditTimeoutRef.current);
       }
-      if (ctaTimeoutRef.current) {
-        clearTimeout(ctaTimeoutRef.current);
-      }
     };
   }, []);
 
-  // Show save CTA briefly after saves
+  // Update save timestamp (CTA is persistent once shown)
   const triggerSaveCta = useCallback(() => {
-    setShowSaveCta(true);
-    if (ctaTimeoutRef.current) {
-      clearTimeout(ctaTimeoutRef.current);
-    }
-    ctaTimeoutRef.current = setTimeout(() => {
-      setShowSaveCta(false);
-    }, 8000); // Show for 8 seconds
+    setSavedAt(new Date());
   }, []);
 
   // Keep ref updated
@@ -668,6 +673,7 @@ export function AvailabilityEditor({
     patternEntriesRef.current = [];
     setLocalOverrideSlots([]);
     localOverrideSlotsRef.current = [];
+    setHasGridSlots(false);
     // Save empty rules to server
     await replaceRules([], true);
     onSaveComplete?.();
@@ -758,12 +764,14 @@ export function AvailabilityEditor({
             localOverrideSlotsRef.current = updated;
             return updated;
           });
+          setHasGridSlots(true);
         }
 
         // Save all rules (existing patterns + new AI rules) without refetch
         const currentPatterns = patternEntriesRef.current;
         const currentOverrides = localOverrideSlotsRef.current;
-        const patternRules = patternEntriesToRules(currentPatterns, participantId, timezone);
+        // Use patternTimezoneRef to ensure correct source timezone for pattern conversion
+        const patternRules = patternEntriesToRules(currentPatterns, participantId, patternTimezoneRef.current);
         // Override slots are in UTC (both from grid and AI) - pass alreadyUTC=true
         const overrideRules = timeSlotsToRules(currentOverrides, participantId, timezone, true);
         await replaceRules([...patternRules, ...overrideRules], true);
@@ -893,11 +901,11 @@ export function AvailabilityEditor({
           )}
 
           {/* Add Schedule Button and Clear All */}
-          <div className="flex items-center justify-between gap-4">
-            <div className="relative">
+          <div className="flex items-center justify-between gap-4 max-w-2xl">
+            <div className="relative flex-1">
               <button
                 onClick={() => setShowAddMenu(!showAddMenu)}
-                className="group flex items-center justify-center gap-2.5 px-6 py-2.5 text-sm font-medium rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400 hover:border-blue-400 hover:text-blue-600 dark:hover:border-blue-500 dark:hover:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-all min-w-[180px]"
+                className="group flex w-full items-center justify-center gap-2.5 px-6 py-2.5 text-sm font-medium rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400 hover:border-blue-400 hover:text-blue-600 dark:hover:border-blue-500 dark:hover:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-all"
               >
                 <div className="flex h-5 w-5 items-center justify-center rounded-md bg-zinc-100 dark:bg-zinc-800 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-colors">
                   <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -910,7 +918,7 @@ export function AvailabilityEditor({
               {showAddMenu && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setShowAddMenu(false)} />
-                  <div className="fixed sm:absolute inset-x-4 bottom-4 sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full z-20 sm:mt-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl sm:shadow-xl overflow-hidden sm:min-w-[280px] max-h-[70vh] overflow-y-auto">
+                  <div className="fixed sm:absolute inset-x-4 bottom-4 sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full z-20 sm:mt-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl sm:shadow-xl overflow-hidden sm:min-w-[360px] max-h-[70vh] overflow-y-auto">
                     {/* Available section */}
                     <div className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-green-600 dark:text-green-400 bg-green-50/50 dark:bg-green-950/20 border-b border-zinc-100 dark:border-zinc-800 sticky top-0">
                       Available
@@ -990,7 +998,7 @@ export function AvailabilityEditor({
             </div>
 
             {/* Clear All */}
-            {(patternEntries.length > 0 || localOverrideSlots.length > 0) && (
+            {(patternEntries.length > 0 || hasGridSlots) && (
               <button
                 onClick={handleClearAll}
                 className="text-xs text-zinc-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
@@ -1021,7 +1029,7 @@ export function AvailabilityEditor({
                     <span className="px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">Beta</span>
                   </div>
 
-                  <div className="relative">
+                  <div className="space-y-3">
                     <textarea
                       value={aiInput}
                       onChange={(e) => setAiInput(e.target.value)}
@@ -1037,16 +1045,16 @@ export function AvailabilityEditor({
                       }}
                     />
 
-                    {/* Submit button inside textarea area */}
-                    <div className="absolute right-2 bottom-2">
+                    {/* Submit button below textarea */}
+                    <div className="flex justify-end">
                       <button
                         onClick={handleAIParse}
                         disabled={isParsingAI || !aiInput.trim()}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-sm hover:from-violet-500 hover:to-purple-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all disabled:hover:from-violet-600 disabled:hover:to-purple-600"
+                        className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-sm hover:from-violet-500 hover:to-purple-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all disabled:hover:from-violet-600 disabled:hover:to-purple-600"
                       >
                         {isParsingAI ? (
                           <>
-                            <svg className="animate-spin h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
+                            <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                             </svg>
@@ -1054,10 +1062,10 @@ export function AvailabilityEditor({
                           </>
                         ) : (
                           <>
-                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                             </svg>
-                            Add
+                            Add to Schedule
                           </>
                         )}
                       </button>
@@ -1083,19 +1091,21 @@ export function AvailabilityEditor({
         </div>
       )}
 
-      {/* Floating Glass CTAs */}
-      {showSaveCta && event.slug && (
+      {/* Floating Glass CTAs - persistent once saved */}
+      {savedAt && event.slug && (
         isGm ? (
           <GmCompleteCta
             campaignSlug={event.slug}
             onCopyLink={handleCopyLink}
             linkCopied={linkCopied}
+            savedAt={savedAt}
           />
         ) : (
           <PlayerCompleteCta
             campaignSlug={event.slug}
             participantId={participantId}
             hasCharacter={hasCharacter}
+            savedAt={savedAt}
           />
         )
       )}
