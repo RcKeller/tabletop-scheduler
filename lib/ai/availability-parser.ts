@@ -79,12 +79,14 @@ OVERNIGHT TIME RANGES - IMPORTANT:
   - "2pm-11am" -> startTime: "14:00", endTime: "11:00" (overnight, implies next day)
 
 DETECTING UNAVAILABILITY - CRITICAL:
-- Look for: "not available", "can't make it", "busy", "unavailable", "have plans", "won't be free", "except", "but not", "never", "don't work for me"
+- Look for: "not available", "can't make it", "busy", "unavailable", "have plans", "won't be free", "except", "but not", "never", "don't work for me", "blocked"
 - If they say "I work 9-5 M-F" -> routineRemovals for Mon-Fri 9-5
 - If they say "not available on mondays" or "mondays don't work" -> routineRemovals for Monday (entire day)
 - If they say "busy this Thursday" -> exclusions for specific date
 - RECURRING unavailability (day names without "this/next/the") -> routineRemovals
 - SPECIFIC DATE unavailability (with "this/next/the" or actual dates) -> exclusions
+- IMPORTANT: If user says "blocked X" or "not available X" without specifying days (e.g., "blocked 8am-5pm"), assume they mean EVERY DAY and create routineRemovals for all 7 days (dayOfWeek 0-6)
+- Similarly, "every day" or "everyday" or "daily" means all 7 days
 
 MODE DETECTION - VERY IMPORTANT:
 - DEFAULT to mode = "adjust" - this is the most common case
@@ -132,8 +134,10 @@ Notes:
   - "busy this Thursday afternoon" -> exclusions
   - "can't make the 15th" -> exclusions (whole day, omit times)
 - routineRemovals: days to REMOVE from weekly routine (empty array if none) - use for RECURRING unavailability
-  - "not available mondays" -> routineRemovals
+  - "not available mondays" -> routineRemovals for Monday
   - "I work 9-5 weekdays" -> routineRemovals for Mon-Fri 9-5
+  - "blocked 8am-5pm" (no days specified) -> routineRemovals for ALL 7 days with those times
+  - "not available 9-5" -> routineRemovals for ALL 7 days with those times
   - For whole-day removal, just provide dayOfWeek
   - For partial removal, also provide startTime and endTime (e.g., "no mornings on Monday")
 - For whole-day exclusions, omit startTime and endTime

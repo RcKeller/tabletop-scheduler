@@ -380,14 +380,6 @@ export function VirtualizedAvailabilityGrid({
   useEffect(() => {
     const serialized = serializeAvailability(displayAvailability);
 
-    console.log("[Grid] Sync check:", {
-      displayAvailabilityCount: displayAvailability.length,
-      serializedLength: serialized.length,
-      lastAvailabilityLength: lastAvailabilityRef.current.length,
-      hasPendingChanges: hasPendingChangesRef.current,
-      isMatch: serialized === lastAvailabilityRef.current,
-    });
-
     // If props match our local state, clear the pending flag
     if (serialized === lastAvailabilityRef.current) {
       hasPendingChangesRef.current = false;
@@ -396,13 +388,9 @@ export function VirtualizedAvailabilityGrid({
 
     // Don't sync from props if we have pending local changes (prevents flash during rapid edits)
     if (hasPendingChangesRef.current) {
-      console.log("[Grid] Skipping sync - pending changes");
       return;
     }
 
-    console.log("[Grid] Updating selectedSlots:", {
-      newSlotsCount: buildAvailabilitySet(displayAvailability).size,
-    });
     lastAvailabilityRef.current = serialized;
     selectedSlotsRef.current = buildAvailabilitySet(displayAvailability);
     // Refresh grid if it exists using requestAnimationFrame for smoother updates
@@ -773,7 +761,7 @@ export function VirtualizedAvailabilityGrid({
     };
   }, [mode, timeSlots]);
 
-  // Heatmap cell style with GM availability indication
+  // Heatmap cell style with GM availability indication (diagonal stripes)
   const getHeatmapCellStyle = useCallback((params: CellClassParams) => {
     const field = params.colDef.field;
     if (!field || field === "time" || field === "_timeDisplay") return undefined;
@@ -782,23 +770,33 @@ export function VirtualizedAvailabilityGrid({
     const count = params.value as number;
     const isGmAvailable = time && gmAvailableSlots.has(`${field}-${time}`);
 
+    const baseBgColor = getHeatmapBgColor(count, participants.length, isDarkMode);
+
     // Base style
     const style: Record<string, string> = {
-      backgroundColor: getHeatmapBgColor(count, participants.length, isDarkMode),
+      backgroundColor: baseBgColor,
       cursor: disabled ? "default" : "pointer",
     };
 
-    // Add blue border for GM available times
+    // Add diagonal blue stripes for GM available times
     if (isGmAvailable) {
-      style.boxShadow = `inset 0 0 0 2px ${isDarkMode ? "#3b82f6" : "#2563eb"}`;
+      const stripeColor = isDarkMode ? "rgba(59, 130, 246, 0.4)" : "rgba(59, 130, 246, 0.3)";
+      style.backgroundImage = `repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 3px,
+        ${stripeColor} 3px,
+        ${stripeColor} 6px
+      )`;
+      style.backgroundSize = "8px 8px";
     }
 
     return style;
   }, [participants.length, isDarkMode, timeSlots, gmAvailableSlots, disabled]);
 
-  // Cell sizes - smaller in compact mode
-  const cellWidth = compact ? 32 : 48;
-  const timeColWidth = compact ? 40 : 50;
+  // Cell sizes - more compact by default
+  const cellWidth = compact ? 28 : 36;
+  const timeColWidth = compact ? 36 : 44;
 
   // Column definitions grouped by week
   const columnDefs = useMemo((): (ColDef | ColGroupDef)[] => {
@@ -870,9 +868,9 @@ export function VirtualizedAvailabilityGrid({
     lastAvailabilityRef.current = serializeAvailability(displayAvailability);
   }, [displayAvailability]);
 
-  // Row height - smaller in compact mode
-  const rowHeight = compact ? 18 : 24;
-  const headerHeight = compact ? 24 : 32;
+  // Row height - more compact by default
+  const rowHeight = compact ? 16 : 20;
+  const headerHeight = compact ? 20 : 26;
 
   // AG Grid theme
   const gridTheme = useMemo(() => {
@@ -891,30 +889,30 @@ export function VirtualizedAvailabilityGrid({
     });
   }, [isDarkMode, compact, rowHeight, headerHeight]);
 
-  // Calculate grid height
+  // Calculate grid height - no constraints, show all rows
   const gridHeight = useMemo(() => {
     const rowCount = timeSlots.length;
     const totalHeaderHeight = compact ? 48 : 64;
     const rowsHeight = rowCount * rowHeight;
-    return Math.min(totalHeaderHeight + rowsHeight + 20, compact ? 500 : 600);
+    return totalHeaderHeight + rowsHeight + 4;
   }, [timeSlots.length, compact, rowHeight]);
 
-  // CSS for cell states
+  // CSS for cell states - more compact styling
   const cellStyles = useMemo(() => `
     .virtualized-availability-grid .ag-header-group-cell {
       font-weight: 600 !important;
-      font-size: ${compact ? "9px" : "11px"} !important;
+      font-size: ${compact ? "8px" : "9px"} !important;
       justify-content: center !important;
     }
     .virtualized-availability-grid .ag-header-cell {
-      padding: 0 ${compact ? "1px" : "2px"} !important;
+      padding: 0 !important;
     }
     .virtualized-availability-grid .ag-header-cell-label {
       justify-content: center !important;
-      font-size: ${compact ? "8px" : "10px"} !important;
+      font-size: ${compact ? "7px" : "8px"} !important;
     }
     .virtualized-availability-grid .ag-cell {
-      padding: ${compact ? "0px" : "1px"} !important;
+      padding: 0 !important;
       border-right: 1px solid ${isDarkMode ? "#27272a" : "#f4f4f5"} !important;
       border-bottom: 1px solid ${isDarkMode ? "#27272a" : "#f4f4f5"} !important;
     }
@@ -922,19 +920,19 @@ export function VirtualizedAvailabilityGrid({
       display: flex !important;
       align-items: flex-start !important;
       justify-content: flex-end !important;
-      padding-right: ${compact ? "4px" : "8px"} !important;
-      font-size: ${compact ? "8px" : "10px"} !important;
+      padding-right: ${compact ? "2px" : "4px"} !important;
+      font-size: ${compact ? "7px" : "9px"} !important;
       font-weight: 500 !important;
       color: ${isDarkMode ? "#a1a1aa" : "#71717a"} !important;
       background-color: ${isDarkMode ? "#18181b" : "#fafafa"} !important;
-      border-right: 2px solid ${isDarkMode ? "#3f3f46" : "#e4e4e7"} !important;
+      border-right: 1px solid ${isDarkMode ? "#3f3f46" : "#e4e4e7"} !important;
       line-height: ${rowHeight}px !important;
       position: relative !important;
     }
     .virtualized-availability-grid .time-cell .ag-cell-value {
       position: absolute !important;
       top: 0 !important;
-      right: ${compact ? "4px" : "8px"} !important;
+      right: ${compact ? "2px" : "4px"} !important;
       transform: translateY(-50%) !important;
     }
     .virtualized-availability-grid .ag-pinned-left-cols-container .ag-cell {
@@ -944,10 +942,10 @@ export function VirtualizedAvailabilityGrid({
       border-bottom-color: ${isDarkMode ? "#3f3f46" : "#e4e4e7"} !important;
     }
     .virtualized-availability-grid .ag-body-horizontal-scroll {
-      height: ${compact ? "6px" : "10px"} !important;
+      height: ${compact ? "4px" : "6px"} !important;
     }
     .virtualized-availability-grid .ag-root-wrapper {
-      border-radius: ${compact ? "6px" : "8px"} !important;
+      border-radius: 6px !important;
       border: 1px solid ${isDarkMode ? "#3f3f46" : "#e4e4e7"} !important;
     }
     .virtualized-availability-grid .week-group-header {
@@ -955,13 +953,17 @@ export function VirtualizedAvailabilityGrid({
       border-bottom: 1px solid ${isDarkMode ? "#3f3f46" : "#e4e4e7"} !important;
     }
     .virtualized-availability-grid .date-header {
-      font-size: ${compact ? "8px" : "10px"} !important;
+      font-size: ${compact ? "7px" : "8px"} !important;
     }
     .virtualized-availability-grid .time-header {
       background-color: ${isDarkMode ? "#18181b" : "#fafafa"} !important;
     }
     .virtualized-availability-grid .cell-selected {
       background-color: ${isDarkMode ? "#16a34a" : "#4ade80"} !important;
+      cursor: ${disabled ? "default" : "pointer"} !important;
+    }
+    .virtualized-availability-grid .cell-blocked {
+      background-color: ${isDarkMode ? "#7f1d1d" : "#fecaca"} !important;
       cursor: ${disabled ? "default" : "pointer"} !important;
     }
     .virtualized-availability-grid .cell-pending-add {
@@ -1009,24 +1011,20 @@ export function VirtualizedAvailabilityGrid({
       </div>
 
       {mode === "edit" && !disabled && (
-        <div className="mt-3 flex items-center justify-between">
-          <div className="flex items-center gap-4 text-xs text-zinc-500 dark:text-zinc-400">
+        <div className="mt-2 flex items-center justify-end">
+          <div className="hidden items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400 sm:flex">
             <div className="flex items-center gap-1.5">
-              <div className="h-3 w-3 rounded bg-green-400 dark:bg-green-600" />
+              <div className="h-2.5 w-2.5 rounded bg-green-400 dark:bg-green-600" />
               <span>Available</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="h-3 w-3 rounded border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900" />
-              <span>Not available</span>
+              <div className="h-2.5 w-2.5 rounded bg-red-200 dark:bg-red-900/50" />
+              <span>Blocked</span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <div className="h-3 w-3 rounded bg-red-300 dark:bg-red-500" />
-              <span>Removing</span>
-            </div>
+            {isSaving && (
+              <span className="text-zinc-400">Saving...</span>
+            )}
           </div>
-          {isSaving && (
-            <span className="text-xs text-zinc-500">Saving...</span>
-          )}
           {!autoSave && onSave && (
             <button
               onClick={() => onSave(convertToUTC(setToTimeSlots(selectedSlotsRef.current)))}
@@ -1040,18 +1038,26 @@ export function VirtualizedAvailabilityGrid({
       )}
 
       {mode === "heatmap" && gmAvailability.length > 0 && (
-        <div className="mt-2 flex items-center gap-4 text-xs text-zinc-500 dark:text-zinc-400">
-          <div className="flex items-center gap-1.5">
-            <div className="h-3 w-3 rounded border-2 border-blue-600 bg-green-400 dark:border-blue-500 dark:bg-green-600" />
-            <span>GM available</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="h-3 w-3 rounded bg-green-400 dark:bg-green-600" />
-            <span>Players available</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="h-3 w-3 rounded border border-zinc-200 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800" />
-            <span>No availability</span>
+        <div className="mt-2 hidden justify-end sm:flex">
+          <div className="flex items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400">
+            <div className="flex items-center gap-1.5">
+              <div
+                className="h-3 w-3 rounded bg-green-400 dark:bg-green-600"
+                style={{
+                  backgroundImage: "repeating-linear-gradient(-45deg, transparent, transparent 2px, rgba(59, 130, 246, 0.3) 2px, rgba(59, 130, 246, 0.3) 4px)",
+                  backgroundSize: "6px 6px"
+                }}
+              />
+              <span>GM available</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="h-3 w-3 rounded bg-green-400 dark:bg-green-600" />
+              <span>Available</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="h-3 w-3 rounded border border-zinc-200 bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800" />
+              <span>No availability</span>
+            </div>
           </div>
         </div>
       )}

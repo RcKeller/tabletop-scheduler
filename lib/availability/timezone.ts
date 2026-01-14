@@ -422,3 +422,58 @@ export const DAY_NAMES_SHORT = [
   "Fri",
   "Sat",
 ] as const;
+
+/**
+ * Convert a pattern from one timezone to another
+ *
+ * @param days - Array of days of week in source timezone (0-6)
+ * @param startTime - Start time in source timezone (HH:MM)
+ * @param endTime - End time in source timezone (HH:MM)
+ * @param fromTz - Source timezone
+ * @param toTz - Target timezone
+ * @returns Converted days and times in target timezone
+ *
+ * @example
+ * // 3pm-9pm PST on weekdays becomes different times/days in Manila
+ * convertPatternBetweenTimezones([1,2,3,4,5], "15:00", "21:00", "America/Los_Angeles", "Asia/Manila")
+ */
+export function convertPatternBetweenTimezones(
+  days: number[],
+  startTime: string,
+  endTime: string,
+  fromTz: string,
+  toTz: string
+): { days: number[]; startTime: string; endTime: string } {
+  if (fromTz === toTz) {
+    return { days: [...days], startTime, endTime };
+  }
+
+  // Convert through UTC: fromTz -> UTC -> toTz
+  // All days should map consistently since we're dealing with the same time range
+  // Just use the first day to determine the conversion, then apply to all days
+  const newDays: number[] = [];
+  let newStartTime = startTime;
+  let newEndTime = endTime;
+
+  for (const day of days) {
+    // Convert to UTC
+    const utc = convertPatternToUTC(day, startTime, endTime, fromTz);
+    // Convert from UTC to target timezone
+    const local = convertPatternFromUTC(utc.dayOfWeek, utc.startTime, utc.endTime, toTz);
+
+    if (!newDays.includes(local.dayOfWeek)) {
+      newDays.push(local.dayOfWeek);
+    }
+    // Times should be the same for all days (same time range)
+    newStartTime = local.startTime;
+    newEndTime = local.endTime;
+  }
+
+  newDays.sort((a, b) => a - b);
+
+  return {
+    days: newDays,
+    startTime: newStartTime,
+    endTime: newEndTime,
+  };
+}

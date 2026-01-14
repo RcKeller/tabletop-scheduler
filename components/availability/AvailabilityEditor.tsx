@@ -9,6 +9,7 @@ import {
   minutesToTime,
   prepareRuleForStorage,
   convertPatternFromUTC,
+  convertPatternBetweenTimezones,
   type AvailabilityRule,
   type CreateAvailabilityRuleInput,
   type DateRange,
@@ -42,6 +43,7 @@ const DAYS = [
 ];
 
 const DAY_PRESETS = [
+  { value: "everyday", label: "Every Day", days: [0, 1, 2, 3, 4, 5, 6] },
   { value: "weekdays", label: "Weekdays", days: [1, 2, 3, 4, 5] },
   { value: "weekends", label: "Weekends", days: [0, 6] },
 ];
@@ -259,7 +261,6 @@ export function AvailabilityEditor({
     isLoading,
     error,
     replaceRules,
-    addRules,
   } = useAvailabilityRules({
     participantId,
     fetchOnMount: !initialRules,
@@ -271,8 +272,6 @@ export function AvailabilityEditor({
   // Pattern editor state
   const [patternEntries, setPatternEntries] = useState<PatternEntry[]>([]);
   const [showAddMenu, setShowAddMenu] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   // Track current grid slots locally to avoid losing overrides when patterns are saved
   // This is updated when the grid saves, and used when patterns are saved
@@ -291,8 +290,9 @@ export function AvailabilityEditor({
   const [isParsingAI, setIsParsingAI] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
-  // Track last timezone used to reinitialize patterns on timezone change
-  const lastTimezoneRef = useRef(timezone);
+  // Track what timezone the pattern entries are currently stored in
+  // This is separate from the display timezone - patterns need to be converted before display
+  const patternTimezoneRef = useRef(timezone);
 
   // Track if patterns have been initialized from server
   const patternsInitializedRef = useRef(false);
@@ -307,13 +307,16 @@ export function AvailabilityEditor({
   );
 
   // Convert rules to TimeSlots for VirtualizedAvailabilityGrid
-  // Use local pattern state when user has edited (for immediate feedback)
-  // Fall back to server rules for initial load
+  // Always compute from local state once initialized (for immediate feedback)
   const timeSlots = useMemo(() => {
-    // If we have local pattern edits, compute from local state for immediate feedback
-    if (patternsInitializedRef.current && patternEntries.length > 0) {
+    // Once initialized, always compute from local state (patterns + overrides)
+    // This ensures UI reflects local edits immediately
+    if (patternsInitializedRef.current) {
+      // Use the timezone that patterns are stored in, not the display timezone
+      // This ensures correct conversion even during timezone switch (before useEffect updates patterns)
+      const sourceTimezone = patternTimezoneRef.current;
       // Convert local patterns to rules format for computation
-      const localPatternRules = patternEntriesToRules(patternEntries, participantId, timezone);
+      const localPatternRules = patternEntriesToRules(patternEntries, participantId, sourceTimezone);
       // Convert to AvailabilityRule format with placeholder IDs for computation
       const computeRules: AvailabilityRule[] = localPatternRules.map((r, i) => ({
         id: `local-${i}`,
@@ -349,7 +352,7 @@ export function AvailabilityEditor({
       const allLocalRules = [...computeRules, ...overrideRules];
       return rulesToTimeSlots(allLocalRules, dateRange);
     }
-    // Initial load - use server rules
+    // Initial load before initialization - use server rules directly
     return rulesToTimeSlots(effectiveRules, dateRange);
   }, [effectiveRules, dateRange, patternEntries, localOverrideSlots, participantId, timezone]);
 
@@ -362,52 +365,70 @@ export function AvailabilityEditor({
     localOverrideSlotsRef.current = localOverrideSlots;
   }, [localOverrideSlots]);
 
-  // Initialize pattern entries from server rules ONLY on first load or timezone change
-  // Skip if user is actively editing (to prevent overwriting their changes)
+  // Convert pattern entries when timezone changes
   useEffect(() => {
-    // Skip if user is editing
-    if (isUserEditingRef.current) {
+    const oldTimezone = patternTimezoneRef.current;
+    const timezoneChanged = oldTimezone !== timezone;
+
+    if (timezoneChanged && patternsInitializedRef.current && patternEntries.length > 0) {
+      // Convert existing patterns from old timezone to new timezone
+      const convertedPatterns = patternEntries.map((entry) => {
+        const converted = convertPatternBetweenTimezones(
+          entry.days,
+          entry.startTime,
+          entry.endTime,
+          oldTimezone,
+          timezone
+        );
+        return {
+          ...entry,
+          days: converted.days,
+          startTime: converted.startTime,
+          endTime: converted.endTime,
+        };
+      });
+      setPatternEntries(convertedPatterns);
+      patternEntriesRef.current = convertedPatterns;
+      // Update the ref AFTER setting patterns - they're now in the new timezone
+      patternTimezoneRef.current = timezone;
+    } else if (timezoneChanged && patternsInitializedRef.current) {
+      // No patterns to convert, just update the ref
+      patternTimezoneRef.current = timezone;
+    }
+  }, [timezone, patternEntries]);
+
+  // Initialize pattern entries from server rules on first load
+  useEffect(() => {
+    // Skip if already initialized or user is editing
+    if (patternsInitializedRef.current || isUserEditingRef.current) {
       return;
     }
 
-    // Skip if no rules (not loaded yet)
-    if (effectiveRules.length === 0 && !patternsInitializedRef.current) {
-      return;
-    }
+    const extracted = extractPatternEntries(effectiveRules, timezone);
+    setPatternEntries(extracted);
+    patternEntriesRef.current = extracted;
 
-    // Check if timezone changed
-    const timezoneChanged = lastTimezoneRef.current !== timezone;
+    // Also extract override slots (specific date rules) for local tracking
+    const overrideRules = effectiveRules.filter(
+      r => r.ruleType === "available_override" || r.ruleType === "blocked_override"
+    );
+    const overrideSlots: TimeSlot[] = overrideRules
+      .filter(r => r.specificDate && r.ruleType === "available_override")
+      .map(r => ({
+        date: r.specificDate!,
+        startTime: r.startTime,
+        endTime: r.endTime,
+      }));
+    setLocalOverrideSlots(overrideSlots);
+    localOverrideSlotsRef.current = overrideSlots;
 
-    // Only initialize if first time OR timezone changed
-    if (!patternsInitializedRef.current || timezoneChanged) {
-      const extracted = extractPatternEntries(effectiveRules, timezone);
-      setPatternEntries(extracted);
-      patternEntriesRef.current = extracted;
-
-      // Also extract override slots (specific date rules) for local tracking
-      const overrideRules = effectiveRules.filter(
-        r => r.ruleType === "available_override" || r.ruleType === "blocked_override"
-      );
-      const overrideSlots: TimeSlot[] = overrideRules
-        .filter(r => r.specificDate && r.ruleType === "available_override")
-        .map(r => ({
-          date: r.specificDate!,
-          startTime: r.startTime,
-          endTime: r.endTime,
-        }));
-      setLocalOverrideSlots(overrideSlots);
-      localOverrideSlotsRef.current = overrideSlots;
-
-      patternsInitializedRef.current = true;
-      lastTimezoneRef.current = timezone;
-    }
+    patternsInitializedRef.current = true;
+    patternTimezoneRef.current = timezone;
   }, [effectiveRules, timezone]);
 
   // Handle grid save - optimistic, skip refetch to avoid flashing
   const handleGridSave = useCallback(
     async (slots: TimeSlot[]) => {
-      setSaveStatus("saving");
-
       // Store grid slots locally so they're available when patterns are saved
       // These slots are in UTC (the grid converts before calling onSave)
       setLocalOverrideSlots(slots);
@@ -425,14 +446,10 @@ export function AvailabilityEditor({
         // Pass skipRefetch=true to avoid re-rendering the grid
         const success = await replaceRules(allRules, true);
         if (success) {
-          setSaveStatus("saved");
           onSaveComplete?.();
-          setTimeout(() => setSaveStatus("idle"), 1500);
-        } else {
-          setSaveStatus("error");
         }
       } catch {
-        setSaveStatus("error");
+        // Silently handle errors - user can retry
       }
     },
     [patternEntries, participantId, timezone, replaceRules, onSaveComplete]
@@ -455,8 +472,6 @@ export function AvailabilityEditor({
   }, []);
 
   const savePatterns = useCallback(async () => {
-    setIsSaving(true);
-    setSaveStatus("saving");
     try {
       // Use refs to get latest state (avoids stale closure issues)
       const currentPatterns = patternEntriesRef.current;
@@ -471,16 +486,10 @@ export function AvailabilityEditor({
       // Skip refetch to avoid overwriting local state
       const success = await replaceRules([...patternRules, ...overrideRules], true);
       if (success) {
-        setSaveStatus("saved");
         onSaveComplete?.();
-        setTimeout(() => setSaveStatus("idle"), 1500);
-      } else {
-        setSaveStatus("error");
       }
     } catch {
-      setSaveStatus("error");
-    } finally {
-      setIsSaving(false);
+      // Silently handle errors - user can retry
     }
   }, [participantId, timezone, replaceRules, onSaveComplete]);
 
@@ -590,7 +599,20 @@ export function AvailabilityEditor({
     patternsInitializedRef.current = false;
   }, []);
 
-  // Handle AI input
+  // Clear all availability
+  const handleClearAll = useCallback(async () => {
+    markUserEditing();
+    // Clear local state
+    setPatternEntries([]);
+    patternEntriesRef.current = [];
+    setLocalOverrideSlots([]);
+    localOverrideSlotsRef.current = [];
+    // Save empty rules to server
+    await replaceRules([], true);
+    onSaveComplete?.();
+  }, [markUserEditing, replaceRules, onSaveComplete]);
+
+  // Handle AI input - add rules without page refresh
   const handleAIParse = useCallback(async () => {
     if (!aiInput.trim()) return;
 
@@ -619,12 +641,73 @@ export function AvailabilityEditor({
       const result = await response.json();
 
       if (result.rules && result.rules.length > 0) {
-        // Force re-extraction after AI adds rules so patterns update in UI
-        forceReExtract();
-        const success = await addRules(result.rules);
-        if (success) {
-          setAiInput("");
+        // Extract patterns from AI rules and merge with existing patterns
+        const aiPatternRules = result.rules.filter(
+          (r: { ruleType: string }) => r.ruleType === "available_pattern" || r.ruleType === "blocked_pattern"
+        );
+        const aiOverrideRules = result.rules.filter(
+          (r: { ruleType: string }) => r.ruleType === "available_override"
+        );
+
+        // Convert AI pattern rules to pattern entries and add to local state
+        if (aiPatternRules.length > 0) {
+          markUserEditing();
+          // Group AI patterns by time range and type
+          const newPatterns: PatternEntry[] = [];
+          const groups = new Map<string, PatternEntry>();
+
+          for (const rule of aiPatternRules) {
+            const isAvailable = rule.ruleType === "available_pattern";
+            const key = `${rule.startTime}-${rule.endTime}-${isAvailable}`;
+            const existing = groups.get(key);
+            if (existing) {
+              if (!existing.days.includes(rule.dayOfWeek)) {
+                existing.days.push(rule.dayOfWeek);
+                existing.days.sort((a: number, b: number) => a - b);
+              }
+            } else {
+              groups.set(key, {
+                id: `ai-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                days: [rule.dayOfWeek],
+                startTime: rule.startTime,
+                endTime: rule.endTime,
+                isAvailable,
+              });
+            }
+          }
+
+          newPatterns.push(...groups.values());
+
+          setPatternEntries((prev) => {
+            const updated = [...prev, ...newPatterns];
+            patternEntriesRef.current = updated;
+            return updated;
+          });
         }
+
+        // Add override slots to local state
+        if (aiOverrideRules.length > 0) {
+          const newOverrides: TimeSlot[] = aiOverrideRules.map((r: { specificDate: string; startTime: string; endTime: string }) => ({
+            date: r.specificDate,
+            startTime: r.startTime,
+            endTime: r.endTime,
+          }));
+          setLocalOverrideSlots((prev) => {
+            const updated = [...prev, ...newOverrides];
+            localOverrideSlotsRef.current = updated;
+            return updated;
+          });
+        }
+
+        // Save all rules (existing patterns + new AI rules) without refetch
+        const currentPatterns = patternEntriesRef.current;
+        const currentOverrides = localOverrideSlotsRef.current;
+        const patternRules = patternEntriesToRules(currentPatterns, participantId, timezone);
+        const overrideRules = timeSlotsToRules(currentOverrides, participantId, timezone);
+        await replaceRules([...patternRules, ...overrideRules], true);
+
+        setAiInput("");
+        onSaveComplete?.();
       }
     } catch (err) {
       setAiError(
@@ -633,69 +716,10 @@ export function AvailabilityEditor({
     } finally {
       setIsParsingAI(false);
     }
-  }, [aiInput, timezone, participantId, addRules, forceReExtract]);
+  }, [aiInput, timezone, participantId, markUserEditing, replaceRules, onSaveComplete]);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h2 className="text-xl font-semibold">
-            {isGm ? "GM Availability" : "Your Availability"}
-          </h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            {isGm
-              ? "Set when you can run sessions"
-              : "Let the GM know when you can play"}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-4">
-          {/* Save status indicator */}
-          {saveStatus !== "idle" && (
-            <span className={`text-sm ${
-              saveStatus === "saving" ? "text-blue-600" :
-              saveStatus === "saved" ? "text-green-600" :
-              "text-red-600"
-            }`}>
-              {saveStatus === "saving" && "Saving..."}
-              {saveStatus === "saved" && "Saved!"}
-              {saveStatus === "error" && "Error saving"}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* AI Input */}
-      <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-          Describe your availability in plain English
-        </label>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={aiInput}
-            onChange={(e) => setAiInput(e.target.value)}
-            placeholder="e.g., free weekday evenings 6-10pm, busy on Mondays"
-            className="flex-1 border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-sm bg-white dark:bg-gray-800"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleAIParse();
-              }
-            }}
-          />
-          <button
-            onClick={handleAIParse}
-            disabled={isParsingAI || !aiInput.trim()}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isParsingAI ? "Processing..." : "Add"}
-          </button>
-        </div>
-        {aiError && <p className="mt-2 text-sm text-red-600">{aiError}</p>}
-      </div>
-
+    <div className="space-y-4">
       {/* Error display */}
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-4 text-red-700 dark:text-red-400">
@@ -710,125 +734,114 @@ export function AvailabilityEditor({
         </div>
       )}
 
-      {/* Main Content - Pattern Editor and Grid */}
+      {/* Main Content */}
       {!isLoading && (
-        <div className="space-y-6">
-          {/* Recurring Schedule Section */}
-          <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-medium text-gray-900 dark:text-gray-100">Recurring Schedule</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Set your typical weekly availability (changes save automatically)
-                </p>
-              </div>
-              {saveStatus === "saving" && (
-                <span className="text-xs text-gray-500">Saving...</span>
-              )}
-              {saveStatus === "saved" && (
-                <span className="text-xs text-green-600 dark:text-green-400">Saved</span>
-              )}
-            </div>
+        <div className="space-y-4">
+          {/* Full-width Calendar Grid */}
+          <VirtualizedAvailabilityGrid
+            startDate={new Date(event.startDate)}
+            endDate={new Date(event.endDate)}
+            earliestTime="00:00"
+            latestTime="23:30"
+            mode="edit"
+            availability={timeSlots}
+            onSave={handleGridSave}
+            autoSave={true}
+            timezone={timezone}
+          />
 
-            {/* Pattern entries */}
-            {patternEntries.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400 italic mb-3">
-                No recurring schedule set. Add one below or use the calendar.
-              </p>
-            ) : (
-              <div className="space-y-2 mb-3">
-                {patternEntries.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className={`flex items-center gap-3 p-2 rounded-lg border ${
+          {/* Schedule Entries */}
+          {patternEntries.length > 0 && (
+            <div className="space-y-2">
+              {patternEntries.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="flex items-center gap-3 py-2"
+                >
+                  <button
+                    onClick={() => togglePatternAvailability(entry.id)}
+                    className={`flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${
                       entry.isAvailable
-                        ? "border-green-200 bg-green-50/50 dark:border-green-900/50 dark:bg-green-950/20"
-                        : "border-red-200 bg-red-50/50 dark:border-red-900/50 dark:bg-red-950/20"
+                        ? "bg-green-500 text-white"
+                        : "bg-red-500 text-white"
                     }`}
                   >
-                    <button
-                      onClick={() => togglePatternAvailability(entry.id)}
-                      className={`flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${
-                        entry.isAvailable
-                          ? "bg-green-500 text-white"
-                          : "bg-red-500 text-white"
-                      }`}
-                    >
-                      {entry.isAvailable ? "Available" : "Blocked"}
-                    </button>
+                    {entry.isAvailable ? "Available" : "Blocked"}
+                  </button>
 
-                    <div className="flex flex-wrap gap-1">
-                      {DAYS.map((day) => {
-                        const isSelected = entry.days.includes(day.value);
-                        return (
-                          <button
-                            key={day.value}
-                            onClick={() => togglePatternDay(entry.id, day.value)}
-                            className={`rounded px-1.5 py-0.5 text-xs font-medium ${
-                              isSelected
-                                ? entry.isAvailable
-                                  ? "bg-green-600 text-white"
-                                  : "bg-red-600 text-white"
-                                : "bg-gray-100 text-gray-400 dark:bg-gray-700"
-                            }`}
-                          >
-                            {day.short}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="flex items-center gap-1 text-sm">
-                      <select
-                        value={entry.startTime}
-                        onChange={(e) => updatePatternEntry(entry.id, "startTime", e.target.value)}
-                        className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-1 py-0.5 text-xs"
-                      >
-                        {TIME_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                      <span className="text-gray-400">-</span>
-                      <select
-                        value={entry.endTime}
-                        onChange={(e) => updatePatternEntry(entry.id, "endTime", e.target.value)}
-                        className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-1 py-0.5 text-xs"
-                      >
-                        {TIME_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <button
-                      onClick={() => removePatternEntry(entry.id)}
-                      className="ml-auto text-gray-400 hover:text-red-500"
-                    >
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
+                  <div className="flex flex-wrap gap-1">
+                    {DAYS.map((day) => {
+                      const isSelected = entry.days.includes(day.value);
+                      return (
+                        <button
+                          key={day.value}
+                          onClick={() => togglePatternDay(entry.id, day.value)}
+                          className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                            isSelected
+                              ? entry.isAvailable
+                                ? "bg-green-600 text-white"
+                                : "bg-red-600 text-white"
+                              : "bg-gray-100 text-gray-400 dark:bg-gray-700"
+                          }`}
+                        >
+                          {day.short}
+                        </button>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
-            )}
 
-            {/* Add pattern buttons */}
-            <div className="relative inline-block">
+                  <div className="flex items-center gap-1 text-sm">
+                    <select
+                      value={entry.startTime}
+                      onChange={(e) => updatePatternEntry(entry.id, "startTime", e.target.value)}
+                      className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-1 py-0.5 text-xs"
+                    >
+                      {TIME_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                    <span className="text-gray-400">-</span>
+                    <select
+                      value={entry.endTime}
+                      onChange={(e) => updatePatternEntry(entry.id, "endTime", e.target.value)}
+                      className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-1 py-0.5 text-xs"
+                    >
+                      {TIME_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={() => removePatternEntry(entry.id)}
+                    className="ml-auto text-gray-400 hover:text-red-500"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add Schedule Button */}
+          <div className="flex items-center justify-between">
+            <div className="relative">
               <button
                 onClick={() => setShowAddMenu(!showAddMenu)}
-                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                className="flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                Add recurring time
+                Add recurring schedule
               </button>
 
               {showAddMenu && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setShowAddMenu(false)} />
-                  <div className="absolute left-0 top-full z-20 mt-1 w-56 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-xl">
+                  <div className="absolute left-0 top-full z-20 mt-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-xl min-w-[200px]">
                     <div className="px-3 py-1 text-xs font-semibold uppercase text-gray-400">Available</div>
                     {DAY_PRESETS.map((preset) => (
                       <button
@@ -856,28 +869,60 @@ export function AvailabilityEditor({
                 </>
               )}
             </div>
+
+            {/* Clear All - subtle link on right */}
+            {(patternEntries.length > 0 || localOverrideSlots.length > 0) && (
+              <button
+                onClick={handleClearAll}
+                className="text-xs text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+              >
+                Clear all
+              </button>
+            )}
           </div>
 
-          {/* Calendar Grid Section */}
-          <div>
-            <div className="mb-3">
-              <h3 className="font-medium text-gray-900 dark:text-gray-100">Calendar</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Click and drag to add or remove specific dates. Changes save automatically.
-              </p>
+          {/* AI Assistant */}
+          <div className="flex items-start gap-3 pt-4 pb-2">
+            {/* Robot icon */}
+            <div className="flex-shrink-0 mt-1">
+              <svg className="h-5 w-5 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714a2.25 2.25 0 00.659 1.591L19 14.5M14.25 3.104c.251.023.501.05.75.082M19 14.5l-2.47-2.47a3.75 3.75 0 00-5.06 0L9 14.5m10 0v4.25a2.25 2.25 0 01-2.25 2.25h-9.5A2.25 2.25 0 015 18.75V14.5m0 0l2.47-2.47a3.75 3.75 0 015.06 0L15 14.5" />
+              </svg>
             </div>
-
-            <VirtualizedAvailabilityGrid
-              startDate={new Date(event.startDate)}
-              endDate={new Date(event.endDate)}
-              earliestTime="00:00"
-              latestTime="23:30"
-              mode="edit"
-              availability={timeSlots}
-              onSave={handleGridSave}
-              autoSave={true}
-              timezone={timezone}
-            />
+            <div className="flex-1">
+              <textarea
+                value={aiInput}
+                onChange={(e) => setAiInput(e.target.value)}
+                placeholder="Describe your availability in plain English, e.g. 'free weekday evenings 6-10pm, busy Mondays'"
+                className="w-full border border-gray-200 dark:border-gray-700 rounded-md bg-transparent px-3 py-2 text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500 placeholder:text-gray-400 resize-none"
+                rows={2}
+                disabled={isParsingAI}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleAIParse();
+                  }
+                }}
+              />
+              {aiError && <p className="mt-1 text-xs text-red-600">{aiError}</p>}
+            </div>
+            <button
+              onClick={handleAIParse}
+              disabled={isParsingAI || !aiInput.trim()}
+              className="flex-shrink-0 px-4 py-2 text-sm font-medium bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {isParsingAI ? (
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Adding...
+                </span>
+              ) : (
+                "Add with AI"
+              )}
+            </button>
           </div>
         </div>
       )}

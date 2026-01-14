@@ -66,6 +66,7 @@ export {
   utcToLocal,
   convertPatternToUTC,
   convertPatternFromUTC,
+  convertPatternBetweenTimezones,
   convertOverrideToUTC,
   convertOverrideFromUTC,
   convertRuleForDisplay,

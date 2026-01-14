@@ -3,6 +3,7 @@ import {
   utcToLocal,
   convertPatternToUTC,
   convertPatternFromUTC,
+  convertPatternBetweenTimezones,
   convertOverrideToUTC,
   convertOverrideFromUTC,
   getUTCDayOfWeek,
@@ -326,6 +327,85 @@ describe("timezone utilities", () => {
         "Pacific/Pago_Pago"
       );
       expect(backToUTC).toEqual(original);
+    });
+  });
+
+  describe("convertPatternBetweenTimezones", () => {
+    it("returns unchanged for same timezone", () => {
+      const result = convertPatternBetweenTimezones(
+        [1, 2, 3],
+        "15:00",
+        "21:00",
+        "America/Los_Angeles",
+        "America/Los_Angeles"
+      );
+      expect(result).toEqual({
+        days: [1, 2, 3],
+        startTime: "15:00",
+        endTime: "21:00",
+      });
+    });
+
+    it("converts PST to Manila (16 hour difference)", () => {
+      // 3pm-9pm PST on Mon/Tue/Wed = 7am-1pm Manila next day (Tue/Wed/Thu)
+      // PST is UTC-8, Manila is UTC+8, so 16 hours ahead
+      const result = convertPatternBetweenTimezones(
+        [1, 2, 3], // Mon, Tue, Wed in PST
+        "15:00",
+        "21:00",
+        "America/Los_Angeles",
+        "Asia/Manila"
+      );
+      expect(result.days).toEqual([2, 3, 4]); // Tue, Wed, Thu in Manila
+      expect(result.startTime).toBe("07:00");
+      expect(result.endTime).toBe("13:00");
+    });
+
+    it("converts Manila to PST (going back in time)", () => {
+      // 7am-1pm Manila on Tue/Wed/Thu = 3pm-9pm PST previous day (Mon/Tue/Wed)
+      const result = convertPatternBetweenTimezones(
+        [2, 3, 4], // Tue, Wed, Thu in Manila
+        "07:00",
+        "13:00",
+        "Asia/Manila",
+        "America/Los_Angeles"
+      );
+      expect(result.days).toEqual([1, 2, 3]); // Mon, Tue, Wed in PST
+      expect(result.startTime).toBe("15:00");
+      expect(result.endTime).toBe("21:00");
+    });
+
+    it("handles weekday conversion with day wrap", () => {
+      // Sunday late night in Tokyo = earlier on Sunday in LA
+      // 11pm-11:30pm Sunday Tokyo (UTC+9) = 2pm-2:30pm Sunday UTC = 6am-6:30am Sunday LA (UTC-8)
+      const result = convertPatternBetweenTimezones(
+        [0], // Sunday in Tokyo
+        "23:00",
+        "23:30", // 11pm-11:30pm
+        "Asia/Tokyo",
+        "America/Los_Angeles"
+      );
+      // Should stay on Sunday but at 6am-6:30am
+      expect(result.days).toEqual([0]); // Still Sunday
+      expect(result.startTime).toBe("06:00");
+      expect(result.endTime).toBe("06:30");
+    });
+
+    it("handles Every Day pattern conversion", () => {
+      // Every day 6pm-10pm in New York should convert to next day in Tokyo
+      const result = convertPatternBetweenTimezones(
+        [0, 1, 2, 3, 4, 5, 6], // Every day
+        "18:00",
+        "22:00",
+        "America/New_York",
+        "Asia/Tokyo"
+      );
+      // Times should shift by 14 hours (NY is UTC-5, Tokyo is UTC+9)
+      // 6pm NY = 8am next day Tokyo
+      expect(result.startTime).toBe("08:00");
+      expect(result.endTime).toBe("12:00");
+      // All days should still be represented (might shift)
+      expect(result.days.length).toBe(7);
     });
   });
 });
