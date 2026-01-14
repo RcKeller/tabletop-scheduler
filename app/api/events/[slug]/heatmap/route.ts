@@ -67,7 +67,7 @@ export async function GET(
 
     // Get time window settings
     const earliestTime = event.earliestTime || "00:00";
-    const latestTime = event.latestTime || "23:30";
+    const latestTime = event.latestTime || "24:00";
 
     // Debug mode
     const debugMode = request.nextUrl.searchParams.get("debug") === "true";
@@ -99,6 +99,7 @@ export async function GET(
         endTime: r.endTime,
         originalTimezone: r.originalTimezone,
         originalDayOfWeek: r.originalDayOfWeek,
+        crossesMidnight: r.crossesMidnight ?? undefined,
         reason: r.reason,
         source: r.source as AvailabilityRule["source"],
         createdAt: r.createdAt,
@@ -109,14 +110,44 @@ export async function GET(
       const effectiveRanges = computeEffectiveRanges(rules, dateRange);
 
       // Convert ranges to slots for heatmap
+      // Handle overnight ranges (endMinutes >= 1440) by splitting them
       const availability: { date: string; startTime: string; endTime: string }[] = [];
       for (const [date, dayAvail] of effectiveRanges) {
         for (const range of dayAvail.availableRanges) {
-          availability.push({
-            date,
-            startTime: minutesToTime(range.startMinutes),
-            endTime: minutesToTime(range.endMinutes),
-          });
+          if (range.endMinutes > 1440) {
+            // Overnight range - split into two parts
+            // Part 1: startTime to midnight (24:00)
+            availability.push({
+              date,
+              startTime: minutesToTime(range.startMinutes),
+              endTime: "24:00",
+            });
+            // Part 2: midnight to endTime on next day
+            const nextDate = new Date(date + "T12:00:00Z");
+            nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+            const nextDateStr = nextDate.toISOString().split("T")[0];
+            const wrappedEnd = range.endMinutes - 1440;
+            if (wrappedEnd > 0) {
+              availability.push({
+                date: nextDateStr,
+                startTime: "00:00",
+                endTime: minutesToTime(wrappedEnd),
+              });
+            }
+          } else if (range.endMinutes === 1440) {
+            // Full day ending at midnight
+            availability.push({
+              date,
+              startTime: minutesToTime(range.startMinutes),
+              endTime: "24:00",
+            });
+          } else {
+            availability.push({
+              date,
+              startTime: minutesToTime(range.startMinutes),
+              endTime: minutesToTime(range.endMinutes),
+            });
+          }
         }
       }
 
@@ -149,7 +180,7 @@ export async function GET(
     const heatmapData: Record<string, { count: number; participantIds: string[] }> = {};
 
     // Generate time slots for the FULL day
-    const fullDaySlots = generateTimeSlots("00:00", "23:30");
+    const fullDaySlots = generateTimeSlots("00:00", "24:00");
 
     // Initialize all slots for full day
     for (const date of dateStrings) {
@@ -195,15 +226,27 @@ export async function GET(
       let maxMinutes = -Infinity;
 
       for (const slot of gmParticipant.availability) {
-        // Skip truly invalid slots (same start and end)
-        if (slot.startTime === slot.endTime) continue;
+        // Skip truly invalid slots (same start and end, but NOT full-day slots like 00:00-24:00)
+        if (slot.startTime === slot.endTime && slot.endTime !== "24:00") continue;
+
+        // Handle 24:00 end time specially
+        const isEndOfDay = slot.endTime === "24:00";
 
         // Convert UTC times to event timezone
         const localStart = utcToLocal(slot.startTime, slot.date, eventTimezone);
-        const localEnd = utcToLocal(slot.endTime, slot.date, eventTimezone);
+        // For 24:00, convert as 00:00 of next day
+        const endDateForConversion = isEndOfDay
+          ? (() => {
+              const nextDate = new Date(slot.date + "T12:00:00Z");
+              nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+              return nextDate.toISOString().split("T")[0];
+            })()
+          : slot.date;
+        const localEnd = utcToLocal(isEndOfDay ? "00:00" : slot.endTime, endDateForConversion, eventTimezone);
 
         const startMins = timeToMinutes(localStart.time);
-        let endMins = timeToMinutes(localEnd.time);
+        // For full-day slots, use 1440 for end minutes
+        let endMins = isEndOfDay ? 1440 : timeToMinutes(localEnd.time);
 
         // Handle overnight: if end appears before start, it wrapped to next day
         // For bounds calculation, we care about the time-of-day range, not the date
@@ -242,11 +285,11 @@ export async function GET(
         const roundedLatest = Math.ceil(maxMinutes / 60) * 60;
 
         // Normalize maxMinutes if it went over 24 hours
-        // For display, cap at 23:30 (last slot of the day)
+        // For display, cap at 24:00 (end of day = all 48 slots)
         if (roundedLatest >= 1440) {
           // Overnight availability - for now, show full day
           effectiveEarliest = minutesToTime(Math.min(roundedEarliest, 0));
-          effectiveLatest = "23:30";
+          effectiveLatest = "24:00";
         } else {
           effectiveEarliest = minutesToTime(roundedEarliest);
           effectiveLatest = minutesToTime(roundedLatest);

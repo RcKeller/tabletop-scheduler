@@ -260,6 +260,7 @@ function patternEntriesToRules(
         endTime: prepared.endTime,
         originalTimezone: prepared.originalTimezone,
         originalDayOfWeek: dayOfWeek,
+        crossesMidnight: prepared.crossesMidnight, // CRITICAL: Pass through for full-day patterns
         source: "manual",
       });
     }
@@ -358,6 +359,7 @@ export function AvailabilityEditor({
         endTime: r.endTime,
         originalTimezone: r.originalTimezone,
         originalDayOfWeek: r.originalDayOfWeek,
+        crossesMidnight: r.crossesMidnight, // CRITICAL: Pass through for full-day patterns
         reason: null,
         source: r.source || "manual",
         createdAt: new Date(),
@@ -726,11 +728,13 @@ export function AvailabilityEditor({
 
           for (const rule of aiPatternRules) {
             // Convert from UTC to user's display timezone
+            // Pass crossesMidnight for full-day patterns (e.g., 08:00-08:00 with crossesMidnight=true)
             const converted = convertPatternFromUTC(
               rule.dayOfWeek,
               rule.startTime,
               rule.endTime,
-              timezone
+              timezone,
+              rule.crossesMidnight
             );
 
             const isAvailable = rule.ruleType === "available_pattern";
@@ -821,7 +825,7 @@ export function AvailabilityEditor({
             startDate={new Date(event.startDate)}
             endDate={new Date(event.endDate)}
             earliestTime="00:00"
-            latestTime="23:30"
+            latestTime="24:00"
             mode="edit"
             availability={timeSlots}
             onSave={handleGridSave}

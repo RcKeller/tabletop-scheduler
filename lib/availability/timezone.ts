@@ -44,16 +44,25 @@ function getReferenceDateString(dayOfWeek: number): string {
 
 /**
  * Convert a local time to UTC
+ * Handles "24:00" as midnight of the next day
  */
 export function localToUTC(
   time: string,
   date: string,
   fromTz: string
 ): { date: string; time: string } {
-  if (fromTz === "UTC") {
-    return { date, time };
+  // Handle "24:00" as "00:00 of the next day"
+  let adjustedTime = time;
+  let adjustedDate = date;
+  if (time === "24:00") {
+    adjustedTime = "00:00";
+    adjustedDate = format(addDays(new Date(date), 1), "yyyy-MM-dd");
   }
-  const dateTime = parse(`${date} ${time}`, "yyyy-MM-dd HH:mm", new Date());
+
+  if (fromTz === "UTC") {
+    return { date: adjustedDate, time: adjustedTime };
+  }
+  const dateTime = parse(`${adjustedDate} ${adjustedTime}`, "yyyy-MM-dd HH:mm", new Date());
   const utcDate = fromZonedTime(dateTime, fromTz);
   return {
     date: formatInTimeZone(utcDate, "UTC", "yyyy-MM-dd"),
@@ -63,16 +72,25 @@ export function localToUTC(
 
 /**
  * Convert UTC to local time
+ * Handles "24:00" as midnight of the next day
  */
 export function utcToLocal(
   time: string,
   date: string,
   toTz: string
 ): { date: string; time: string } {
-  if (toTz === "UTC") {
-    return { date, time };
+  // Handle "24:00" as "00:00 of the next day"
+  let adjustedTime = time;
+  let adjustedDate = date;
+  if (time === "24:00") {
+    adjustedTime = "00:00";
+    adjustedDate = format(addDays(new Date(date), 1), "yyyy-MM-dd");
   }
-  const utcDateTime = new Date(`${date}T${time}:00Z`);
+
+  if (toTz === "UTC") {
+    return { date: adjustedDate, time: adjustedTime };
+  }
+  const utcDateTime = new Date(`${adjustedDate}T${adjustedTime}:00Z`);
   return {
     date: formatInTimeZone(utcDateTime, toTz, "yyyy-MM-dd"),
     time: formatInTimeZone(utcDateTime, toTz, "HH:mm"),
@@ -98,9 +116,21 @@ export function convertPatternToUTC(
   startTime: string,
   endTime: string,
   fromTz: string
-): { dayOfWeek: number; startTime: string; endTime: string } {
+): { dayOfWeek: number; startTime: string; endTime: string; crossesMidnight: boolean } {
+  // Determine if ORIGINAL input crosses midnight BEFORE any conversion
+  // This is the key fix: capture user intent at the source
+  const startMins = timeToMinutes(startTime);
+  const endMins = timeToMinutes(endTime);
+  let crossesMidnight = endMins <= startMins && endTime !== startTime;
+
+  // Special case: 00:00-24:00 is a full day (24 hours), not midnight crossing
+  // But after timezone conversion, it may appear as same time on different days
+  const isFullDay = startTime === "00:00" && endTime === "24:00";
+
   if (fromTz === "UTC") {
-    return { dayOfWeek: localDayOfWeek, startTime, endTime };
+    // For UTC with 00:00-24:00, keep crossesMidnight=false since "24:00" already means end of day
+    // For other full-day patterns that might result from conversion (e.g., 08:00-08:00), we need crossesMidnight=true
+    return { dayOfWeek: localDayOfWeek, startTime, endTime, crossesMidnight };
   }
 
   const dateStr = getReferenceDateString(localDayOfWeek);
@@ -109,11 +139,8 @@ export function convertPatternToUTC(
   const utcStart = localToUTC(startTime, dateStr, fromTz);
 
   // Handle overnight patterns - end time may be on next day
-  const startMins = timeToMinutes(startTime);
-  const endMins = timeToMinutes(endTime);
-  const isOvernight = endMins <= startMins && endTime !== startTime;
-
-  const endDateStr = isOvernight
+  // Note: for "24:00", localToUTC already advances to next day internally
+  const endDateStr = crossesMidnight
     ? getReferenceDateString((localDayOfWeek + 1) % 7)
     : dateStr;
   const utcEnd = localToUTC(endTime, endDateStr, fromTz);
@@ -127,10 +154,25 @@ export function convertPatternToUTC(
   );
   const utcDayOfWeek = ((localDayOfWeek + dayShift) % 7 + 7) % 7;
 
+  // After UTC conversion, check if the end is on a different day than start
+  // This happens for full-day patterns (00:00-24:00) where localToUTC("24:00")
+  // advances to next day's "00:00", resulting in same numeric time but different dates
+  if (!crossesMidnight && utcStart.date !== utcEnd.date) {
+    // The UTC end is on a different day - this pattern spans midnight in UTC
+    crossesMidnight = true;
+  }
+
+  // For full day patterns, if start and end times are the same,
+  // we need crossesMidnight=true to ensure 24-hour duration
+  if (isFullDay && utcStart.time === utcEnd.time) {
+    crossesMidnight = true;
+  }
+
   return {
     dayOfWeek: utcDayOfWeek,
     startTime: utcStart.time,
     endTime: utcEnd.time,
+    crossesMidnight,
   };
 }
 
@@ -141,13 +183,15 @@ export function convertPatternToUTC(
  * @param startTime - Start time in UTC (HH:MM)
  * @param endTime - End time in UTC (HH:MM)
  * @param toTz - User's display timezone
+ * @param crossesMidnight - Optional flag indicating if pattern crosses midnight (for full-day patterns)
  * @returns Local dayOfWeek and times
  */
 export function convertPatternFromUTC(
   utcDayOfWeek: number,
   startTime: string,
   endTime: string,
-  toTz: string
+  toTz: string,
+  crossesMidnight?: boolean
 ): { dayOfWeek: number; startTime: string; endTime: string } {
   if (toTz === "UTC") {
     return { dayOfWeek: utcDayOfWeek, startTime, endTime };
@@ -156,9 +200,10 @@ export function convertPatternFromUTC(
   const dateStr = getReferenceDateString(utcDayOfWeek);
 
   // Check for overnight pattern in UTC
+  // Use explicit crossesMidnight if provided, otherwise infer from times
   const startMins = timeToMinutes(startTime);
   const endMins = timeToMinutes(endTime);
-  const isOvernightUTC = endMins <= startMins && endTime !== startTime;
+  const isOvernightUTC = crossesMidnight ?? (endMins <= startMins && endTime !== startTime);
 
   const endDateStr = isOvernightUTC
     ? getReferenceDateString((utcDayOfWeek + 1) % 7)
@@ -176,10 +221,17 @@ export function convertPatternFromUTC(
   );
   const localDayOfWeek = ((utcDayOfWeek + dayShift) % 7 + 7) % 7;
 
+  // Handle full-day patterns: if start and end are the same time but on different days,
+  // this is a 24-hour pattern and we should return "24:00" as the end time
+  let finalEndTime = localEnd.time;
+  if (localStart.time === localEnd.time && localStart.date !== localEnd.date) {
+    finalEndTime = "24:00";
+  }
+
   return {
     dayOfWeek: localDayOfWeek,
     startTime: localStart.time,
-    endTime: localEnd.time,
+    endTime: finalEndTime,
   };
 }
 
@@ -191,19 +243,19 @@ export function convertOverrideToUTC(
   startTime: string,
   endTime: string,
   fromTz: string
-): { date: string; startTime: string; endTime: string } {
+): { date: string; startTime: string; endTime: string; crossesMidnight: boolean } {
+  // Determine if ORIGINAL input crosses midnight BEFORE any conversion
+  const startMins = timeToMinutes(startTime);
+  const endMins = timeToMinutes(endTime);
+  const crossesMidnight = endMins <= startMins && endTime !== startTime;
+
   if (fromTz === "UTC") {
-    return { date: localDate, startTime, endTime };
+    return { date: localDate, startTime, endTime, crossesMidnight };
   }
 
   const utcStart = localToUTC(startTime, localDate, fromTz);
 
-  // Handle overnight
-  const startMins = timeToMinutes(startTime);
-  const endMins = timeToMinutes(endTime);
-  const isOvernight = endMins <= startMins && endTime !== startTime;
-
-  const endLocalDate = isOvernight
+  const endLocalDate = crossesMidnight
     ? format(addDays(new Date(localDate), 1), "yyyy-MM-dd")
     : localDate;
   const utcEnd = localToUTC(endTime, endLocalDate, fromTz);
@@ -212,6 +264,7 @@ export function convertOverrideToUTC(
     date: utcStart.date,
     startTime: utcStart.time,
     endTime: utcEnd.time,
+    crossesMidnight,
   };
 }
 
@@ -317,6 +370,7 @@ export function prepareRuleForStorage(
   endTime: string;
   originalTimezone: string;
   originalDayOfWeek: number | null;
+  crossesMidnight: boolean;
 } {
   const isPattern =
     input.ruleType === "available_pattern" ||
@@ -336,6 +390,7 @@ export function prepareRuleForStorage(
       endTime: converted.endTime,
       originalTimezone: userTimezone,
       originalDayOfWeek: input.dayOfWeek,
+      crossesMidnight: converted.crossesMidnight,
     };
   } else if (input.specificDate) {
     const converted = convertOverrideToUTC(
@@ -351,10 +406,16 @@ export function prepareRuleForStorage(
       endTime: converted.endTime,
       originalTimezone: userTimezone,
       originalDayOfWeek: null,
+      crossesMidnight: converted.crossesMidnight,
     };
   }
 
   // Fallback (shouldn't happen with valid input)
+  // Compute crossesMidnight for fallback too
+  const startMins = timeToMinutes(input.startTime);
+  const endMins = timeToMinutes(input.endTime);
+  const crossesMidnight = endMins <= startMins && input.endTime !== input.startTime;
+
   return {
     dayOfWeek: input.dayOfWeek ?? null,
     specificDate: input.specificDate ?? null,
@@ -362,6 +423,7 @@ export function prepareRuleForStorage(
     endTime: input.endTime,
     originalTimezone: userTimezone,
     originalDayOfWeek: null,
+    crossesMidnight,
   };
 }
 
@@ -448,6 +510,23 @@ export function convertPatternBetweenTimezones(
     return { days: [...days], startTime, endTime };
   }
 
+  // Check if this is a full-day pattern (00:00-24:00)
+  // Full-day patterns are treated semantically: "available all day Monday" means
+  // "available the entire Monday" in whatever timezone you're viewing.
+  // This is because the UI pattern editor doesn't support crossesMidnight patterns.
+  const isFullDay = startTime === "00:00" && endTime === "24:00";
+
+  if (isFullDay) {
+    // Semantic interpretation: "all day" means 00:00-24:00 in the target timezone too
+    // We still need to figure out which day(s) to show based on timezone offset
+    // For simplicity, keep the same days - "Monday all day" stays "Monday all day"
+    return {
+      days: [...days],
+      startTime: "00:00",
+      endTime: "24:00",
+    };
+  }
+
   // Convert through UTC: fromTz -> UTC -> toTz
   // All days should map consistently since we're dealing with the same time range
   // Just use the first day to determine the conversion, then apply to all days
@@ -458,8 +537,8 @@ export function convertPatternBetweenTimezones(
   for (const day of days) {
     // Convert to UTC
     const utc = convertPatternToUTC(day, startTime, endTime, fromTz);
-    // Convert from UTC to target timezone
-    const local = convertPatternFromUTC(utc.dayOfWeek, utc.startTime, utc.endTime, toTz);
+    // Convert from UTC to target timezone, passing crossesMidnight for full-day patterns
+    const local = convertPatternFromUTC(utc.dayOfWeek, utc.startTime, utc.endTime, toTz, utc.crossesMidnight);
 
     if (!newDays.includes(local.dayOfWeek)) {
       newDays.push(local.dayOfWeek);

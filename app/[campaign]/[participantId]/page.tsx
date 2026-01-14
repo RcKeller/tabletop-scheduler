@@ -82,7 +82,7 @@ export default async function ParticipantPage({ params }: PageProps) {
       ? format(event.endDate, "yyyy-MM-dd")
       : format(new Date(), "yyyy-MM-dd"),
     earliestTime: event.earliestTime || "00:00",
-    latestTime: event.latestTime || "23:30",
+    latestTime: event.latestTime || "24:00",
   };
 
   const participantData = {

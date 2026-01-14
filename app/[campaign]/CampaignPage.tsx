@@ -449,7 +449,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
                   startDate={eventStartDate}
                   endDate={eventEndDate}
                   earliestTime={showFullDay ? "00:00" : (effectiveTimeBounds?.earliestTime || event.earliestTime)}
-                  latestTime={showFullDay ? "23:30" : (effectiveTimeBounds?.latestTime || event.latestTime)}
+                  latestTime={showFullDay ? "24:00" : (effectiveTimeBounds?.latestTime || event.latestTime)}
                   timeWindowTimezone={effectiveTimeBounds?.timezone || event.timezone}
                   mode="heatmap"
                   participants={participantsWithAvailability.map(p => ({

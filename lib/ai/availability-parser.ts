@@ -66,6 +66,7 @@ Rules:
 - "Evenings" generally means 17:00-22:00
 - "Mornings" generally means 06:00-12:00
 - "Afternoons" generally means 12:00-17:00
+- "All day", "any time", "the whole day", "anytime" means 00:00-24:00 (startTime: "00:00", endTime: "24:00") - use "24:00" for end of day
 - "Weekdays" means Monday through Friday
 - "Weekends" means Saturday and Sunday
 
@@ -249,7 +250,7 @@ Respond with ONLY valid JSON.`,
       parsed.mode = "adjust";
     }
 
-    // Validate patterns
+    // Validate and normalize patterns
     for (const slot of parsed.patterns) {
       if (
         typeof slot.dayOfWeek !== "number" ||
@@ -264,9 +265,14 @@ Respond with ONLY valid JSON.`,
       if (!/^\d{2}:\d{2}$/.test(slot.endTime)) {
         throw new Error(`Invalid endTime format: ${slot.endTime}`);
       }
+      // Normalize "00:00" to "00:00" as full day ("00:00" to "24:00")
+      // AI sometimes returns this instead of using "24:00" for end of day
+      if (slot.startTime === "00:00" && slot.endTime === "00:00") {
+        slot.endTime = "24:00";
+      }
     }
 
-    // Validate additions
+    // Validate and normalize additions
     for (const slot of parsed.additions) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(slot.date)) {
         throw new Error(`Invalid date format: ${slot.date}`);
@@ -276,6 +282,10 @@ Respond with ONLY valid JSON.`,
       }
       if (!/^\d{2}:\d{2}$/.test(slot.endTime)) {
         throw new Error(`Invalid endTime format: ${slot.endTime}`);
+      }
+      // Normalize "00:00" to "00:00" as full day
+      if (slot.startTime === "00:00" && slot.endTime === "00:00") {
+        slot.endTime = "24:00";
       }
     }
 
@@ -364,6 +374,7 @@ export function convertToRules(
       endTime: prepared.endTime,
       originalTimezone: prepared.originalTimezone,
       originalDayOfWeek: prepared.originalDayOfWeek,
+      crossesMidnight: prepared.crossesMidnight,
       source: "ai",
     });
   }
@@ -389,15 +400,16 @@ export function convertToRules(
       endTime: prepared.endTime,
       originalTimezone: prepared.originalTimezone,
       originalDayOfWeek: null,
+      crossesMidnight: prepared.crossesMidnight,
       source: "ai",
     });
   }
 
   // Convert exclusions to blocked_override rules
   for (const exclusion of result.exclusions) {
-    // Handle whole-day exclusions
+    // Handle whole-day exclusions - use "24:00" for end of day
     const startTime = exclusion.startTime || "00:00";
-    const endTime = exclusion.endTime || "23:30";
+    const endTime = exclusion.endTime || "24:00";
 
     const prepared = prepareRuleForStorage(
       {
@@ -418,6 +430,7 @@ export function convertToRules(
       endTime: prepared.endTime,
       originalTimezone: prepared.originalTimezone,
       originalDayOfWeek: null,
+      crossesMidnight: prepared.crossesMidnight,
       reason: exclusion.reason || null,
       source: "ai",
     });
@@ -425,9 +438,9 @@ export function convertToRules(
 
   // Convert routineRemovals to blocked_pattern rules
   for (const removal of result.routineRemovals) {
-    // Handle whole-day removals
+    // Handle whole-day removals - use "24:00" for end of day
     const startTime = removal.startTime || "00:00";
-    const endTime = removal.endTime || "23:30";
+    const endTime = removal.endTime || "24:00";
 
     const prepared = prepareRuleForStorage(
       {
@@ -448,6 +461,7 @@ export function convertToRules(
       endTime: prepared.endTime,
       originalTimezone: prepared.originalTimezone,
       originalDayOfWeek: prepared.originalDayOfWeek,
+      crossesMidnight: prepared.crossesMidnight,
       source: "ai",
     });
   }

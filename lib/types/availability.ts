@@ -42,6 +42,13 @@ export interface AvailabilityRule {
   originalTimezone: string; // IANA timezone (e.g., "Asia/Tokyo")
   originalDayOfWeek: number | null; // What day the user selected in their timezone
 
+  // Midnight crossing flag - indicates whether the ORIGINAL (pre-UTC-conversion) time range
+  // crossed midnight. This is critical for correct timezone conversion display.
+  // - true: User specified overnight range (e.g., "10pm-2am")
+  // - false: User specified same-day range (e.g., "9am-5pm" or "all day")
+  // - undefined: Legacy data, use inference
+  crossesMidnight?: boolean;
+
   // Metadata
   reason: string | null;
   source: RuleSource;
@@ -63,6 +70,7 @@ export interface CreateAvailabilityRuleInput {
   endTime: string;
   originalTimezone: string;
   originalDayOfWeek: number | null;
+  crossesMidnight?: boolean; // Whether original time range crossed midnight
   reason?: string | null;
   source?: RuleSource;
 }

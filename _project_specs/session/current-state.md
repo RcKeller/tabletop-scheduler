@@ -137,5 +137,46 @@ Added 25 new tests in `__tests__/components/availability/pattern-editor.test.ts`
 - **132 tests pass** (25 new pattern tests added)
 - Type checks pass (`npx tsc --noEmit`)
 
+### 9. Fixed Timezone Conversion Causing >24hr Availability Display
+**Problem**: When 24-hour availability set in Manila (UTC+8) was viewed in PST (UTC-8), it showed >24 hours spanning into the next day.
+
+**Root Cause**: `createRange()` in `range-math.ts` used time comparison (`end < start`) to detect overnight ranges, but this heuristic failed when timezone conversion naturally produced inverted times from a same-day range.
+
+Example: Manila Tuesday 00:00-23:30 → UTC Monday 16:00 to Tuesday 15:30
+- `createRange("16:00", "15:30")` sees 15:30 < 16:00
+- Incorrectly assumed overnight, added 1440 minutes
+- Created ~39 hour range instead of ~24 hours
+
+**Solution**:
+1. Added `crossesMidnight` boolean field to track original user intent
+2. Updated `convertPatternToUTC()` and `convertOverrideToUTC()` to return this flag
+3. Updated `createRange()` to accept explicit flag:
+   - `true` = overnight range (add 1440)
+   - `false` = same-day range (never add 1440)
+   - `undefined` = legacy inference (backward compatible)
+4. Changed "all day" from "00:00-23:30" to "00:00-24:00" throughout
+5. Updated all grid components to use "24:00" for full day display
+
+**Files Modified**:
+- `lib/types/availability.ts` - Added `crossesMidnight` field
+- `prisma/schema.prisma` - Added `crossesMidnight` column
+- `lib/availability/timezone.ts` - Return `crossesMidnight` from converters
+- `lib/availability/range-math.ts` - Accept explicit flag in `createRange()`
+- `lib/availability/compute-effective.ts` - Pass flag through
+- `lib/ai/availability-parser.ts` - Use "24:00" for all day
+- `lib/utils/time-slots.ts` - Handle "24:00" parsing
+- `app/api/availability/*/route.ts` - Include field in queries
+- `app/api/events/[slug]/heatmap/route.ts` - Include field in mappings
+- `components/availability/*.tsx` - Use "24:00" for full day
+- `__tests__/lib/availability/timezone.test.ts` - Updated for new return format
+
+**Migration Required**:
+Run `_project_specs/migrations/add-crosses-midnight.sql` in Vercel Postgres Dashboard
+
+## Test Results
+- **137 tests pass** (all passing)
+- Type checks pass (`npx tsc --noEmit`)
+
 ## Next Steps
-None pending - all requested features implemented.
+1. Run database migration in Vercel Dashboard
+2. Deploy and test in production

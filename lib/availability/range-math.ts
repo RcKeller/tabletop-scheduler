@@ -32,15 +32,49 @@ export function minutesToTime(minutes: number): string {
 
 /**
  * Create a TimeRange from HH:MM strings
- * If endTime <= startTime, treats it as overnight (adds 1440 to end)
+ *
+ * @param startTime - Start time in HH:MM format
+ * @param endTime - End time in HH:MM format (can be "24:00" for end of day)
+ * @param crossesMidnight - Explicit flag indicating if range crosses midnight:
+ *   - true: User specified overnight range (e.g., "10pm-2am") - add MINUTES_PER_DAY
+ *   - false: User specified same-day range - never add MINUTES_PER_DAY
+ *   - undefined: Legacy behavior - infer from time comparison
+ *
+ * This explicit flag is critical for timezone conversion: when a same-day range
+ * like "00:00-23:30" in Manila converts to UTC as "16:00-15:30", the times look
+ * inverted but should NOT be treated as overnight.
  */
-export function createRange(startTime: string, endTime: string): TimeRange {
+export function createRange(
+  startTime: string,
+  endTime: string,
+  crossesMidnight?: boolean
+): TimeRange {
   const startMinutes = timeToMinutes(startTime);
   let endMinutes = timeToMinutes(endTime);
 
-  // Handle overnight ranges (e.g., 22:00 to 02:00)
-  if (endMinutes <= startMinutes && endTime !== startTime) {
+  // Handle "24:00" as end of day (1440 minutes)
+  if (endTime === "24:00") {
+    endMinutes = MINUTES_PER_DAY;
+  }
+
+  // Apply overnight logic based on explicit flag or legacy inference
+  if (crossesMidnight === true) {
+    // Explicit: user specified overnight range
     endMinutes += MINUTES_PER_DAY;
+  } else if (crossesMidnight === false) {
+    // Explicit: user specified same-day range - do NOT add MINUTES_PER_DAY
+    // Even if endMinutes <= startMinutes due to timezone conversion artifact
+  } else {
+    // Legacy: undefined - use old inference logic for backward compatibility
+    if (endMinutes <= startMinutes && endTime !== startTime) {
+      endMinutes += MINUTES_PER_DAY;
+    }
+  }
+
+  // Special case: if both are "00:00" (midnight), interpret as full day
+  // This handles AI edge case where "all day" might produce "00:00-00:00"
+  if (startMinutes === 0 && endMinutes === 0 && startTime === endTime) {
+    endMinutes = MINUTES_PER_DAY; // 24:00 = full day
   }
 
   return { startMinutes, endMinutes };

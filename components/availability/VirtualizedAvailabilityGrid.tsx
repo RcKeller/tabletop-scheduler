@@ -301,7 +301,7 @@ export function VirtualizedAvailabilityGrid({
   startDate,
   endDate,
   earliestTime = "00:00",
-  latestTime = "23:30",
+  latestTime = "24:00",
   timeWindowTimezone,
   mode,
   availability = [],
@@ -504,9 +504,8 @@ export function VirtualizedAvailabilityGrid({
         _timeDisplay: (() => {
           const [h, m] = time.split(":").map(Number);
           if (m !== 0) return "";
-          const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-          const ampm = h < 12 ? "AM" : "PM";
-          return `${hour12}${ampm}`;
+          // Use 24-hour format for clearer display
+          return h.toString().padStart(2, "0");
         })(),
       };
 

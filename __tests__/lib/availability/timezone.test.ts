@@ -58,7 +58,7 @@ describe("timezone utilities", () => {
   describe("convertPatternToUTC", () => {
     it("returns unchanged for UTC timezone", () => {
       const result = convertPatternToUTC(1, "09:00", "17:00", "UTC");
-      expect(result).toEqual({ dayOfWeek: 1, startTime: "09:00", endTime: "17:00" });
+      expect(result).toEqual({ dayOfWeek: 1, startTime: "09:00", endTime: "17:00", crossesMidnight: false });
     });
 
     it("converts Monday in Manila to UTC (shifts day back)", () => {
@@ -68,6 +68,7 @@ describe("timezone utilities", () => {
         dayOfWeek: 0, // Sunday in UTC
         startTime: "17:00",
         endTime: "21:00",
+        crossesMidnight: false,
       });
     });
 
@@ -78,6 +79,7 @@ describe("timezone utilities", () => {
         dayOfWeek: 1, // Monday in UTC
         startTime: "16:00",
         endTime: "20:00",
+        crossesMidnight: false,
       });
     });
 
@@ -88,6 +90,7 @@ describe("timezone utilities", () => {
         dayOfWeek: 0, // Sunday in UTC
         startTime: "05:00",
         endTime: "07:00",
+        crossesMidnight: false,
       });
     });
 
@@ -98,6 +101,7 @@ describe("timezone utilities", () => {
         dayOfWeek: 6, // Saturday in UTC
         startTime: "17:00",
         endTime: "21:00",
+        crossesMidnight: false,
       });
     });
 
@@ -108,6 +112,7 @@ describe("timezone utilities", () => {
         dayOfWeek: 2, // Still Tuesday
         startTime: "19:00",
         endTime: "23:00",
+        crossesMidnight: false,
       });
     });
   });
@@ -173,6 +178,7 @@ describe("timezone utilities", () => {
         date: "2024-01-16",
         startTime: "01:00",
         endTime: "05:00",
+        crossesMidnight: false,
       });
     });
 
@@ -188,6 +194,7 @@ describe("timezone utilities", () => {
         date: "2024-01-15",
         startTime: "18:00",
         endTime: "22:00",
+        crossesMidnight: false,
       });
     });
   });
@@ -309,7 +316,8 @@ describe("timezone utilities", () => {
         local.endTime,
         "Asia/Tokyo"
       );
-      expect(backToUTC).toEqual(original);
+      // Compare core fields (crossesMidnight may differ based on local representation)
+      expect({ dayOfWeek: backToUTC.dayOfWeek, startTime: backToUTC.startTime, endTime: backToUTC.endTime }).toEqual(original);
     });
 
     it("roundtrip with extreme timezone (Pago Pago)", () => {
@@ -326,7 +334,8 @@ describe("timezone utilities", () => {
         local.endTime,
         "Pacific/Pago_Pago"
       );
-      expect(backToUTC).toEqual(original);
+      // Compare core fields (crossesMidnight may differ based on local representation)
+      expect({ dayOfWeek: backToUTC.dayOfWeek, startTime: backToUTC.startTime, endTime: backToUTC.endTime }).toEqual(original);
     });
   });
 

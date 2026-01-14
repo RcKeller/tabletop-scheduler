@@ -2,9 +2,14 @@ import { addDays, startOfWeek } from "date-fns";
 
 /**
  * Parse a time string (HH:MM) to minutes from midnight
+ * Handles "24:00" as end of day (1440 minutes)
  */
 export function parseTimeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number);
+  // Handle "24:00" as end of day
+  if (h === 24 && m === 0) {
+    return 24 * 60; // 1440
+  }
   return h * 60 + m;
 }
 

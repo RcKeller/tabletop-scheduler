@@ -80,7 +80,7 @@ model Event {
 
   // Daily time window (stored in event timezone)
   earliestTime               String      @default("00:00")
-  latestTime                 String      @default("23:30")
+  latestTime                 String      @default("24:00")
 
   // Meeting configuration
   meetingType                MeetingType?
@@ -157,6 +157,12 @@ model AvailabilityRule {
   // Preserve user intent for cross-timezone display
   originalTimezone   String           // IANA timezone (e.g., "Asia/Tokyo")
   originalDayOfWeek  Int?             // What day the user selected in their timezone
+
+  // Whether the ORIGINAL (pre-UTC-conversion) time range crossed midnight
+  // - true: User specified overnight range (e.g., "10pm-2am")
+  // - false: User specified same-day range (e.g., "9am-5pm" or "all day")
+  // - null: Legacy data, use inference
+  crossesMidnight    Boolean?
 
   // Metadata
   reason        String?

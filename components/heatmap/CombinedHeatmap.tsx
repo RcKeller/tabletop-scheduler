@@ -29,7 +29,7 @@ export function CombinedHeatmap({
   startDate,
   endDate,
   earliestTime = "00:00",
-  latestTime = "23:30",
+  latestTime = "24:00",
   gmAvailability = [],
   sessionLengthMinutes = 180,
   timezone = "UTC",

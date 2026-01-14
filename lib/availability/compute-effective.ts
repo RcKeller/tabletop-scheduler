@@ -68,9 +68,10 @@ function getOverridesForDate(
 
 /**
  * Convert rules to time ranges
+ * Passes through the crossesMidnight flag to ensure correct range calculation
  */
 function rulesToRanges(rules: AvailabilityRule[]): TimeRange[] {
-  return rules.map((rule) => createRange(rule.startTime, rule.endTime));
+  return rules.map((rule) => createRange(rule.startTime, rule.endTime, rule.crossesMidnight));
 }
 
 /**

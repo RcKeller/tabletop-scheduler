@@ -40,13 +40,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Validate time window format
-    const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+    // Validate time window format (accepts 00:00-23:59 plus 24:00 for end of day)
+    const timeRegex = /^(([01]?[0-9]|2[0-3]):[0-5][0-9]|24:00)$/;
     const earliestTime = body.earliestTime || "00:00";
-    const latestTime = body.latestTime || "23:30";
+    const latestTime = body.latestTime || "24:00";
 
     if (!timeRegex.test(earliestTime) || !timeRegex.test(latestTime)) {
-      return badRequest("Invalid time format. Use HH:MM");
+      return badRequest("Invalid time format. Use HH:MM (or 24:00 for end of day)");
     }
 
     // Validate game system exists if provided
