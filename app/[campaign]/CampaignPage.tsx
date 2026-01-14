@@ -7,7 +7,7 @@ import { JoinEventForm } from "@/components/participant/JoinEventForm";
 import { VirtualizedAvailabilityGrid } from "@/components/availability/VirtualizedAvailabilityGrid";
 import { HoverDetailPanel } from "@/components/heatmap/HoverDetailPanel";
 import { PlayerDetailModal } from "@/components/participant/PlayerDetailModal";
-import { CampaignHeader } from "@/components/campaign/CampaignHeader";
+import { CampaignHeader, HeroInfoCard } from "@/components/campaign/CampaignHeader";
 import { Footer } from "@/components/layout/Footer";
 import { EmptyPartyList } from "@/components/empty-states/EmptyPartyList";
 import { EmptyHeatmap } from "@/components/empty-states/EmptyHeatmap";
@@ -239,6 +239,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
 
   const handleJoined = (participant: { id: string; displayName: string; isGm: boolean }) => {
     localStorage.setItem(`participant_${event.id}`, participant.id);
+    localStorage.setItem(`participant_${event.id}_isGm`, participant.isGm ? "true" : "false");
     // Use "gm" for GM participants, otherwise use participant ID
     const participantPath = participant.isGm ? "gm" : participant.id;
     router.push(`/${event.slug}/${participantPath}`);
@@ -295,6 +296,17 @@ export function CampaignPage({ event }: CampaignPageProps) {
     return `${format(start, "MMM d")} - ${format(end, "MMM d, yyyy")}`;
   };
 
+  // Format session length for display
+  const formatSessionLength = () => {
+    const mins = event.sessionLengthMinutes;
+    if (mins >= 60) {
+      const hours = Math.floor(mins / 60);
+      const remainingMins = mins % 60;
+      return remainingMins > 0 ? `${hours}h ${remainingMins}m` : `${hours}h`;
+    }
+    return `${mins}m`;
+  };
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       {/* Hero Section with Campaign Image */}
@@ -302,173 +314,124 @@ export function CampaignPage({ event }: CampaignPageProps) {
         title={event.title}
         campaignImageBase64={event.campaignImageBase64}
         gameSystem={event.gameSystem}
-        slug={event.slug}
-        onShare={handleCopyLink}
-        shareLabel={copiedLink ? "Copied!" : "Share"}
-      />
+        description={event.description}
+      >
+        {/* Quick info cards in hero */}
+        <HeroInfoCard
+          icon={<svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+          label="Session"
+          value={formatSessionLength()}
+        />
+        <HeroInfoCard
+          icon={<svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
+          label="Party"
+          value={`${participants.length} member${participants.length !== 1 ? 's' : ''}`}
+        />
+        {meetingInfo && (
+          <HeroInfoCard
+            icon={<svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>}
+            label="Platform"
+            value={meetingInfo.type}
+          />
+        )}
+        <HeroInfoCard
+          icon={<svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+          label="Time"
+          value={`${formatTime(effectiveTimeBounds?.earliestTime || event.earliestTime)}–${formatTime(effectiveTimeBounds?.latestTime || event.latestTime)}`}
+        />
+      </CampaignHeader>
 
       {/* Main Content - Centered single column, all sections stacked */}
       <div className="mx-auto max-w-5xl px-4 py-6 space-y-4">
-        {/* Campaign Details Section */}
-        <div className="space-y-4">
-          {/* About / Before You Play - Combined */}
-          {(event.description || event.customPreSessionInstructions) && (
-            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-600">
-                  <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                  About this {event.campaignType === "ONESHOT" ? "Game" : "Campaign"}
-                </h3>
-              </div>
-              {event.description && (
-                <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  {event.description}
-                </p>
-              )}
-              {event.customPreSessionInstructions && (
-                <div className={event.description ? "mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-700" : ""}>
-                  <h4 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                    Before You Play
-                  </h4>
-                  <p className="whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                    {event.customPreSessionInstructions}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Session Details */}
-          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-emerald-600">
-                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                </svg>
-              </div>
-              <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                Session Details
-              </h3>
-            </div>
-            <dl className="grid gap-3 text-sm sm:grid-cols-2">
-              {event.gameSystem && (
-                <div>
-                  <dt className="text-zinc-500 dark:text-zinc-400">Game System</dt>
-                  <dd className="font-medium text-zinc-900 dark:text-zinc-100">{event.gameSystem.name}</dd>
-                </div>
-              )}
-              <div>
-                <dt className="text-zinc-500 dark:text-zinc-400">Session Length</dt>
-                <dd className="font-medium text-zinc-900 dark:text-zinc-100">
-                  {event.sessionLengthMinutes >= 60
-                    ? `${Math.floor(event.sessionLengthMinutes / 60)}h ${event.sessionLengthMinutes % 60 > 0 ? `${event.sessionLengthMinutes % 60}m` : ""}`
-                    : `${event.sessionLengthMinutes}m`}
-                </dd>
-              </div>
-              {formatDateRange() && (
-                <div>
-                  <dt className="text-zinc-500 dark:text-zinc-400">Date Range</dt>
-                  <dd className="font-medium text-zinc-900 dark:text-zinc-100">{formatDateRange()}</dd>
-                </div>
-              )}
-              <div>
-                <dt className="text-zinc-500 dark:text-zinc-400">Time Window</dt>
-                <dd className="font-medium text-zinc-900 dark:text-zinc-100">
-                  {formatTime(effectiveTimeBounds?.earliestTime || event.earliestTime)} - {formatTime(effectiveTimeBounds?.latestTime || event.latestTime)}
-                </dd>
-              </div>
-              {meetingInfo && (
-                <>
-                  <div>
-                    <dt className="text-zinc-500 dark:text-zinc-400">Platform</dt>
-                    <dd className="font-medium text-zinc-900 dark:text-zinc-100">{meetingInfo.type}</dd>
-                  </div>
-                  {meetingInfo.location && (
-                    <div>
-                      <dt className="text-zinc-500 dark:text-zinc-400">Location</dt>
-                      <dd className="font-medium text-zinc-900 dark:text-zinc-100">{meetingInfo.location}</dd>
-                    </div>
-                  )}
-                </>
-              )}
-            </dl>
-          </div>
-        </div>
-
-        {/* Group Availability Section - responsive (hide sidebar on mobile) */}
-        <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
-            <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600">
-                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                Group Availability
+        {/* Meeting location info (if applicable) */}
+        {meetingInfo && (meetingInfo.location || meetingInfo.room) && (
+          <div className="flex items-center gap-3 rounded-lg bg-zinc-100 dark:bg-zinc-800/50 px-4 py-3">
+            <svg className="h-5 w-5 text-zinc-500 dark:text-zinc-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <div className="text-sm">
+              <span className="text-zinc-600 dark:text-zinc-400">{meetingInfo.type}: </span>
+              <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                {meetingInfo.location}
+                {meetingInfo.room && ` · ${meetingInfo.room}`}
               </span>
             </div>
           </div>
-          <div className="p-4">
-            {/* GM Availability Status Callout */}
-            {hasGm && !isLoading && (
-              <div className={`mb-3 rounded-lg border p-3 ${
-                gmHasAvailability
-                  ? "border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20"
-                  : "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20"
-              }`}>
-                <div className="flex items-center gap-2">
-                  <svg className={`h-4 w-4 shrink-0 ${gmHasAvailability ? "text-green-500 dark:text-green-400" : "text-amber-500 dark:text-amber-400"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    {gmHasAvailability ? (
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    ) : (
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    )}
-                  </svg>
-                  <span className={`text-sm ${gmHasAvailability ? "text-green-700 dark:text-green-300" : "text-amber-700 dark:text-amber-300"}`}>
-                    {gmHasAvailability
-                      ? `${gmParticipant?.displayName} (GM) has set their availability`
-                      : `${gmParticipant?.displayName} (GM) hasn't set their availability yet`
-                    }
-                  </span>
-                </div>
+        )}
+
+        {/* Pre-session instructions - gentle style */}
+        {event.customPreSessionInstructions && (
+          <div className="rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 p-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/50">
+                <svg className="h-4 w-4 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
               </div>
-            )}
+              <div>
+                <h3 className="text-sm font-medium text-blue-900 dark:text-blue-200 mb-1">
+                  Before you play
+                </h3>
+                <p className="whitespace-pre-wrap text-sm text-blue-800/80 dark:text-blue-300/70 leading-relaxed">
+                  {event.customPreSessionInstructions}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
-            {/* GM availability callout and view toggle */}
-            {!isLoading && gmAvailability && gmAvailability.earliestTime && gmAvailability.latestTime && (() => {
-              // Convert GM availability times from event timezone to user's timezone
-              const refDate = format(eventStartDate, "yyyy-MM-dd");
-              const localEarliest = gmAvailability.timezone !== timezone
-                ? convertDateTime(gmAvailability.earliestTime, refDate, gmAvailability.timezone, timezone).time
-                : gmAvailability.earliestTime;
-              const localLatest = gmAvailability.timezone !== timezone
-                ? convertDateTime(gmAvailability.latestTime, refDate, gmAvailability.timezone, timezone).time
-                : gmAvailability.latestTime;
+        {/* Group Availability Section */}
+        <div className="rounded-xl border border-zinc-200/80 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 dark:bg-blue-900/30">
+                <svg className="h-4 w-4 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <h2 className="font-semibold text-zinc-900 dark:text-zinc-100">
+                Group Availability
+              </h2>
+            </div>
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">
+              {formatTime(effectiveTimeBounds?.earliestTime || event.earliestTime)} - {formatTime(effectiveTimeBounds?.latestTime || event.latestTime)}
+            </span>
+          </div>
+          <div className="p-4">
+            {/* GM availability info and view toggle */}
+            {!isLoading && gmHasAvailability && (
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300">{gmParticipant?.displayName}</span> (GM) is available
+                  {gmAvailability && gmAvailability.earliestTime && gmAvailability.latestTime && (() => {
+                    const refDate = format(eventStartDate, "yyyy-MM-dd");
+                    const localEarliest = gmAvailability.timezone !== timezone
+                      ? convertDateTime(gmAvailability.earliestTime, refDate, gmAvailability.timezone, timezone).time
+                      : gmAvailability.earliestTime;
+                    const localLatest = gmAvailability.timezone !== timezone
+                      ? convertDateTime(gmAvailability.latestTime, refDate, gmAvailability.timezone, timezone).time
+                      : gmAvailability.latestTime;
+                    return ` ${formatTime(localEarliest)}–${formatTime(localLatest)}`;
+                  })()}
+                </span>
 
-              return (
-                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                    <span className="font-medium">{gmAvailability.name}</span> (GM) is available from{" "}
-                    <span className="font-medium">{formatTime(localEarliest)}</span> to{" "}
-                    <span className="font-medium">{formatTime(localLatest)}</span>
-                  </p>
-                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                {/* 24-hour toggle */}
+                <label className="flex cursor-pointer items-center gap-2">
+                  <div className="relative">
                     <input
                       type="checkbox"
                       checked={showFullDay}
                       onChange={(e) => setShowFullDay(e.target.checked)}
-                      className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-800"
+                      className="peer sr-only"
                     />
-                    <span className="text-zinc-600 dark:text-zinc-400">Show full 24 hours</span>
-                  </label>
-                </div>
-              );
-            })()}
+                    <div className="h-5 w-9 rounded-full bg-zinc-200 transition-colors peer-checked:bg-blue-500 peer-focus:ring-2 peer-focus:ring-blue-500/20 dark:bg-zinc-700 dark:peer-checked:bg-blue-600" />
+                    <div className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4" />
+                  </div>
+                  <span className="text-sm text-zinc-600 dark:text-zinc-400">Full day</span>
+                </label>
+              </div>
+            )}
 
             {isLoading ? (
               <div className="animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800" style={{ height: "300px" }} />
@@ -501,7 +464,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
                 </div>
                 {/* Hover detail panel - hidden on mobile */}
                 <div className="hidden w-56 shrink-0 md:block">
-                  <div className="sticky top-20 min-h-[200px] rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+                  <div className="sticky top-20 min-h-[180px] rounded-xl border border-zinc-100 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/50">
                     {hoveredSlotInfo ? (
                       <HoverDetailPanel
                         date={hoveredSlotInfo.date}
@@ -511,8 +474,13 @@ export function CampaignPage({ event }: CampaignPageProps) {
                         totalParticipants={participantsWithAvailability.length}
                       />
                     ) : (
-                      <div className="p-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                        <p>Hover over a time slot to see who&apos;s available</p>
+                      <div className="flex h-[180px] flex-col items-center justify-center p-4 text-center">
+                        <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800">
+                          <svg className="h-5 w-5 text-zinc-400 dark:text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+                          </svg>
+                        </div>
+                        <p className="text-sm text-zinc-400 dark:text-zinc-500">Hover a time slot</p>
                       </div>
                     )}
                   </div>
@@ -523,72 +491,80 @@ export function CampaignPage({ event }: CampaignPageProps) {
         </div>
 
         {/* Party Members Section */}
-        <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
-            <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600">
-                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <div className="rounded-xl border border-zinc-200/80 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-50 dark:bg-purple-900/30">
+                <svg className="h-4 w-4 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
               </div>
-              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                Party Members <span className="text-zinc-400 font-normal">({participants.length})</span>
+              <h2 className="font-semibold text-zinc-900 dark:text-zinc-100">
+                Party Members
               </h2>
+              <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                {participants.length}
+              </span>
             </div>
             {currentParticipant && !showAddPlayer && (
               <button
                 onClick={() => setShowAddPlayer(true)}
-                className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
                 </svg>
-                Add Player
+                Add
               </button>
             )}
           </div>
 
           <div className="p-4">
-            {/* Add Player Form */}
-              {showAddPlayer && (
-                <div className="mb-4 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800">
-                  <p className="mb-2 text-sm text-zinc-600 dark:text-zinc-400">
-                    Add a player to the campaign
-                  </p>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={newPlayerName}
-                      onChange={(e) => setNewPlayerName(e.target.value)}
-                      placeholder="Player name..."
-                      className="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 dark:bg-zinc-700"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleAddPlayer();
-                        if (e.key === "Escape") {
-                          setShowAddPlayer(false);
-                          setNewPlayerName("");
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={handleAddPlayer}
-                      disabled={isAddingPlayer || !newPlayerName.trim()}
-                      className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {isAddingPlayer ? "Adding..." : "Add"}
-                    </button>
-                    <button
-                      onClick={() => {
+            {/* Add Player Form - inline style */}
+            {showAddPlayer && (
+              <div className="mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800">
+                    <svg className="h-5 w-5 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </div>
+                  <input
+                    type="text"
+                    value={newPlayerName}
+                    onChange={(e) => setNewPlayerName(e.target.value)}
+                    placeholder="Enter player name"
+                    className="flex-1 rounded-lg border-0 bg-zinc-100 px-3 py-2 text-sm placeholder:text-zinc-400 focus:ring-2 focus:ring-blue-500 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && newPlayerName.trim()) handleAddPlayer();
+                      if (e.key === "Escape") {
                         setShowAddPlayer(false);
                         setNewPlayerName("");
-                      }}
-                      className="rounded-md px-3 py-2 text-sm text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                    >
-                      Cancel
-                    </button>
-                  </div>
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleAddPlayer}
+                    disabled={isAddingPlayer || !newPlayerName.trim()}
+                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {isAddingPlayer ? "..." : "Add"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowAddPlayer(false);
+                      setNewPlayerName("");
+                    }}
+                    className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+                  >
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </div>
-              )}
+              </div>
+            )}
 
               {participants.length === 0 ? (
                 <EmptyPartyList />
@@ -596,61 +572,81 @@ export function CampaignPage({ event }: CampaignPageProps) {
                 <div className="grid gap-3 sm:grid-cols-2">
                   {participants.map((p) => {
                     const isCurrentUser = currentParticipant?.id === p.id;
+                    const hasCharacter = p.characterName || p.characterTokenBase64;
 
                     return (
                       <div
                         key={p.id}
-                        className="group relative rounded-lg border border-zinc-200 bg-zinc-50 transition-colors hover:border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-zinc-600 dark:hover:bg-zinc-750"
+                        className="group relative rounded-xl border border-zinc-100 bg-zinc-50/50 p-3 transition-colors hover:border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/30 dark:hover:border-zinc-700 dark:hover:bg-zinc-800/50"
                       >
                         <button
                           type="button"
                           onClick={() => handleOpenProfile(p)}
-                          className="flex w-full items-start gap-3 p-3 text-left"
+                          className="flex w-full items-start gap-3 text-left"
                         >
-                          {p.characterTokenBase64 ? (
-                            <img
-                              src={p.characterTokenBase64}
-                              alt={p.characterName || p.displayName}
-                              className="h-12 w-12 rounded-full object-cover ring-2 ring-zinc-200 dark:ring-zinc-700"
-                            />
-                          ) : (
-                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-200 text-lg font-medium text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400">
-                              {p.displayName.charAt(0).toUpperCase()}
-                            </div>
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
+                          {/* Avatar/Token */}
+                          <div className="relative shrink-0">
+                            {p.characterTokenBase64 ? (
+                              <img
+                                src={p.characterTokenBase64}
+                                alt={p.characterName || p.displayName}
+                                className="h-14 w-14 rounded-xl object-cover shadow-sm"
+                              />
+                            ) : (
+                              <div className={`flex h-14 w-14 items-center justify-center rounded-xl text-lg font-semibold shadow-sm ${
+                                p.isGm
+                                  ? "bg-gradient-to-br from-purple-500 to-indigo-600 text-white"
+                                  : "bg-gradient-to-br from-zinc-200 to-zinc-300 text-zinc-600 dark:from-zinc-700 dark:to-zinc-600 dark:text-zinc-300"
+                              }`}>
+                                {p.displayName.charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            {p.isGm && (
+                              <div className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-purple-600 ring-2 ring-white dark:ring-zinc-900">
+                                <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                                </svg>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Info */}
+                          <div className="min-w-0 flex-1 py-0.5">
+                            <div className="flex items-center gap-1.5">
                               <span className="font-medium text-zinc-900 dark:text-zinc-100">
                                 {p.displayName}
                               </span>
-                              {p.isGm && (
-                                <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                                  GM
-                                </span>
-                              )}
                               {isCurrentUser && (
                                 <span className="text-xs text-zinc-400">(you)</span>
                               )}
                             </div>
-                            {p.characterName && (
-                              <p className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400">
-                                {p.characterName}
+                            {hasCharacter ? (
+                              <div className="mt-0.5">
+                                <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                  {p.characterName}
+                                </p>
                                 {p.characterClass && (
-                                  <span className="text-zinc-400 dark:text-zinc-500"> · {p.characterClass}</span>
+                                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                                    {p.characterClass}
+                                  </p>
                                 )}
-                              </p>
-                            )}
-                            {p.notes && (
-                              <p className="mt-1 text-xs text-zinc-500 line-clamp-2">
-                                {p.notes}
+                              </div>
+                            ) : !p.isGm && (
+                              <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+                                No character yet
                               </p>
                             )}
                           </div>
-                          <svg className="h-5 w-5 shrink-0 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
+
+                          {/* Action indicator - only show if not deletable */}
+                          {!currentParticipant && (
+                            <svg className="h-4 w-4 shrink-0 self-center text-zinc-300 dark:text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          )}
                         </button>
-                        {/* Remove button - visible on hover */}
+
+                        {/* Remove button - replaces chevron when user is logged in */}
                         {currentParticipant && (
                           <button
                             type="button"
@@ -658,7 +654,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
                               e.stopPropagation();
                               handleRemovePlayer(p.id, p.displayName);
                             }}
-                            className="absolute right-1 top-1 rounded p-1 text-zinc-400 opacity-0 transition-opacity hover:bg-red-100 hover:text-red-600 group-hover:opacity-100 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                            className="absolute right-2 top-2 rounded-lg p-1.5 text-zinc-300 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:text-zinc-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
                             title={`Remove ${p.displayName}`}
                           >
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

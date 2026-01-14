@@ -12,7 +12,7 @@ export default async function CampaignLayout({ children, params }: LayoutProps) 
 
   const event = await prisma.event.findUnique({
     where: { slug },
-    select: { title: true, slug: true },
+    select: { id: true, title: true, slug: true },
   });
 
   if (!event) {
@@ -20,7 +20,11 @@ export default async function CampaignLayout({ children, params }: LayoutProps) 
   }
 
   return (
-    <CampaignLayoutClient campaignSlug={event.slug} campaignTitle={event.title}>
+    <CampaignLayoutClient
+      campaignSlug={event.slug}
+      campaignTitle={event.title}
+      eventId={event.id}
+    >
       {children}
     </CampaignLayoutClient>
   );

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { format, addMonths } from "date-fns";
+import { format, addWeeks } from "date-fns";
 import { ImageUpload } from "./ImageUpload";
 import { getBrowserTimezone } from "@/lib/utils/timezone";
 import type { CampaignType } from "@/lib/types";
@@ -29,11 +29,9 @@ export function QuickStartForm() {
     setError(null);
 
     try {
-      // Set smart defaults based on campaign type
+      // Set smart defaults - 4 weeks out for scheduling
       const today = new Date();
-      const defaultEndDate = campaignType === "ONESHOT"
-        ? format(addMonths(today, 1), "yyyy-MM-dd")
-        : format(addMonths(today, 3), "yyyy-MM-dd");
+      const defaultEndDate = format(addWeeks(today, 4), "yyyy-MM-dd");
 
       const res = await fetch("/api/events", {
         method: "POST",
