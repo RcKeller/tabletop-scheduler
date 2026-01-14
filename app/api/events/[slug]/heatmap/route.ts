@@ -236,15 +236,20 @@ export async function GET(
       }
 
       if (minMinutes !== Infinity && maxMinutes !== -Infinity) {
+        // Round earliest DOWN to nearest hour for cleaner display
+        const roundedEarliest = Math.floor(minMinutes / 60) * 60;
+        // Round latest UP to nearest hour (or 30 min boundary)
+        const roundedLatest = Math.ceil(maxMinutes / 60) * 60;
+
         // Normalize maxMinutes if it went over 24 hours
         // For display, cap at 23:30 (last slot of the day)
-        if (maxMinutes >= 1440) {
+        if (roundedLatest >= 1440) {
           // Overnight availability - for now, show full day
-          effectiveEarliest = minutesToTime(Math.min(minMinutes, 0));
+          effectiveEarliest = minutesToTime(Math.min(roundedEarliest, 0));
           effectiveLatest = "23:30";
         } else {
-          effectiveEarliest = minutesToTime(minMinutes);
-          effectiveLatest = minutesToTime(maxMinutes);
+          effectiveEarliest = minutesToTime(roundedEarliest);
+          effectiveLatest = minutesToTime(roundedLatest);
         }
       }
     }
