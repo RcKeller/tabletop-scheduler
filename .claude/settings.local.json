@@ -24,7 +24,8 @@
       "Bash(brew:*)",
       "Bash(docker:*)",
       "Bash(psql:*)",
-      "Bash(/opt/homebrew:*)"
+      "Bash(/opt/homebrew:*)",
+      "Bash(wc:*)"
     ]
   }
 }

@@ -25,12 +25,14 @@ interface ParticipantPageClientProps {
   event: EventData;
   participant: ParticipantData;
   campaignSlug: string;
+  gmAvailability?: { date: string; startTime: string; endTime: string }[];
 }
 
 export function ParticipantPageClient({
   event,
   participant: initialParticipant,
   campaignSlug,
+  gmAvailability = [],
 }: ParticipantPageClientProps) {
   const [participant, setParticipant] = useState(initialParticipant);
   const [isEditingName, setIsEditingName] = useState(false);
@@ -267,6 +269,7 @@ export function ParticipantPageClient({
           participantId={participant.id}
           event={{ ...event, slug: event.slug }}
           isGm={participant.isGm}
+          gmAvailability={gmAvailability}
         />
       </div>
     </div>

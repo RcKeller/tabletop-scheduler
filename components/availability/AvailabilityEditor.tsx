@@ -32,6 +32,7 @@ interface AvailabilityEditorProps {
   initialRules?: AvailabilityRule[];
   onSaveComplete?: () => void;
   hasCharacter?: boolean;
+  gmAvailability?: TimeSlot[];  // GM's availability for visual indication on player grids (in UTC)
 }
 
 // Day configuration
@@ -274,6 +275,7 @@ export function AvailabilityEditor({
   initialRules,
   onSaveComplete,
   hasCharacter = false,
+  gmAvailability = [],
 }: AvailabilityEditorProps) {
   // Use shared timezone from context (managed by navbar)
   const { timezone } = useTimezone();
@@ -808,6 +810,7 @@ export function AvailabilityEditor({
             onSave={handleGridSave}
             autoSave={true}
             timezone={timezone}
+            gmAvailability={!isGm ? gmAvailability : []}
           />
 
           {/* Schedule Entries - Green/Red callout style */}
@@ -890,11 +893,11 @@ export function AvailabilityEditor({
           )}
 
           {/* Add Schedule Button and Clear All */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between gap-4">
             <div className="relative">
               <button
                 onClick={() => setShowAddMenu(!showAddMenu)}
-                className="group flex items-center gap-2.5 px-4 py-2 text-sm font-medium rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400 hover:border-blue-400 hover:text-blue-600 dark:hover:border-blue-500 dark:hover:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-all"
+                className="group flex items-center justify-center gap-2.5 px-6 py-2.5 text-sm font-medium rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400 hover:border-blue-400 hover:text-blue-600 dark:hover:border-blue-500 dark:hover:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-all min-w-[180px]"
               >
                 <div className="flex h-5 w-5 items-center justify-center rounded-md bg-zinc-100 dark:bg-zinc-800 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-colors">
                   <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>

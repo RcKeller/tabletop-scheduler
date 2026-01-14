@@ -717,49 +717,53 @@ export function VirtualizedAvailabilityGrid({
     }
   }, [mode, onLeaveSlot]);
 
-  // Cell class rules for efficient styling
-  const cellClassRules = useMemo(() => {
-    if (mode !== "edit") return undefined;
+  // Edit mode cell style - combines selection state with GM availability stripes
+  const getEditCellStyle = useCallback((params: CellClassParams) => {
+    const field = params.colDef.field;
+    if (!field || field === "time" || field === "_timeDisplay") return undefined;
+    const rowIndex = params.data?.rowIndex as number;
+    const time = timeSlots[rowIndex];
+    if (!time) return undefined;
 
-    return {
-      "cell-selected": (params: CellClassParams) => {
-        const field = params.colDef.field;
-        if (!field || field === "time" || field === "_timeDisplay") return false;
-        const rowIndex = params.data?.rowIndex as number;
-        const time = timeSlots[rowIndex];
-        if (!time) return false;
-        const key = `${field}-${time}`;
-        return selectedSlotsRef.current.has(key) && !pendingCellsRef.current.has(key);
-      },
-      "cell-pending-add": (params: CellClassParams) => {
-        const field = params.colDef.field;
-        if (!field || field === "time" || field === "_timeDisplay") return false;
-        const rowIndex = params.data?.rowIndex as number;
-        const time = timeSlots[rowIndex];
-        if (!time) return false;
-        const key = `${field}-${time}`;
-        return pendingCellsRef.current.has(key) && dragModeRef.current === "select";
-      },
-      "cell-pending-remove": (params: CellClassParams) => {
-        const field = params.colDef.field;
-        if (!field || field === "time" || field === "_timeDisplay") return false;
-        const rowIndex = params.data?.rowIndex as number;
-        const time = timeSlots[rowIndex];
-        if (!time) return false;
-        const key = `${field}-${time}`;
-        return pendingCellsRef.current.has(key) && dragModeRef.current === "deselect";
-      },
-      "cell-unselected": (params: CellClassParams) => {
-        const field = params.colDef.field;
-        if (!field || field === "time" || field === "_timeDisplay") return false;
-        const rowIndex = params.data?.rowIndex as number;
-        const time = timeSlots[rowIndex];
-        if (!time) return false;
-        const key = `${field}-${time}`;
-        return !selectedSlotsRef.current.has(key) && !pendingCellsRef.current.has(key);
-      },
+    const key = `${field}-${time}`;
+    const isSelected = selectedSlotsRef.current.has(key);
+    const isPending = pendingCellsRef.current.has(key);
+    const isPendingAdd = isPending && dragModeRef.current === "select";
+    const isPendingRemove = isPending && dragModeRef.current === "deselect";
+    const isGmAvailable = gmAvailableSlots.has(key);
+
+    // Determine base background color
+    let bgColor: string;
+    if (isPendingAdd) {
+      bgColor = isDarkMode ? "#22c55e" : "#86efac";
+    } else if (isPendingRemove) {
+      bgColor = isDarkMode ? "#ef4444" : "#fca5a5";
+    } else if (isSelected && !isPending) {
+      bgColor = isDarkMode ? "#16a34a" : "#4ade80";
+    } else {
+      bgColor = isDarkMode ? "#18181b" : "#ffffff";
+    }
+
+    const style: Record<string, string> = {
+      backgroundColor: bgColor,
+      cursor: disabled ? "default" : "pointer",
     };
-  }, [mode, timeSlots]);
+
+    // Add diagonal blue stripes for GM available times (only on unselected cells)
+    if (isGmAvailable && !isSelected && !isPending) {
+      const stripeColor = isDarkMode ? "rgba(59, 130, 246, 0.35)" : "rgba(59, 130, 246, 0.25)";
+      style.backgroundImage = `repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 3px,
+        ${stripeColor} 3px,
+        ${stripeColor} 6px
+      )`;
+      style.backgroundSize = "8px 8px";
+    }
+
+    return style;
+  }, [timeSlots, isDarkMode, gmAvailableSlots, disabled]);
 
   // Heatmap cell style with GM availability indication (diagonal stripes)
   const getHeatmapCellStyle = useCallback((params: CellClassParams) => {
@@ -832,8 +836,8 @@ export function VirtualizedAvailabilityGrid({
           headerClass: "date-header",
         };
 
-        if (mode === "edit" && !disabled) {
-          colDef.cellClassRules = cellClassRules;
+        if (mode === "edit") {
+          colDef.cellStyle = getEditCellStyle;
         } else {
           colDef.cellStyle = getHeatmapCellStyle;
         }
@@ -849,7 +853,7 @@ export function VirtualizedAvailabilityGrid({
     }
 
     return cols;
-  }, [allDates, mode, cellClassRules, getHeatmapCellStyle, userTimezone, compact, cellWidth, timeColWidth, disabled]);
+  }, [allDates, mode, getEditCellStyle, getHeatmapCellStyle, userTimezone, compact, cellWidth, timeColWidth]);
 
   // Default column definition
   const defaultColDef = useMemo((): ColDef => ({
@@ -1015,13 +1019,21 @@ export function VirtualizedAvailabilityGrid({
       {mode === "edit" && !disabled && (
         <div className="mt-2 flex items-center justify-end">
           <div className="hidden items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400 sm:flex">
+            {gmAvailability.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <div
+                  className="h-2.5 w-2.5 rounded"
+                  style={{
+                    backgroundImage: "repeating-linear-gradient(-45deg, transparent, transparent 2px, rgba(59, 130, 246, 0.3) 2px, rgba(59, 130, 246, 0.3) 4px)",
+                    backgroundSize: "6px 6px"
+                  }}
+                />
+                <span>GM available</span>
+              </div>
+            )}
             <div className="flex items-center gap-1.5">
               <div className="h-2.5 w-2.5 rounded bg-green-400 dark:bg-green-600" />
-              <span>Available</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="h-2.5 w-2.5 rounded bg-red-200 dark:bg-red-900/50" />
-              <span>Blocked</span>
+              <span>Your availability</span>
             </div>
             {isSaving && (
               <span className="text-zinc-400">Saving...</span>

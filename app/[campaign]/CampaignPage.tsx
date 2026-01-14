@@ -308,26 +308,33 @@ export function CampaignPage({ event }: CampaignPageProps) {
       />
 
       {/* Main Content - Centered single column, all sections stacked */}
-      <div className="mx-auto max-w-5xl px-4 py-4 space-y-4">
+      <div className="mx-auto max-w-5xl px-4 py-6 space-y-4">
         {/* Campaign Details Section */}
         <div className="space-y-4">
           {/* About / Before You Play - Combined */}
           {(event.description || event.customPreSessionInstructions) && (
-            <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              <h3 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                About this {event.campaignType === "ONESHOT" ? "Game" : "Campaign"}
-              </h3>
+            <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-600">
+                  <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                  About this {event.campaignType === "ONESHOT" ? "Game" : "Campaign"}
+                </h3>
+              </div>
               {event.description && (
-                <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
                   {event.description}
                 </p>
               )}
               {event.customPreSessionInstructions && (
                 <div className={event.description ? "mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-700" : ""}>
-                  <h4 className="mb-1 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  <h4 className="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
                     Before You Play
                   </h4>
-                  <p className="whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-400">
+                  <p className="whitespace-pre-wrap text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
                     {event.customPreSessionInstructions}
                   </p>
                 </div>
@@ -336,10 +343,17 @@ export function CampaignPage({ event }: CampaignPageProps) {
           )}
 
           {/* Session Details */}
-          <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-            <h3 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-              Session Details
-            </h3>
+          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-emerald-600">
+                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                </svg>
+              </div>
+              <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Session Details
+              </h3>
+            </div>
             <dl className="grid gap-3 text-sm sm:grid-cols-2">
               {event.gameSystem && (
                 <div>
@@ -386,13 +400,20 @@ export function CampaignPage({ event }: CampaignPageProps) {
         </div>
 
         {/* Group Availability Section - responsive (hide sidebar on mobile) */}
-        <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="border-b border-zinc-200 px-3 py-2 dark:border-zinc-700">
-            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Group Availability
-            </span>
+        <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
+            <div className="flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600">
+                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Group Availability
+              </span>
+            </div>
           </div>
-          <div className="p-3">
+          <div className="p-4">
             {/* GM Availability Status Callout */}
             {hasGm && !isLoading && (
               <div className={`mb-3 rounded-lg border p-3 ${
@@ -502,17 +523,27 @@ export function CampaignPage({ event }: CampaignPageProps) {
         </div>
 
         {/* Party Members Section */}
-        <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
-            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-              Party Members ({participants.length})
-            </h2>
+            <div className="flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600">
+                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Party Members <span className="text-zinc-400 font-normal">({participants.length})</span>
+              </h2>
+            </div>
             {currentParticipant && !showAddPlayer && (
               <button
                 onClick={() => setShowAddPlayer(true)}
-                className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                className="flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
               >
-                + Add Player
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+                Add Player
               </button>
             )}
           </div>
