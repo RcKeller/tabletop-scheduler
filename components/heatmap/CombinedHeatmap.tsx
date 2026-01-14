@@ -1,13 +1,10 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { format, parse, addDays } from "date-fns";
-import { formatInTimeZone } from "date-fns-tz";
+import { format, parse } from "date-fns";
+import { VirtualizedAvailabilityGrid } from "../availability/VirtualizedAvailabilityGrid";
 import { HoverDetailPanel } from "./HoverDetailPanel";
-import { HeatmapLegend } from "./HeatmapLegend";
 import type { TimeSlot } from "@/lib/types";
-import { generateTimeSlots, getWeekDates } from "@/lib/utils/time-slots";
-import { utcToLocal, convertDateTime } from "@/lib/utils/timezone";
 
 interface Participant {
   id: string;
@@ -15,129 +12,221 @@ interface Participant {
   availability: TimeSlot[];
 }
 
-interface SessionDetails {
-  campaignType?: "ONESHOT" | "CAMPAIGN";
-  sessionLengthMinutes: number;
-  meetingType?: string | null;
-  meetingLocation?: string | null;
-  dateRange?: string | null;
-  timeWindow?: string;
-}
-
 interface CombinedHeatmapProps {
-  participants: Participant[];  // Availability data is in UTC
-  weekStart: Date;
-  earliestTime?: string;  // Time window start (in timeWindowTimezone if provided)
-  latestTime?: string;    // Time window end (in timeWindowTimezone if provided)
-  timeWindowTimezone?: string;  // Source timezone of time window (converts to user's timezone)
+  participants: Participant[];
+  startDate: Date;
+  endDate: Date;
+  earliestTime?: string;
+  latestTime?: string;
+  gmAvailability?: TimeSlot[];
   sessionLengthMinutes?: number;
-  timezone?: string;  // User's display timezone (defaults to UTC)
-  sessionDetails?: SessionDetails;
-}
-
-// Get availability color based on percentage (light to dark green scale)
-function getHeatmapColor(availableCount: number, totalCount: number): string {
-  if (totalCount === 0) return "bg-zinc-200 dark:bg-zinc-700";
-
-  const percentage = (availableCount / totalCount) * 100;
-
-  if (percentage === 100) return "bg-green-600 dark:bg-green-500";
-  if (percentage >= 75) return "bg-green-500 dark:bg-green-600";
-  if (percentage >= 50) return "bg-green-400 dark:bg-green-500";
-  if (percentage >= 25) return "bg-green-300 dark:bg-green-400";
-  if (percentage > 0) return "bg-green-200 dark:bg-green-300";
-  return "bg-zinc-200 dark:bg-zinc-700";
+  timezone?: string;
+  showGmToggle?: boolean;
 }
 
 export function CombinedHeatmap({
   participants,
-  weekStart,
+  startDate,
+  endDate,
   earliestTime = "00:00",
   latestTime = "23:30",
-  timeWindowTimezone,
+  gmAvailability = [],
   sessionLengthMinutes = 180,
   timezone = "UTC",
-  sessionDetails,
+  showGmToggle = false,
 }: CombinedHeatmapProps) {
-  // UTC-first: All incoming data is in UTC, convert to user's timezone for display
-  const [hoveredSlot, setHoveredSlot] = useState<{ date: string; time: string } | null>(null);
+  const [hoveredSlot, setHoveredSlot] = useState<{
+    date: string;
+    time: string;
+    available: Participant[];
+    unavailable: Participant[];
+  } | null>(null);
 
-  const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
+  const [clampToGm, setClampToGm] = useState(false);
 
-  // Convert time window for Y-axis display if needed
-  // - If timeWindowTimezone is provided and different from timezone: convert
-  // - Otherwise: use as-is (already in user's local timezone)
-  const displayTimeWindow = useMemo(() => {
-    if (!timeWindowTimezone || timeWindowTimezone === timezone) {
+  // Compute effective time window based on GM availability toggle
+  const effectiveTimeWindow = useMemo(() => {
+    if (!clampToGm || gmAvailability.length === 0) {
       return { earliest: earliestTime, latest: latestTime };
     }
-    const refDate = format(weekStart, "yyyy-MM-dd");
-    const localEarliest = convertDateTime(earliestTime, refDate, timeWindowTimezone, timezone);
-    const localLatest = convertDateTime(latestTime, refDate, timeWindowTimezone, timezone);
-    return { earliest: localEarliest.time, latest: localLatest.time };
-  }, [earliestTime, latestTime, timeWindowTimezone, timezone, weekStart]);
 
-  const timeSlots = useMemo(
-    () => generateTimeSlots(displayTimeWindow.earliest, displayTimeWindow.latest),
-    [displayTimeWindow.earliest, displayTimeWindow.latest]
+    // Find the earliest start and latest end across all GM availability
+    let earliest = "23:59";
+    let latest = "00:00";
+
+    for (const slot of gmAvailability) {
+      if (slot.startTime < earliest) earliest = slot.startTime;
+      if (slot.endTime > latest) latest = slot.endTime;
+    }
+
+    return { earliest, latest };
+  }, [clampToGm, gmAvailability, earliestTime, latestTime]);
+
+  // Handle hover events from grid
+  const handleHoverSlot = useCallback((
+    date: string,
+    time: string,
+    available: Participant[],
+    unavailable: Participant[]
+  ) => {
+    setHoveredSlot({ date, time, available, unavailable });
+  }, []);
+
+  const handleLeaveSlot = useCallback(() => {
+    setHoveredSlot(null);
+  }, []);
+
+  // Format session length for display
+  const sessionLengthDisplay = useMemo(() => {
+    const hours = Math.floor(sessionLengthMinutes / 60);
+    const mins = sessionLengthMinutes % 60;
+    if (hours === 0) return `${mins}m`;
+    if (mins === 0) return `${hours}h`;
+    return `${hours}h ${mins}m`;
+  }, [sessionLengthMinutes]);
+
+  return (
+    <div className="space-y-4">
+      {/* GM Time Clamp Toggle */}
+      {showGmToggle && gmAvailability.length > 0 && (
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={clampToGm}
+              onChange={(e) => setClampToGm(e.target.checked)}
+              className="rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
+            />
+            Show only times GM is available
+          </label>
+        </div>
+      )}
+
+      {/* Main content: Grid + Hover panel */}
+      <div className="flex gap-4">
+        {/* Availability Grid */}
+        <div className="flex-1">
+          <VirtualizedAvailabilityGrid
+            startDate={startDate}
+            endDate={endDate}
+            earliestTime={effectiveTimeWindow.earliest}
+            latestTime={effectiveTimeWindow.latest}
+            mode="heatmap"
+            participants={participants}
+            gmAvailability={gmAvailability}
+            onHoverSlot={handleHoverSlot}
+            onLeaveSlot={handleLeaveSlot}
+            timezone={timezone}
+            disabled
+          />
+        </div>
+
+        {/* Sidebar - Hover details */}
+        <div className="w-64 shrink-0 hidden md:block">
+          <div className="sticky top-4 rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+            {hoveredSlot ? (
+              <HoverDetailPanel
+                date={hoveredSlot.date}
+                time={hoveredSlot.time}
+                availableParticipants={hoveredSlot.available}
+                unavailableParticipants={hoveredSlot.unavailable}
+                totalParticipants={participants.length}
+              />
+            ) : (
+              <div className="p-4">
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    Group Availability
+                  </h3>
+                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                    Hover over time slots to see who&apos;s available
+                  </p>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">Players</span>
+                      <span className="text-zinc-900 dark:text-zinc-100">{participants.length}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-zinc-500">Session</span>
+                      <span className="text-zinc-900 dark:text-zinc-100">{sessionLengthDisplay}</span>
+                    </div>
+                  </div>
+                  {/* Legend */}
+                  <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 space-y-2">
+                    <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide">Legend</p>
+                    <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+                      <div className="w-4 h-4 rounded bg-green-500" />
+                      <span>All available</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+                      <div className="w-4 h-4 rounded bg-green-300" />
+                      <span>Some available</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+                      <div className="w-4 h-4 rounded bg-zinc-200 dark:bg-zinc-700" />
+                      <span>None available</span>
+                    </div>
+                    {gmAvailability.length > 0 && (
+                      <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+                        <div
+                          className="w-4 h-4 rounded bg-green-400"
+                          style={{
+                            backgroundImage: "repeating-linear-gradient(-45deg, transparent, transparent 2px, rgba(59, 130, 246, 0.4) 2px, rgba(59, 130, 246, 0.4) 4px)",
+                            backgroundSize: "6px 6px"
+                          }}
+                        />
+                        <span>GM available</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Suggested Times */}
+      {participants.length > 0 && (
+        <SuggestedTimes
+          participants={participants}
+          sessionLengthMinutes={sessionLengthMinutes}
+          sessionLengthDisplay={sessionLengthDisplay}
+        />
+      )}
+    </div>
   );
+}
 
-  // Check if the time window is overnight (earliest > latest means it crosses midnight)
-  const isOvernightWindow = useMemo(() => {
-    return displayTimeWindow.earliest > displayTimeWindow.latest;
-  }, [displayTimeWindow.earliest, displayTimeWindow.latest]);
+// Separate component for suggested times to avoid re-renders
+function SuggestedTimes({
+  participants,
+  sessionLengthMinutes,
+  sessionLengthDisplay,
+}: {
+  participants: Participant[];
+  sessionLengthMinutes: number;
+  sessionLengthDisplay: string;
+}) {
+  // Build availability map for finding suggestions
+  const suggestedTimes = useMemo(() => {
+    const slotsNeeded = Math.ceil(sessionLengthMinutes / 30);
+    const availabilityMap = new Map<string, Set<string>>();
 
-  // Convert participant availability from UTC to local timezone
-  const displayParticipants = useMemo(() => {
-    if (timezone === "UTC") return participants;
-
-    return participants.map(p => ({
-      ...p,
-      availability: p.availability.flatMap(slot => {
-        const start = utcToLocal(slot.startTime, slot.date, timezone);
-        const end = utcToLocal(slot.endTime, slot.date, timezone);
-
-        if (start.date === end.date) {
-          // Same day - simple case
-          if (start.time < end.time) {
-            return [{ date: start.date, startTime: start.time, endTime: end.time }];
-          }
-          return [];
-        } else {
-          // Slot crosses midnight when converted - split into two slots
-          const result: TimeSlot[] = [
-            { date: start.date, startTime: start.time, endTime: "23:59" },
-          ];
-          if (end.time > "00:00") {
-            result.push({ date: end.date, startTime: "00:00", endTime: end.time });
-          }
-          return result;
-        }
-      }),
-    }));
-  }, [participants, timezone]);
-
-  // Build availability map: date-time -> participant IDs who are available
-  // Uses converted local-time availability
-  const availabilityMap = useMemo(() => {
-    const map = new Map<string, Set<string>>();
-
-    for (const participant of displayParticipants) {
+    // Build map from participant availability
+    for (const participant of participants) {
       for (const slot of participant.availability) {
-        // Skip invalid slots where start >= end
         if (slot.startTime >= slot.endTime) continue;
 
-        // Expand slot into 30-min intervals
         let currentTime = slot.startTime;
         let iterations = 0;
-        const maxIterations = 48; // Max 48 half-hour slots in a day
 
-        while (currentTime < slot.endTime && iterations < maxIterations) {
+        while (currentTime < slot.endTime && iterations < 48) {
           const key = `${slot.date}-${currentTime}`;
-          if (!map.has(key)) {
-            map.set(key, new Set());
+          if (!availabilityMap.has(key)) {
+            availabilityMap.set(key, new Set());
           }
-          map.get(key)!.add(participant.id);
+          availabilityMap.get(key)!.add(participant.id);
 
           // Increment by 30 minutes
           const [h, m] = currentTime.split(":").map(Number);
@@ -152,315 +241,102 @@ export function CombinedHeatmap({
       }
     }
 
-    return map;
-  }, [displayParticipants]);
-
-  // Helper to get the correct lookup date for a time slot
-  // For overnight windows, after-midnight times need the NEXT day's date
-  const getLookupDate = useCallback(
-    (date: Date, dateIdx: number, time: string): string => {
-      const dateStr = formatInTimeZone(date, timezone, "yyyy-MM-dd");
-
-      // For overnight windows, times before the latest time are "after midnight" - next day
-      if (isOvernightWindow && time < displayTimeWindow.latest) {
-        const nextDate = dateIdx + 1 < weekDates.length
-          ? weekDates[dateIdx + 1]
-          : addDays(date, 1);
-        return formatInTimeZone(nextDate, timezone, "yyyy-MM-dd");
-      }
-
-      return dateStr;
-    },
-    [timezone, isOvernightWindow, displayTimeWindow.latest, weekDates]
-  );
-
-  // Get participants available/unavailable for a slot
-  const getSlotParticipants = useCallback(
-    (date: string, time: string) => {
-      const key = `${date}-${time}`;
-      const availableIds = availabilityMap.get(key) || new Set();
-
-      const available = participants.filter((p) => availableIds.has(p.id));
-      const unavailable = participants.filter((p) => !availableIds.has(p.id));
-
-      return { available, unavailable };
-    },
-    [availabilityMap, participants]
-  );
-
-  // Get hovered slot details
-  const hoveredDetails = useMemo(() => {
-    if (!hoveredSlot) {
-      return { available: [], unavailable: [] };
-    }
-    return getSlotParticipants(hoveredSlot.date, hoveredSlot.time);
-  }, [hoveredSlot, getSlotParticipants]);
-
-  // Find suggested times (slots where everyone or most people are available)
-  const suggestedTimes = useMemo(() => {
+    // Find time blocks where most people are available
     const suggestions: { date: string; time: string; count: number }[] = [];
-    const slotsNeeded = Math.ceil(sessionLengthMinutes / 30);
+    const checkedStarts = new Set<string>();
 
-    for (let dateIdx = 0; dateIdx < weekDates.length; dateIdx++) {
-      const date = weekDates[dateIdx];
-      const dateStr = formatInTimeZone(date, timezone, "yyyy-MM-dd");
+    for (const [key] of availabilityMap) {
+      const [datePart, timePart] = [key.substring(0, 10), key.substring(11)];
+      const startKey = `${datePart}-${timePart}`;
 
-      for (let i = 0; i <= timeSlots.length - slotsNeeded; i++) {
-        // Check if all consecutive slots have good availability
-        let minAvailable = participants.length;
-        let allSlotsValid = true;
+      if (checkedStarts.has(startKey)) continue;
+      checkedStarts.add(startKey);
 
-        for (let j = 0; j < slotsNeeded; j++) {
-          const time = timeSlots[i + j];
-          // For overnight windows, after-midnight times need the NEXT day's lookup date
-          const lookupDate = getLookupDate(date, dateIdx, time);
-          const key = `${lookupDate}-${time}`;
-          const available = availabilityMap.get(key)?.size || 0;
-          minAvailable = Math.min(minAvailable, available);
+      // Check consecutive slots
+      let minAvailable = participants.length;
+      let allSlotsValid = true;
+      let checkTime = timePart;
 
-          if (available < participants.length * 0.5) {
-            allSlotsValid = false;
-            break;
-          }
+      for (let j = 0; j < slotsNeeded; j++) {
+        const checkKey = `${datePart}-${checkTime}`;
+        const available = availabilityMap.get(checkKey)?.size || 0;
+        minAvailable = Math.min(minAvailable, available);
+
+        if (available < participants.length * 0.5) {
+          allSlotsValid = false;
+          break;
         }
 
-        if (allSlotsValid && minAvailable > 0) {
-          suggestions.push({
-            date: dateStr,
-            time: timeSlots[i],
-            count: minAvailable,
-          });
+        // Increment time
+        const [h, m] = checkTime.split(":").map(Number);
+        const nextMinute = m + 30;
+        if (nextMinute >= 60) {
+          checkTime = `${(h + 1).toString().padStart(2, "0")}:00`;
+        } else {
+          checkTime = `${h.toString().padStart(2, "0")}:30`;
         }
+      }
+
+      if (allSlotsValid && minAvailable > 0) {
+        suggestions.push({
+          date: datePart,
+          time: timePart,
+          count: minAvailable,
+        });
       }
     }
 
-    // Sort by count (descending) and take top 5
     return suggestions
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
-  }, [weekDates, timeSlots, availabilityMap, participants.length, sessionLengthMinutes, timezone, getLookupDate]);
+  }, [participants, sessionLengthMinutes]);
 
-  // Format session length for display
-  const sessionLengthDisplay = useMemo(() => {
-    const hours = Math.floor(sessionLengthMinutes / 60);
-    const mins = sessionLengthMinutes % 60;
-    if (hours === 0) return `${mins}m`;
-    if (mins === 0) return `${hours}h`;
-    return `${hours}h ${mins}m`;
-  }, [sessionLengthMinutes]);
+  if (suggestedTimes.length === 0) {
+    return (
+      <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
+        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
+          Suggested Times
+        </h3>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          No times found where most players are available for a full {sessionLengthDisplay} session
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-4">
-      {/* Main content: Heatmap + Hover panel side by side */}
-      <div className="flex gap-4">
-        {/* Heatmap Grid */}
-        <div
-          className="flex-1 overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700"
-          style={{
-            touchAction: "none",
-            WebkitUserSelect: "none",
-            userSelect: "none",
-            MozUserSelect: "none",
-            msUserSelect: "none"
-          } as React.CSSProperties}
-          onDragStart={(e) => e.preventDefault()}
-        >
-          <div className="min-w-[600px]">
-            {/* Header row with days */}
-            <div className="grid grid-cols-[60px_repeat(7,1fr)] border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800">
-              <div className="p-2 text-center text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                Time
-              </div>
-              {weekDates.map((date) => (
-                <div
-                  key={date.toISOString()}
-                  className="p-2 text-center text-xs font-medium text-zinc-700 dark:text-zinc-300"
-                >
-                  <div>{formatInTimeZone(date, timezone, "EEE")}</div>
-                  <div className="text-zinc-500 dark:text-zinc-400">
-                    {formatInTimeZone(date, timezone, "M/d")}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Time slots grid */}
-            <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {timeSlots.map((time) => {
-                const [hour, minute] = time.split(":").map(Number);
-                const isHourMark = minute === 0;
-
-                return (
-                  <div
-                    key={time}
-                    className={`grid grid-cols-[60px_repeat(7,1fr)] ${
-                      isHourMark
-                        ? "border-t border-zinc-200 dark:border-zinc-700"
-                        : ""
-                    }`}
-                  >
-                    <div className="flex items-center justify-center p-1 text-xs text-zinc-400 dark:text-zinc-500">
-                      {isHourMark && (() => {
-                        // Time is already in local timezone (converted via displayTimeWindow)
-                        const timeObj = parse(time, "HH:mm", new Date());
-                        return format(timeObj, "h a");
-                      })()}
-                    </div>
-                    {weekDates.map((date, dateIdx) => {
-                      const dateStr = formatInTimeZone(date, timezone, "yyyy-MM-dd");
-                      // For overnight windows, after-midnight times need the NEXT day's lookup date
-                      const lookupDate = getLookupDate(date, dateIdx, time);
-                      const slotKey = `${lookupDate}-${time}`;
-                      const availableCount =
-                        availabilityMap.get(slotKey)?.size || 0;
-                      const cellColor = getHeatmapColor(
-                        availableCount,
-                        participants.length
-                      );
-                      const isHovered =
-                        hoveredSlot?.date === lookupDate &&
-                        hoveredSlot?.time === time;
-
-                      return (
-                        <div
-                          key={`${dateStr}-${time}`}
-                          onMouseEnter={() =>
-                            setHoveredSlot({ date: lookupDate, time })
-                          }
-                          onMouseLeave={() => setHoveredSlot(null)}
-                          className={`h-6 cursor-pointer border-l border-zinc-100 transition-all dark:border-zinc-800 ${cellColor} ${
-                            isHovered ? "ring-2 ring-inset ring-blue-500" : ""
-                          }`}
-                          title={`${availableCount}/${participants.length} available`}
-                        />
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Sidebar - fixed height to prevent layout shift */}
-        <div className="w-64 shrink-0">
-          <div className="sticky top-0 min-h-[200px] rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
-            {hoveredSlot ? (
-              <HoverDetailPanel
-                date={hoveredSlot.date}
-                time={hoveredSlot.time}
-                availableParticipants={hoveredDetails.available}
-                unavailableParticipants={hoveredDetails.unavailable}
-                totalParticipants={participants.length}
-              />
-            ) : (
-              <div className="p-4">
-                {sessionDetails ? (
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                      Session Details
-                    </h3>
-                    <div className="space-y-2 text-sm">
-                      {sessionDetails.campaignType && (
-                        <div className="flex justify-between">
-                          <span className="text-zinc-500">Type</span>
-                          <span className="text-zinc-900 dark:text-zinc-100">
-                            {sessionDetails.campaignType === "ONESHOT" ? "One-Shot" : "Campaign"}
-                          </span>
-                        </div>
-                      )}
-                      <div className="flex justify-between">
-                        <span className="text-zinc-500">Length</span>
-                        <span className="text-zinc-900 dark:text-zinc-100">
-                          {sessionDetails.sessionLengthMinutes >= 60
-                            ? `${Math.floor(sessionDetails.sessionLengthMinutes / 60)}h${sessionDetails.sessionLengthMinutes % 60 > 0 ? ` ${sessionDetails.sessionLengthMinutes % 60}m` : ""}`
-                            : `${sessionDetails.sessionLengthMinutes}m`
-                          }
-                        </span>
-                      </div>
-                      {sessionDetails.timeWindow && (
-                        <div className="flex justify-between">
-                          <span className="text-zinc-500">Window</span>
-                          <span className="text-zinc-900 dark:text-zinc-100">
-                            {sessionDetails.timeWindow}
-                          </span>
-                        </div>
-                      )}
-                      {sessionDetails.meetingType && (
-                        <div className="flex justify-between">
-                          <span className="text-zinc-500">Platform</span>
-                          <span className="text-zinc-900 dark:text-zinc-100">
-                            {sessionDetails.meetingType}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="border-t border-zinc-100 pt-3 dark:border-zinc-800">
-                      <p className="text-xs text-zinc-400 dark:text-zinc-500">
-                        Hover over a time slot to see who&apos;s available
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <HeatmapLegend totalParticipants={participants.length} />
-                    {participants.length === 0 && (
-                      <p className="mt-4 text-center text-sm text-zinc-400 dark:text-zinc-500">
-                        Waiting for players to submit availability
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+    <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+          Suggested Times
+        </h3>
+        <span className="text-xs text-zinc-500">{sessionLengthDisplay} sessions</span>
       </div>
+      <div className="flex flex-wrap gap-2">
+        {suggestedTimes.map((suggestion, idx) => {
+          const dateObj = new Date(suggestion.date + "T12:00:00Z");
+          const timeObj = parse(suggestion.time, "HH:mm", new Date());
+          const endTime = new Date(timeObj);
+          endTime.setMinutes(endTime.getMinutes() + sessionLengthMinutes);
 
-      {/* Suggested Times - separate section below heatmap */}
-      {participants.length > 0 && (
-        <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-              Suggested Times
-            </h3>
-            <span className="text-xs text-zinc-500 dark:text-zinc-400">
-              {sessionLengthDisplay} sessions
-            </span>
-          </div>
-          {suggestedTimes.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {suggestedTimes.map((suggestion, idx) => {
-                const dateObj = new Date(suggestion.date);
-                const timeObj = parse(suggestion.time, "HH:mm", new Date());
-                const endTime = new Date(timeObj);
-                endTime.setMinutes(endTime.getMinutes() + sessionLengthMinutes);
-
-                return (
-                  <div
-                    key={idx}
-                    className="rounded-md bg-green-50 px-3 py-2 dark:bg-green-900/20"
-                  >
-                    <div className="text-sm font-medium text-green-700 dark:text-green-400">
-                      {format(dateObj, "EEE, MMM d")}
-                    </div>
-                    <div className="text-xs text-green-600 dark:text-green-500">
-                      {format(timeObj, "h:mm a")} - {format(endTime, "h:mm a")}
-                    </div>
-                    <div className="mt-0.5 text-xs text-green-500 dark:text-green-600">
-                      {suggestion.count}/{participants.length} available
-                    </div>
-                  </div>
-                );
-              })}
+          return (
+            <div
+              key={idx}
+              className="rounded-md bg-green-50 px-3 py-2 dark:bg-green-900/20"
+            >
+              <div className="text-sm font-medium text-green-700 dark:text-green-400">
+                {format(dateObj, "EEE, MMM d")}
+              </div>
+              <div className="text-xs text-green-600 dark:text-green-500">
+                {format(timeObj, "h:mm a")} - {format(endTime, "h:mm a")}
+              </div>
+              <div className="mt-0.5 text-xs text-green-500 dark:text-green-600">
+                {suggestion.count}/{participants.length} available
+              </div>
             </div>
-          ) : (
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              No times found where most players are available for a full {sessionLengthDisplay} session
-            </p>
-          )}
-        </div>
-      )}
+          );
+        })}
+      </div>
     </div>
   );
 }

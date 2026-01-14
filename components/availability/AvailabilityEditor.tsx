@@ -750,17 +750,21 @@ export function AvailabilityEditor({
             timezone={timezone}
           />
 
-          {/* Schedule Entries */}
+          {/* Schedule Entries - Green/Red callout style */}
           {patternEntries.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-2 max-w-2xl">
               {patternEntries.map((entry) => (
                 <div
                   key={entry.id}
-                  className="flex items-center gap-3 py-2"
+                  className={`flex items-center gap-3 p-3 rounded-lg border ${
+                    entry.isAvailable
+                      ? "border-green-200 bg-green-50 dark:border-green-900/50 dark:bg-green-950/30"
+                      : "border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/30"
+                  }`}
                 >
                   <button
                     onClick={() => togglePatternAvailability(entry.id)}
-                    className={`flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                    className={`flex-shrink-0 w-20 text-center rounded-full px-2 py-0.5 text-xs font-semibold ${
                       entry.isAvailable
                         ? "bg-green-500 text-white"
                         : "bg-red-500 text-white"
@@ -776,12 +780,12 @@ export function AvailabilityEditor({
                         <button
                           key={day.value}
                           onClick={() => togglePatternDay(entry.id, day.value)}
-                          className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                          className={`rounded px-1.5 py-0.5 text-xs font-medium transition-colors ${
                             isSelected
                               ? entry.isAvailable
                                 ? "bg-green-600 text-white"
                                 : "bg-red-600 text-white"
-                              : "bg-gray-100 text-gray-400 dark:bg-gray-700"
+                              : "bg-white/50 text-gray-400 dark:bg-gray-800/50 hover:bg-white dark:hover:bg-gray-700"
                           }`}
                         >
                           {day.short}
@@ -800,7 +804,7 @@ export function AvailabilityEditor({
                         <option key={opt.value} value={opt.value}>{opt.label}</option>
                       ))}
                     </select>
-                    <span className="text-gray-400">-</span>
+                    <span className="text-gray-400">–</span>
                     <select
                       value={entry.endTime}
                       onChange={(e) => updatePatternEntry(entry.id, "endTime", e.target.value)}
@@ -814,7 +818,7 @@ export function AvailabilityEditor({
 
                   <button
                     onClick={() => removePatternEntry(entry.id)}
-                    className="ml-auto text-gray-400 hover:text-red-500"
+                    className="ml-auto text-gray-400 hover:text-red-500 transition-colors"
                   >
                     <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -825,44 +829,44 @@ export function AvailabilityEditor({
             </div>
           )}
 
-          {/* Add Schedule Button */}
-          <div className="flex items-center justify-between">
+          {/* Add Schedule Button - Blue outline style */}
+          <div className="flex items-center justify-between max-w-2xl">
             <div className="relative">
               <button
                 onClick={() => setShowAddMenu(!showAddMenu)}
-                className="flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors"
+                className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 border-2 border-blue-300 dark:border-blue-700 hover:border-blue-400 dark:hover:border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition-colors"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                Add recurring schedule
+                Add Schedule
               </button>
 
               {showAddMenu && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setShowAddMenu(false)} />
-                  <div className="absolute left-0 top-full z-20 mt-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-xl min-w-[200px]">
-                    <div className="px-3 py-1 text-xs font-semibold uppercase text-gray-400">Available</div>
+                  <div className="absolute left-0 top-full z-20 mt-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-1 shadow-xl min-w-[220px]">
+                    <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Available</div>
                     {DAY_PRESETS.map((preset) => (
                       <button
                         key={preset.value}
                         onClick={() => addPatternEntry(preset.days, true)}
-                        className="flex w-full items-center justify-between px-3 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+                        className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-green-50 dark:hover:bg-green-950/30"
                       >
                         <span>{preset.label}</span>
-                        <span className="text-xs text-green-600">available</span>
+                        <span className="text-xs font-medium text-green-600">available</span>
                       </button>
                     ))}
                     <div className="my-1 border-t border-gray-100 dark:border-gray-700" />
-                    <div className="px-3 py-1 text-xs font-semibold uppercase text-gray-400">Blocked</div>
+                    <div className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Blocked</div>
                     {DAY_PRESETS.map((preset) => (
                       <button
                         key={`blocked-${preset.value}`}
                         onClick={() => addPatternEntry(preset.days, false)}
-                        className="flex w-full items-center justify-between px-3 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+                        className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-950/30"
                       >
                         <span>{preset.label}</span>
-                        <span className="text-xs text-red-600">blocked</span>
+                        <span className="text-xs font-medium text-red-600">blocked</span>
                       </button>
                     ))}
                   </div>
@@ -870,7 +874,7 @@ export function AvailabilityEditor({
               )}
             </div>
 
-            {/* Clear All - subtle link on right */}
+            {/* Clear All - subtle link */}
             {(patternEntries.length > 0 || localOverrideSlots.length > 0) && (
               <button
                 onClick={handleClearAll}
@@ -881,48 +885,55 @@ export function AvailabilityEditor({
             )}
           </div>
 
-          {/* AI Assistant */}
-          <div className="flex items-start gap-3 pt-4 pb-2">
-            {/* Robot icon */}
-            <div className="flex-shrink-0 mt-1">
-              <svg className="h-5 w-5 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714a2.25 2.25 0 00.659 1.591L19 14.5M14.25 3.104c.251.023.501.05.75.082M19 14.5l-2.47-2.47a3.75 3.75 0 00-5.06 0L9 14.5m10 0v4.25a2.25 2.25 0 01-2.25 2.25h-9.5A2.25 2.25 0 015 18.75V14.5m0 0l2.47-2.47a3.75 3.75 0 015.06 0L15 14.5" />
-              </svg>
-            </div>
-            <div className="flex-1">
-              <textarea
-                value={aiInput}
-                onChange={(e) => setAiInput(e.target.value)}
-                placeholder="Describe your availability in plain English, e.g. 'free weekday evenings 6-10pm, busy Mondays'"
-                className="w-full border border-gray-200 dark:border-gray-700 rounded-md bg-transparent px-3 py-2 text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500 placeholder:text-gray-400 resize-none"
-                rows={2}
-                disabled={isParsingAI}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleAIParse();
-                  }
-                }}
-              />
-              {aiError && <p className="mt-1 text-xs text-red-600">{aiError}</p>}
-            </div>
-            <button
-              onClick={handleAIParse}
-              disabled={isParsingAI || !aiInput.trim()}
-              className="flex-shrink-0 px-4 py-2 text-sm font-medium bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {isParsingAI ? (
-                <span className="flex items-center gap-2">
-                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          {/* AI Assistant - Floating box */}
+          <div className="max-w-2xl mt-6 p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <svg className="h-4 w-4 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714a2.25 2.25 0 00.659 1.591L19 14.5M14.25 3.104c.251.023.501.05.75.082M19 14.5l-2.47-2.47a3.75 3.75 0 00-5.06 0L9 14.5m10 0v4.25a2.25 2.25 0 01-2.25 2.25h-9.5A2.25 2.25 0 015 18.75V14.5m0 0l2.47-2.47a3.75 3.75 0 015.06 0L15 14.5" />
                   </svg>
-                  Adding...
-                </span>
-              ) : (
-                "Add with AI"
-              )}
-            </button>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">AI Assistant</span>
+                </div>
+                <textarea
+                  value={aiInput}
+                  onChange={(e) => setAiInput(e.target.value)}
+                  placeholder="e.g. 'free weekday evenings 6-10pm, busy Mondays'"
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:border-purple-500 focus:ring-1 focus:ring-purple-500 placeholder:text-gray-400 resize-none"
+                  rows={2}
+                  disabled={isParsingAI}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleAIParse();
+                    }
+                  }}
+                />
+                {aiError && <p className="mt-1 text-xs text-red-600">{aiError}</p>}
+              </div>
+              <div className="flex flex-col gap-2 sm:w-40">
+                <button
+                  onClick={handleAIParse}
+                  disabled={isParsingAI || !aiInput.trim()}
+                  className="px-4 py-2 text-sm font-medium bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isParsingAI ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Adding...
+                    </span>
+                  ) : (
+                    "Add with AI"
+                  )}
+                </button>
+                <p className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">
+                  Describe your schedule in plain English
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       )}
