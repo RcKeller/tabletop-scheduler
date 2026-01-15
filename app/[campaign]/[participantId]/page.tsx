@@ -123,13 +123,43 @@ export default async function ParticipantPage({ params }: PageProps) {
       const effectiveRanges = computeEffectiveRanges(gmRules, dateRange);
 
       // Convert ranges to slots
+      // Handle overnight ranges (endMinutes >= 1440) by splitting them
       for (const [date, dayAvail] of effectiveRanges) {
         for (const range of dayAvail.availableRanges) {
-          gmAvailability.push({
-            date,
-            startTime: minutesToTime(range.startMinutes),
-            endTime: minutesToTime(range.endMinutes),
-          });
+          if (range.endMinutes > 1440) {
+            // Overnight range - split into two parts
+            // Part 1: startTime to midnight (24:00)
+            gmAvailability.push({
+              date,
+              startTime: minutesToTime(range.startMinutes),
+              endTime: "24:00",
+            });
+            // Part 2: midnight to endTime on next day
+            const nextDate = new Date(date + "T12:00:00Z");
+            nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+            const nextDateStr = nextDate.toISOString().split("T")[0];
+            const wrappedEnd = range.endMinutes - 1440;
+            if (wrappedEnd > 0) {
+              gmAvailability.push({
+                date: nextDateStr,
+                startTime: "00:00",
+                endTime: minutesToTime(wrappedEnd),
+              });
+            }
+          } else if (range.endMinutes === 1440) {
+            // Full day ending at midnight
+            gmAvailability.push({
+              date,
+              startTime: minutesToTime(range.startMinutes),
+              endTime: "24:00",
+            });
+          } else {
+            gmAvailability.push({
+              date,
+              startTime: minutesToTime(range.startMinutes),
+              endTime: minutesToTime(range.endMinutes),
+            });
+          }
         }
       }
     }
