@@ -106,6 +106,7 @@ export default async function ParticipantPage({ params }: PageProps) {
         specificDate: r.specificDate ? format(r.specificDate, "yyyy-MM-dd") : null,
         startTime: r.startTime,
         endTime: r.endTime,
+        crossesMidnight: r.crossesMidnight ?? undefined,
         originalTimezone: r.originalTimezone,
         originalDayOfWeek: r.originalDayOfWeek,
         reason: r.reason,
