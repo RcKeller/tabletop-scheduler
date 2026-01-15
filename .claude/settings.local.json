@@ -25,11 +25,7 @@
       "Bash(docker:*)",
       "Bash(psql:*)",
       "Bash(/opt/homebrew:*)",
-      "Bash(wc:*)",
-      "Bash(DATABASE_URL=\"postgres://b8fabb86ea40a215df0fcffce20f1cc6b161ccaf3c008811db04e3269342cf5a:sk_UVzx0s2C2NzNv7scJukFL@db.prisma.io:5432/postgres?sslmode=require\" npx prisma db push:*)",
-      "Bash(DATABASE_URL=\"postgres://b0749ddedb7105a50e9bd88bec77e44b75df59e8e4b42ea23e528efb85e65854:sk_pNX4uR9SkBPo06oXqwQPT@db.prisma.io:5432/postgres?sslmode=require\" npx prisma db push:*)",
-      "Bash(DATABASE_URL=\"postgres://b8fabb86ea40a215df0fcffce20f1cc6b161ccaf3c008811db04e3269342cf5a:sk_UVzx0s2C2NzNv7scJukFL@db.prisma.io:5432/postgres?sslmode=require\" npm run db:seed)",
-      "Bash(DATABASE_URL=\"postgres://b0749ddedb7105a50e9bd88bec77e44b75df59e8e4b42ea23e528efb85e65854:sk_pNX4uR9SkBPo06oXqwQPT@db.prisma.io:5432/postgres?sslmode=require\" npm run db:seed:*)"
+      "Bash(wc:*)"
     ]
   }
 }
