@@ -319,7 +319,7 @@ export function AvailabilityEditor({
 
   // Pattern editor state
   const [patternEntries, setPatternEntries] = useState<PatternEntry[]>([]);
-  const [showAddMenu, setShowAddMenu] = useState(false);
+  const [addMode, setAddMode] = useState<"available" | "blocked">("available");
 
   // CTA state - persistent once saved, with timestamp
   const [savedAt, setSavedAt] = useState<Date | null>(null);
@@ -606,14 +606,14 @@ export function AvailabilityEditor({
   }, [event.slug]);
 
   // Pattern editor handlers - all call markUserEditing to prevent useEffect overwrite
-  const addPatternEntry = useCallback((days: number[], isAvailable: boolean = true) => {
+  const addPatternEntry = useCallback((days: number[]) => {
     markUserEditing();
     const newEntry: PatternEntry = {
       id: `new-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       days,
       startTime: "17:00",
       endTime: "21:00",
-      isAvailable,
+      isAvailable: addMode === "available",
     };
     setPatternEntries((prev) => {
       const updated = [...prev, newEntry];
@@ -621,8 +621,7 @@ export function AvailabilityEditor({
       return updated;
     });
     debouncedSavePatterns();
-    setShowAddMenu(false);
-  }, [markUserEditing, debouncedSavePatterns]);
+  }, [markUserEditing, debouncedSavePatterns, addMode]);
 
   const removePatternEntry = useCallback((id: string) => {
     markUserEditing();
@@ -637,18 +636,23 @@ export function AvailabilityEditor({
   const togglePatternDay = useCallback((entryId: string, dayValue: number) => {
     markUserEditing();
     setPatternEntries((prev) => {
-      const updated = prev.map((e) => {
-        if (e.id !== entryId) return e;
+      const updated: PatternEntry[] = [];
+      for (const e of prev) {
+        if (e.id !== entryId) {
+          updated.push(e);
+          continue;
+        }
         const hasDay = e.days.includes(dayValue);
         let newDays: number[];
         if (hasDay) {
           newDays = e.days.filter((d) => d !== dayValue);
-          if (newDays.length === 0) return e;
+          // If no days left, don't add entry (effectively delete it)
+          if (newDays.length === 0) continue;
         } else {
           newDays = [...e.days, dayValue].sort((a, b) => a - b);
         }
-        return { ...e, days: newDays };
-      });
+        updated.push({ ...e, days: newDays });
+      }
       patternEntriesRef.current = updated;
       return updated;
     });
@@ -840,300 +844,354 @@ export function AvailabilityEditor({
         </div>
       )}
 
-      {/* Main Content */}
+      {/* Main Content - Grid with Sidebar */}
       {!isLoading && (
-        <div className="space-y-4">
-          {/* Mobile note about using AI assistant */}
-          {isMobile && (
-            <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-200">
-              <svg className="h-5 w-5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" />
-              </svg>
-              <div className="text-sm">
-                <p className="font-medium">On mobile? Use the AI Assistant below</p>
-                <p className="text-amber-700 dark:text-amber-300/80 mt-0.5">
-                  Drag-select doesn&apos;t work well on touch screens. Describe your availability in plain English instead.
-                </p>
-              </div>
-            </div>
-          )}
+        <div className="flex gap-0">
+          {/* Left: Calendar Grid */}
+          <div className="flex-1 min-w-0">
+            <VirtualizedAvailabilityGrid
+              startDate={new Date(event.startDate)}
+              endDate={new Date(event.endDate)}
+              earliestTime="00:00"
+              latestTime="24:00"
+              mode="edit"
+              availability={timeSlots}
+              onSave={handleGridSave}
+              autoSave={true}
+              timezone={timezone}
+              gmAvailability={!isGm ? gmAvailability : []}
+              disabled={isMobile}
+            />
 
-          {/* Full-width Calendar Grid */}
-          <VirtualizedAvailabilityGrid
-            startDate={new Date(event.startDate)}
-            endDate={new Date(event.endDate)}
-            earliestTime="00:00"
-            latestTime="24:00"
-            mode="edit"
-            availability={timeSlots}
-            onSave={handleGridSave}
-            autoSave={true}
-            timezone={timezone}
-            gmAvailability={!isGm ? gmAvailability : []}
-            disabled={isMobile}
-          />
-
-          {/* Schedule Entries - Green/Red callout style */}
-          {patternEntries.length > 0 && (
-            <div className="space-y-2">
-              {patternEntries.map((entry) => (
-                <div
-                  key={entry.id}
-                  className={`flex items-center gap-3 p-3 rounded-lg border ${
-                    entry.isAvailable
-                      ? "border-green-200 bg-green-50 dark:border-green-900/50 dark:bg-green-950/30"
-                      : "border-red-200 bg-red-50 dark:border-red-900/50 dark:bg-red-950/30"
-                  }`}
-                >
+            {/* Mobile-only: Tools below grid */}
+            <div className="md:hidden mt-4 space-y-4">
+              {/* Mobile AI Assistant - Primary on mobile */}
+              <div className="relative overflow-hidden rounded-xl border border-purple-200 dark:border-purple-900/50 bg-gradient-to-br from-purple-50 to-violet-50 dark:from-purple-950/30 dark:to-violet-950/30">
+                <div className="p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-purple-600">
+                      <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                      </svg>
+                    </div>
+                    <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Describe your availability</span>
+                  </div>
+                  <textarea
+                    value={aiInput}
+                    onChange={(e) => setAiInput(e.target.value)}
+                    placeholder="e.g. &quot;Free weekday evenings 6-10pm&quot;"
+                    className="w-full rounded-lg border border-purple-200 dark:border-purple-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm placeholder:text-zinc-400 focus:border-purple-400 focus:ring-1 focus:ring-purple-400/20 resize-none"
+                    rows={2}
+                    disabled={isParsingAI}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleAIParse();
+                      }
+                    }}
+                  />
                   <button
-                    onClick={() => togglePatternAvailability(entry.id)}
-                    className={`flex-shrink-0 w-20 text-center rounded-full px-2 py-0.5 text-xs font-semibold ${
-                      entry.isAvailable
+                    onClick={handleAIParse}
+                    disabled={isParsingAI || !aiInput.trim()}
+                    className="mt-2 w-full py-2 text-sm font-medium rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 text-white disabled:opacity-40"
+                  >
+                    {isParsingAI ? "Processing..." : "Add to Schedule"}
+                  </button>
+                  {aiError && (
+                    <p className="mt-2 text-xs text-red-600">{aiError}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Mobile Quick Add */}
+              <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Quick Add</span>
+                </div>
+                {/* Mode Toggle - Distinct segmented control */}
+                <div className="flex items-center gap-0 rounded-lg border-2 border-zinc-200 dark:border-zinc-700 overflow-hidden mb-3">
+                  <button
+                    onClick={() => setAddMode("available")}
+                    className={`flex-1 px-3 py-2 text-xs font-semibold transition-all ${
+                      addMode === "available"
                         ? "bg-green-500 text-white"
-                        : "bg-red-500 text-white"
+                        : "bg-zinc-50 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400"
                     }`}
                   >
-                    {entry.isAvailable ? "Available" : "Blocked"}
+                    ✓ Available
                   </button>
-
-                  <div className="flex flex-wrap gap-1">
-                    {DAYS.map((day) => {
-                      const isSelected = entry.days.includes(day.value);
-                      return (
-                        <button
-                          key={day.value}
-                          onClick={() => togglePatternDay(entry.id, day.value)}
-                          className={`rounded px-1.5 py-0.5 text-xs font-medium transition-colors ${
-                            isSelected
-                              ? entry.isAvailable
-                                ? "bg-green-600 text-white"
-                                : "bg-red-600 text-white"
-                              : "bg-white/50 text-gray-400 dark:bg-gray-800/50 hover:bg-white dark:hover:bg-gray-700"
-                          }`}
-                        >
-                          {day.short}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="flex items-center gap-1 text-sm">
-                    <select
-                      value={entry.startTime}
-                      onChange={(e) => updatePatternEntry(entry.id, "startTime", e.target.value)}
-                      className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-1 py-0.5 text-xs"
-                    >
-                      {TIME_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
-                    <span className="text-gray-400">–</span>
-                    <select
-                      value={entry.endTime}
-                      onChange={(e) => updatePatternEntry(entry.id, "endTime", e.target.value)}
-                      className="rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-1 py-0.5 text-xs"
-                    >
-                      {TIME_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
-                  </div>
-
+                  <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-700" />
                   <button
-                    onClick={() => removePatternEntry(entry.id)}
-                    className="ml-auto text-gray-400 hover:text-red-500 transition-colors"
+                    onClick={() => setAddMode("blocked")}
+                    className={`flex-1 px-3 py-2 text-xs font-semibold transition-all ${
+                      addMode === "blocked"
+                        ? "bg-red-500 text-white"
+                        : "bg-zinc-50 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400"
+                    }`}
                   >
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
+                    ✕ Blocked
                   </button>
                 </div>
-              ))}
-            </div>
-          )}
-
-          {/* Add Schedule and Clear All */}
-          <div className="flex items-center gap-6">
-            <div className="relative">
-              <button
-                onClick={() => setShowAddMenu(!showAddMenu)}
-                className="group flex items-center gap-3 px-6 py-3 text-base font-medium rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400 hover:border-blue-400 hover:text-blue-600 dark:hover:border-blue-500 dark:hover:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-all"
-              >
-                <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-colors">
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
+                <div className="flex flex-wrap gap-2">
+                  {DAY_PRESETS.map((preset) => (
+                    <button
+                      key={preset.value}
+                      onClick={() => addPatternEntry(preset.days)}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-all ${
+                        addMode === "available"
+                          ? "border-green-200 text-green-700 dark:border-green-800 dark:text-green-400"
+                          : "border-red-200 text-red-700 dark:border-red-800 dark:text-red-400"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
                 </div>
-                Add Schedule
-              </button>
+              </div>
 
-              {showAddMenu && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setShowAddMenu(false)} />
-                  <div className="fixed sm:absolute inset-x-4 bottom-4 sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full z-20 sm:mt-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl sm:shadow-xl overflow-hidden sm:min-w-[360px] max-h-[70vh] overflow-y-auto">
-                    {/* Available section */}
-                    <div className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-green-600 dark:text-green-400 bg-green-50/50 dark:bg-green-950/20 border-b border-zinc-100 dark:border-zinc-800 sticky top-0">
-                      Available
-                    </div>
-                    <div className="p-2">
-                      {/* Presets */}
-                      {DAY_PRESETS.map((preset) => (
-                        <button
-                          key={preset.value}
-                          onClick={() => addPatternEntry(preset.days, true)}
-                          className="flex w-full items-center justify-between px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-green-50 dark:hover:bg-green-950/30 rounded-lg transition-colors"
-                        >
-                          <span className="font-medium">{preset.label}</span>
-                          <span className="text-xs text-zinc-400">{preset.days.length} days</span>
-                        </button>
-                      ))}
-                      {/* Individual days */}
-                      <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-                        <div className="flex flex-wrap gap-1.5">
-                          {DAYS.map((day) => (
-                            <button
-                              key={day.value}
-                              onClick={() => addPatternEntry([day.value], true)}
-                              className="px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-green-100 hover:text-green-700 dark:hover:bg-green-900/30 dark:hover:text-green-400 rounded-lg transition-colors"
-                            >
-                              {day.short}
-                            </button>
-                          ))}
+              {/* Mobile Schedule Entries */}
+              {patternEntries.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+                      Schedule ({patternEntries.length})
+                    </span>
+                    <button
+                      onClick={handleClearAll}
+                      className="text-xs text-zinc-400 hover:text-red-500"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                  {patternEntries.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className={`flex items-center gap-3 p-3 rounded-lg border ${
+                        entry.isAvailable
+                          ? "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30"
+                          : "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30"
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-xs font-semibold ${entry.isAvailable ? "text-green-600" : "text-red-600"}`}>
+                            {entry.days.map(d => DAYS[d].short).join(", ")}
+                          </span>
+                        </div>
+                        <div className="text-xs text-zinc-500">
+                          {TIME_OPTIONS.find(t => t.value === entry.startTime)?.label} – {TIME_OPTIONS.find(t => t.value === entry.endTime)?.label}
                         </div>
                       </div>
-                    </div>
-
-                    {/* Blocked section */}
-                    <div className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-red-600 dark:text-red-400 bg-red-50/50 dark:bg-red-950/20 border-y border-zinc-100 dark:border-zinc-800 sticky top-0">
-                      Blocked
-                    </div>
-                    <div className="p-2">
-                      {/* Presets */}
-                      {DAY_PRESETS.map((preset) => (
-                        <button
-                          key={`blocked-${preset.value}`}
-                          onClick={() => addPatternEntry(preset.days, false)}
-                          className="flex w-full items-center justify-between px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors"
-                        >
-                          <span className="font-medium">{preset.label}</span>
-                          <span className="text-xs text-zinc-400">{preset.days.length} days</span>
-                        </button>
-                      ))}
-                      {/* Individual days */}
-                      <div className="mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-                        <div className="flex flex-wrap gap-1.5">
-                          {DAYS.map((day) => (
-                            <button
-                              key={`blocked-${day.value}`}
-                              onClick={() => addPatternEntry([day.value], false)}
-                              className="px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 hover:bg-red-100 hover:text-red-700 dark:hover:bg-red-900/30 dark:hover:text-red-400 rounded-lg transition-colors"
-                            >
-                              {day.short}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Close button for mobile */}
-                    <div className="sm:hidden p-3 border-t border-zinc-100 dark:border-zinc-800">
                       <button
-                        onClick={() => setShowAddMenu(false)}
-                        className="w-full py-2.5 text-sm font-medium text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 rounded-lg"
+                        onClick={() => removePatternEntry(entry.id)}
+                        className="p-1 text-zinc-400 hover:text-red-500"
                       >
-                        Cancel
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
                       </button>
                     </div>
-                  </div>
-                </>
+                  ))}
+                </div>
               )}
             </div>
-
-            {/* Clear All - with confirmation affordance */}
-            {(patternEntries.length > 0 || hasGridSlots) && (
-              <button
-                onClick={handleClearAll}
-                className="group flex items-center gap-2 px-3 py-2 text-sm text-zinc-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 transition-all"
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                </svg>
-                <span className="hidden sm:inline">Clear all</span>
-              </button>
-            )}
           </div>
 
-          {/* AI Assistant - Modern card with gradient accent */}
-          <div className="mt-8 relative overflow-hidden rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-gradient-to-br from-zinc-50 to-zinc-100/50 dark:from-zinc-900 dark:to-zinc-900/50">
-            {/* Subtle gradient accent */}
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500" />
-
-            <div className="p-5">
-              {/* Header row - icon aligned with title */}
-              <div className="flex items-center gap-3 mb-4">
-                {/* AI Icon */}
-                <div className="flex-shrink-0 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-purple-500/20">
-                  <svg className="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
-                  </svg>
+          {/* Right: Sidebar - Hidden on mobile */}
+          <div className="hidden w-64 shrink-0 md:block border-l border-zinc-100 dark:border-zinc-800">
+            <div className="sticky top-20 p-4 space-y-4 max-h-[calc(100vh-6rem)] overflow-y-auto">
+              {/* Add Schedule Section */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Add Schedule</h3>
+                  {(patternEntries.length > 0 || hasGridSlots) && (
+                    <button
+                      onClick={handleClearAll}
+                      className="text-xs text-zinc-400 hover:text-red-500 transition-colors"
+                    >
+                      Clear all
+                    </button>
+                  )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">AI Schedule Assistant</h3>
-                  <span className="px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide rounded-full bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300">Beta</span>
+
+                {/* Mode Toggle - Distinct segmented control */}
+                <div className="flex items-center gap-0 rounded-lg border-2 border-zinc-200 dark:border-zinc-700 overflow-hidden mb-3">
+                  <button
+                    onClick={() => setAddMode("available")}
+                    className={`flex-1 px-3 py-2 text-xs font-semibold transition-all ${
+                      addMode === "available"
+                        ? "bg-green-500 text-white"
+                        : "bg-zinc-50 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-green-50 dark:hover:bg-green-950/30"
+                    }`}
+                  >
+                    ✓ Available
+                  </button>
+                  <div className="w-px h-6 bg-zinc-200 dark:bg-zinc-700" />
+                  <button
+                    onClick={() => setAddMode("blocked")}
+                    className={`flex-1 px-3 py-2 text-xs font-semibold transition-all ${
+                      addMode === "blocked"
+                        ? "bg-red-500 text-white"
+                        : "bg-zinc-50 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 hover:bg-red-50 dark:hover:bg-red-950/30"
+                    }`}
+                  >
+                    ✕ Blocked
+                  </button>
+                </div>
+
+                {/* Day buttons - compact grid */}
+                <div className="grid grid-cols-7 gap-1 mb-2">
+                  {DAYS.map((day) => (
+                    <button
+                      key={day.value}
+                      onClick={() => addPatternEntry([day.value])}
+                      className={`aspect-square text-[10px] font-medium rounded transition-all ${
+                        addMode === "available"
+                          ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-green-100 hover:text-green-700 dark:hover:bg-green-900/40"
+                          : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-red-100 hover:text-red-700 dark:hover:bg-red-900/40"
+                      }`}
+                    >
+                      {day.short}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Presets - single row */}
+                <div className="grid grid-cols-3 gap-1">
+                  {DAY_PRESETS.map((preset) => (
+                    <button
+                      key={preset.value}
+                      onClick={() => addPatternEntry(preset.days)}
+                      className={`px-1 py-1.5 text-[10px] font-medium rounded-lg border text-center transition-all ${
+                        addMode === "available"
+                          ? "border-green-200 dark:border-green-900/50 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/30"
+                          : "border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
+                      }`}
+                    >
+                      {preset.label === "Every Day" ? "All" : preset.label === "Weekdays" ? "Wkdays" : "Wkends"}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Content area */}
-              <div className="space-y-3">
-                <textarea
-                      value={aiInput}
-                      onChange={(e) => setAiInput(e.target.value)}
-                      placeholder="Try: &quot;Available weekday evenings 6-10pm except Mondays&quot; or &quot;Free all day Saturday and Sunday&quot;"
-                      className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:border-purple-400 focus:ring-2 focus:ring-purple-400/20 resize-none transition-all"
-                      rows={2}
-                      disabled={isParsingAI}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          handleAIParse();
-                        }
-                      }}
-                    />
-
-                    {/* Submit button and help text inline */}
-                    <div className="flex items-center justify-between gap-4">
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                        Press Enter to submit
-                      </p>
+              {/* Schedule Entries - Compact list */}
+              {patternEntries.length > 0 && (
+                <div className="space-y-1">
+                  {patternEntries.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className={`group relative p-1.5 rounded-lg border text-xs ${
+                        entry.isAvailable
+                          ? "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30"
+                          : "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30"
+                      }`}
+                    >
                       <button
-                        onClick={handleAIParse}
-                        disabled={isParsingAI || !aiInput.trim()}
-                        className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-sm hover:from-violet-500 hover:to-purple-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all disabled:hover:from-violet-600 disabled:hover:to-purple-600"
+                        onClick={() => removePatternEntry(entry.id)}
+                        className="absolute top-1 right-1 p-0.5 text-zinc-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
                       >
-                        {isParsingAI ? (
-                          <>
-                            <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                            </svg>
-                            Processing...
-                          </>
-                        ) : (
-                          "Add to Schedule"
-                        )}
+                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
                       </button>
-                    </div>
-              </div>
 
+                      {/* Days row */}
+                      <div className="flex gap-0.5 mb-1">
+                        {DAYS.map((day) => {
+                          const isSelected = entry.days.includes(day.value);
+                          return (
+                            <button
+                              key={day.value}
+                              onClick={() => togglePatternDay(entry.id, day.value)}
+                              className={`w-5 h-5 rounded text-[9px] font-medium transition-all ${
+                                isSelected
+                                  ? entry.isAvailable
+                                    ? "bg-green-600 text-white"
+                                    : "bg-red-600 text-white"
+                                  : "bg-white/50 dark:bg-zinc-800/50 text-zinc-400"
+                              }`}
+                            >
+                              {day.short[0]}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Time selects */}
+                      <div className="flex items-center gap-1">
+                        <select
+                          value={entry.startTime}
+                          onChange={(e) => updatePatternEntry(entry.id, "startTime", e.target.value)}
+                          className="flex-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-1 py-0.5 text-[10px]"
+                        >
+                          {TIME_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                        <span className="text-zinc-400 text-[10px]">–</span>
+                        <select
+                          value={entry.endTime}
+                          onChange={(e) => updatePatternEntry(entry.id, "endTime", e.target.value)}
+                          className="flex-1 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-1 py-0.5 text-[10px]"
+                        >
+                          {TIME_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Assistant - Full width card below grid (desktop only, mobile has its own) */}
+      {!isLoading && (
+        <div className="hidden md:block mt-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
+          <div className="flex items-start gap-4">
+            {/* Left: Icon and label */}
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-purple-600">
+                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                </svg>
+              </div>
+              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">AI Assistant</span>
+            </div>
+
+            {/* Center: Input */}
+            <div className="flex-1">
+              <textarea
+                value={aiInput}
+                onChange={(e) => setAiInput(e.target.value)}
+                placeholder="e.g. &quot;Free weekday evenings 6-10pm&quot; or &quot;Available all day Saturday&quot;"
+                className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm placeholder:text-zinc-400 focus:border-purple-400 focus:ring-1 focus:ring-purple-400/20 focus:bg-white dark:focus:bg-zinc-900 resize-none transition-all"
+                rows={1}
+                disabled={isParsingAI}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleAIParse();
+                  }
+                }}
+              />
               {aiError && (
-                <p className="mt-3 text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  {aiError}
-                </p>
+                <p className="mt-1 text-xs text-red-600 dark:text-red-400">{aiError}</p>
               )}
             </div>
+
+            {/* Right: Button */}
+            <button
+              onClick={handleAIParse}
+              disabled={isParsingAI || !aiInput.trim()}
+              className="shrink-0 px-4 py-2 text-xs font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              {isParsingAI ? "..." : "Add"}
+            </button>
           </div>
         </div>
       )}
