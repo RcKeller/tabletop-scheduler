@@ -504,8 +504,10 @@ export function VirtualizedAvailabilityGrid({
         _timeDisplay: (() => {
           const [h, m] = time.split(":").map(Number);
           if (m !== 0) return "";
-          // Use 24-hour format for clearer display
-          return h.toString().padStart(2, "0");
+          // Use 12-hour format with am/pm
+          const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+          const ampm = h < 12 ? "am" : "pm";
+          return `${hour12}${ampm}`;
         })(),
       };
 
@@ -838,6 +840,7 @@ export function VirtualizedAvailabilityGrid({
         const dateStr = formatInTimeZone(date, userTimezone, "yyyy-MM-dd");
         const dayName = formatInTimeZone(date, userTimezone, "EEE");
         const dayNum = formatInTimeZone(date, userTimezone, "d");
+        const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
 
         const colDef: ColDef = {
           field: dateStr,
@@ -845,13 +848,20 @@ export function VirtualizedAvailabilityGrid({
           width: cellWidth,
           suppressMovable: true,
           cellRenderer: () => null,
-          headerClass: "date-header",
+          headerClass: dayOfWeek === 6 ? "date-header saturday-header" : "date-header",
         };
 
         if (mode === "edit") {
-          colDef.cellStyle = getEditCellStyle;
+          // Wrap style to add Saturday border
+          const baseStyle = getEditCellStyle;
+          colDef.cellStyle = dayOfWeek === 6
+            ? (params: CellClassParams) => ({ ...baseStyle(params), borderRight: "2px solid rgba(0,0,0,0.15)" })
+            : baseStyle;
         } else {
-          colDef.cellStyle = getHeatmapCellStyle;
+          const baseStyle = getHeatmapCellStyle;
+          colDef.cellStyle = dayOfWeek === 6
+            ? (params: CellClassParams) => ({ ...baseStyle(params), borderRight: "2px solid rgba(0,0,0,0.15)" })
+            : baseStyle;
         }
 
         return colDef;
@@ -882,7 +892,17 @@ export function VirtualizedAvailabilityGrid({
     // Initialize with current availability (in display timezone)
     selectedSlotsRef.current = buildAvailabilitySet(displayAvailability);
     lastAvailabilityRef.current = serializeAvailability(displayAvailability);
-  }, [displayAvailability]);
+
+    // Scroll to 6am on initial load (index 12 = 6:00, since each slot is 30 min)
+    // Find the index of 6am in timeSlots
+    const sixAmIndex = timeSlots.findIndex(t => t === "06:00");
+    if (sixAmIndex !== -1) {
+      // Small delay to ensure grid is fully rendered
+      setTimeout(() => {
+        params.api.ensureIndexVisible(sixAmIndex, "top");
+      }, 50);
+    }
+  }, [displayAvailability, timeSlots]);
 
   // Row height - more compact by default
   const rowHeight = compact ? 16 : 20;

@@ -863,6 +863,11 @@ export function AvailabilityEditor({
               disabled={isMobile}
             />
 
+            {/* Hint - hidden on mobile */}
+            <p className="hidden md:block text-xs text-zinc-400 dark:text-zinc-500 mt-1.5">
+              Click and drag to edit availability
+            </p>
+
             {/* Mobile-only: Tools below grid */}
             <div className="md:hidden mt-4 space-y-4">
               {/* Mobile AI Assistant - Primary on mobile */}
@@ -1074,6 +1079,11 @@ export function AvailabilityEditor({
                 </div>
               </div>
 
+              {/* Divider between tools and entries */}
+              {patternEntries.length > 0 && (
+                <div className="border-t border-zinc-200 dark:border-zinc-700" />
+              )}
+
               {/* Schedule Entries - Compact list */}
               {patternEntries.length > 0 && (
                 <div className="space-y-1">
@@ -1151,29 +1161,32 @@ export function AvailabilityEditor({
 
       {/* AI Assistant - Full width card below grid (desktop only, mobile has its own) */}
       {!isLoading && (
-        <div className="hidden md:block mt-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
-          <div className="flex items-start gap-4">
+        <div className="hidden md:block mt-4 relative rounded-xl border-2 border-purple-200 dark:border-purple-900/50 bg-gradient-to-r from-purple-50 via-violet-50 to-fuchsia-50 dark:from-purple-950/20 dark:via-violet-950/20 dark:to-fuchsia-950/20 p-4">
+          <div className="flex items-center gap-4">
             {/* Left: Icon and label */}
             <div className="flex items-center gap-2 shrink-0">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-purple-600">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 shadow-md shadow-purple-500/20">
                 <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
                 </svg>
               </div>
-              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">AI Assistant</span>
+              <div>
+                <span className="text-sm font-semibold text-purple-900 dark:text-purple-100">AI Assistant</span>
+                <p className="text-[10px] text-purple-600 dark:text-purple-400">Describe your schedule</p>
+              </div>
             </div>
 
             {/* Center: Input */}
             <div className="flex-1">
-              <textarea
+              <input
+                type="text"
                 value={aiInput}
                 onChange={(e) => setAiInput(e.target.value)}
                 placeholder="e.g. &quot;Free weekday evenings 6-10pm&quot; or &quot;Available all day Saturday&quot;"
-                className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-sm placeholder:text-zinc-400 focus:border-purple-400 focus:ring-1 focus:ring-purple-400/20 focus:bg-white dark:focus:bg-zinc-900 resize-none transition-all"
-                rows={1}
+                className="w-full rounded-lg border border-purple-200 dark:border-purple-800 bg-white dark:bg-zinc-900 px-3 py-2 text-sm placeholder:text-purple-400/70 focus:border-purple-400 focus:ring-2 focus:ring-purple-400/20 transition-all"
                 disabled={isParsingAI}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
+                  if (e.key === "Enter") {
                     e.preventDefault();
                     handleAIParse();
                   }
@@ -1188,9 +1201,9 @@ export function AvailabilityEditor({
             <button
               onClick={handleAIParse}
               disabled={isParsingAI || !aiInput.trim()}
-              className="shrink-0 px-4 py-2 text-xs font-medium rounded-lg bg-purple-600 text-white hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              className="shrink-0 px-5 py-2 text-sm font-medium rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-md shadow-purple-500/20 hover:from-violet-500 hover:to-purple-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
-              {isParsingAI ? "..." : "Add"}
+              {isParsingAI ? "Adding..." : "Add to Schedule"}
             </button>
           </div>
         </div>
