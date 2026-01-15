@@ -1,6 +1,26 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+
+// Hook to detect mobile devices
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      // Check for touch device and small screen
+      const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isSmallScreen = window.innerWidth < 768;
+      setIsMobile(hasTouch && isSmallScreen);
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  return isMobile;
+}
 import { VirtualizedAvailabilityGrid } from "./VirtualizedAvailabilityGrid";
 import { useAvailabilityRules } from "@/lib/hooks/useAvailabilityRules";
 import { useTimezone } from "@/components/layout/TimezoneProvider";
@@ -280,6 +300,9 @@ export function AvailabilityEditor({
 }: AvailabilityEditorProps) {
   // Use shared timezone from context (managed by navbar)
   const { timezone } = useTimezone();
+
+  // Detect mobile for disabling drag (touch devices have poor drag-select UX)
+  const isMobile = useIsMobile();
 
   const {
     rules,
@@ -820,6 +843,21 @@ export function AvailabilityEditor({
       {/* Main Content */}
       {!isLoading && (
         <div className="space-y-4">
+          {/* Mobile note about using AI assistant */}
+          {isMobile && (
+            <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-amber-800 dark:text-amber-200">
+              <svg className="h-5 w-5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" />
+              </svg>
+              <div className="text-sm">
+                <p className="font-medium">On mobile? Use the AI Assistant below</p>
+                <p className="text-amber-700 dark:text-amber-300/80 mt-0.5">
+                  Drag-select doesn&apos;t work well on touch screens. Describe your availability in plain English instead.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Full-width Calendar Grid */}
           <VirtualizedAvailabilityGrid
             startDate={new Date(event.startDate)}
@@ -832,11 +870,12 @@ export function AvailabilityEditor({
             autoSave={true}
             timezone={timezone}
             gmAvailability={!isGm ? gmAvailability : []}
+            disabled={isMobile}
           />
 
           {/* Schedule Entries - Green/Red callout style */}
           {patternEntries.length > 0 && (
-            <div className="space-y-2 max-w-2xl">
+            <div className="space-y-2">
               {patternEntries.map((entry) => (
                 <div
                   key={entry.id}
@@ -913,15 +952,15 @@ export function AvailabilityEditor({
             </div>
           )}
 
-          {/* Add Schedule Button and Clear All */}
-          <div className="flex items-center justify-between gap-4 max-w-2xl">
-            <div className="relative flex-1">
+          {/* Add Schedule and Clear All */}
+          <div className="flex items-center gap-6">
+            <div className="relative">
               <button
                 onClick={() => setShowAddMenu(!showAddMenu)}
-                className="group flex w-full items-center justify-center gap-2.5 px-6 py-2.5 text-sm font-medium rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400 hover:border-blue-400 hover:text-blue-600 dark:hover:border-blue-500 dark:hover:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-all"
+                className="group flex items-center gap-3 px-6 py-3 text-base font-medium rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400 hover:border-blue-400 hover:text-blue-600 dark:hover:border-blue-500 dark:hover:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-all"
               >
-                <div className="flex h-5 w-5 items-center justify-center rounded-md bg-zinc-100 dark:bg-zinc-800 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-colors">
-                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-colors">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                   </svg>
                 </div>
@@ -1010,13 +1049,18 @@ export function AvailabilityEditor({
               )}
             </div>
 
-            {/* Clear All - always visible, right-aligned */}
-            <button
-              onClick={handleClearAll}
-              className="shrink-0 text-xs text-zinc-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
-            >
-              Clear all
-            </button>
+            {/* Clear All - with confirmation affordance */}
+            {(patternEntries.length > 0 || hasGridSlots) && (
+              <button
+                onClick={handleClearAll}
+                className="group flex items-center gap-2 px-3 py-2 text-sm text-zinc-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20 transition-all"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                </svg>
+                <span className="hidden sm:inline">Clear all</span>
+              </button>
+            )}
           </div>
 
           {/* AI Assistant - Modern card with gradient accent */}
@@ -1056,8 +1100,11 @@ export function AvailabilityEditor({
                       }}
                     />
 
-                    {/* Submit button below textarea */}
-                    <div className="flex justify-end">
+                    {/* Submit button and help text inline */}
+                    <div className="flex items-center justify-between gap-4">
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                        Press Enter to submit
+                      </p>
                       <button
                         onClick={handleAIParse}
                         disabled={isParsingAI || !aiInput.trim()}
@@ -1072,15 +1119,10 @@ export function AvailabilityEditor({
                             Processing...
                           </>
                         ) : (
-                          <>
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                            </svg>
-                            Add to Schedule
-                          </>
+                          "Add to Schedule"
                         )}
                       </button>
-                </div>
+                    </div>
               </div>
 
               {aiError && (
@@ -1091,10 +1133,6 @@ export function AvailabilityEditor({
                   {aiError}
                 </p>
               )}
-
-              <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-                Describe your availability in plain English. Press Enter to submit.
-              </p>
             </div>
           </div>
         </div>

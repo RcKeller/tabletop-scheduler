@@ -32,10 +32,13 @@ describe('REGRESSION: Override Priority Over Pattern', () => {
     id: '',
     participantId: 'test-1',
     createdAt: new Date(),
+    updatedAt: new Date(),
     crossesMidnight: false,
     originalDayOfWeek: null,
     originalTimezone: 'UTC',
     specificDate: null,
+    reason: null,
+    source: 'manual' as const,
   };
 
   it('blocked_override removes availability from pattern', () => {
@@ -146,9 +149,12 @@ describe('REGRESSION: Overnight Pattern Spanning Days', () => {
     id: '',
     participantId: 'test-1',
     createdAt: new Date(),
+    updatedAt: new Date(),
     originalDayOfWeek: null,
     originalTimezone: 'UTC',
     specificDate: null,
+    reason: null,
+    source: 'manual' as const,
   };
 
   it('overnight pattern shows slots starting on same day', () => {
@@ -216,10 +222,13 @@ describe('REGRESSION: Empty Result Handling', () => {
         startTime: '09:00',
         endTime: '17:00',
         createdAt: new Date(),
+        updatedAt: new Date(),
         crossesMidnight: false,
         originalDayOfWeek: null,
         originalTimezone: 'UTC',
         specificDate: null,
+        reason: null,
+        source: 'manual',
       },
     ];
 
@@ -244,10 +253,13 @@ describe('REGRESSION: Full Day Patterns', () => {
     id: '',
     participantId: 'test-1',
     createdAt: new Date(),
+    updatedAt: new Date(),
     crossesMidnight: false,
     originalDayOfWeek: null,
     originalTimezone: 'UTC',
     specificDate: null,
+    reason: null,
+    source: 'manual' as const,
   };
 
   it('00:00-24:00 pattern creates full day range', () => {
@@ -321,10 +333,13 @@ describe('REGRESSION: Adjacent Ranges Not Merging', () => {
     id: '',
     participantId: 'test-1',
     createdAt: new Date(),
+    updatedAt: new Date(),
     crossesMidnight: false,
     originalDayOfWeek: null,
     originalTimezone: 'UTC',
     specificDate: null,
+    reason: null,
+    source: 'manual' as const,
   };
 
   it('adjacent patterns merge into single range', () => {
@@ -402,10 +417,13 @@ describe('REGRESSION: Multi-Week Pattern Application', () => {
     id: '',
     participantId: 'test-1',
     createdAt: new Date(),
+    updatedAt: new Date(),
     crossesMidnight: false,
     originalDayOfWeek: null,
     originalTimezone: 'UTC',
     specificDate: null,
+    reason: null,
+    source: 'manual' as const,
   };
 
   it('pattern applies to same day across weeks', () => {
@@ -493,10 +511,13 @@ describe('REGRESSION: Edge Case Time Boundaries', () => {
     id: '',
     participantId: 'test-1',
     createdAt: new Date(),
+    updatedAt: new Date(),
     crossesMidnight: false,
     originalDayOfWeek: null,
     originalTimezone: 'UTC',
     specificDate: null,
+    reason: null,
+    source: 'manual' as const,
   };
 
   it('pattern starting at midnight', () => {

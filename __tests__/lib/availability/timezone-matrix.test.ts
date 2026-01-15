@@ -332,7 +332,7 @@ describe('convertPatternToUTC matrix', () => {
     // Full day patterns should result in crossesMidnight=true with same start/end times
     // OR be preserved as 00:00-24:00 for UTC
 
-    const cases: [number, string, string, number, boolean, string][] = [
+    const cases: [number, string, number, boolean, string][] = [
       // [localDay, timezone, expectedDay, expectedCrossesMidnight, description]
       [1, 'UTC', 1, false, 'UTC full day preserved'],
       [1, 'America/Los_Angeles', 1, true, 'LA full day = crossesMidnight'],
