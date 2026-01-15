@@ -19,6 +19,7 @@ interface CombinedHeatmapProps {
   earliestTime?: string;
   latestTime?: string;
   gmAvailability?: TimeSlot[];
+  gmParticipantId?: string;  // GM's participant ID - excluded from heatmap counts
   sessionLengthMinutes?: number;
   timezone?: string;
   showGmToggle?: boolean;
@@ -31,6 +32,7 @@ export function CombinedHeatmap({
   earliestTime = "00:00",
   latestTime = "24:00",
   gmAvailability = [],
+  gmParticipantId,
   sessionLengthMinutes = 180,
   timezone = "UTC",
   showGmToggle = false,
@@ -114,6 +116,7 @@ export function CombinedHeatmap({
             mode="heatmap"
             participants={participants}
             gmAvailability={gmAvailability}
+            gmParticipantId={gmParticipantId}
             onHoverSlot={handleHoverSlot}
             onLeaveSlot={handleLeaveSlot}
             timezone={timezone}
@@ -171,8 +174,8 @@ export function CombinedHeatmap({
                         <div
                           className="w-4 h-4 rounded bg-zinc-300 dark:bg-zinc-600"
                           style={{
-                            backgroundImage: "repeating-linear-gradient(-45deg, transparent, transparent 2px, rgba(59, 130, 246, 0.5) 2px, rgba(59, 130, 246, 0.5) 4px)",
-                            backgroundSize: "6px 6px"
+                            backgroundImage: "repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(37,99,235,0.4) 3px, rgba(37,99,235,0.4) 6px)",
+                            backgroundSize: "9px 9px"
                           }}
                         />
                         <span>GM available</span>

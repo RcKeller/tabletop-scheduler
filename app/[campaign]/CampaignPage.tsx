@@ -458,6 +458,7 @@ export function CampaignPage({ event }: CampaignPageProps) {
                     availability: p.availability,
                   }))}
                   gmAvailability={gmAvailabilitySlots}
+                  gmParticipantId={gmParticipant?.id}
                   onHoverSlot={(date, time) => {
                     // Calculate session coverage for all participants
                     // Note: date and time are in user's display timezone, availability is in UTC

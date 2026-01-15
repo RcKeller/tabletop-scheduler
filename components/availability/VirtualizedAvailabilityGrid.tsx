@@ -196,6 +196,7 @@ interface VirtualizedAvailabilityGridProps {
   onLeaveSlot?: () => void;
   timezone?: string;  // User's display timezone (defaults to UTC)
   gmAvailability?: TimeSlot[];  // GM's availability for visual indication (in UTC)
+  gmParticipantId?: string;  // GM's participant ID - excluded from heatmap counts
   disabled?: boolean;  // Disable interactions (view-only mode)
   compact?: boolean;  // Use smaller cell sizes
 }
@@ -259,16 +260,28 @@ function serializeAvailability(availability: TimeSlot[]): string {
     .join(",");
 }
 
-// Get heatmap background color
+// Get heatmap background color - smooth gradient from empty to full
 function getHeatmapBgColor(count: number, total: number, isDark: boolean): string {
-  if (total === 0) return isDark ? "#27272a" : "#e4e4e7";
+  if (total === 0 || count === 0) return isDark ? "#27272a" : "#f4f4f5";
+
   const pct = count / total;
-  if (pct === 1) return isDark ? "#15803d" : "#16a34a";
-  if (pct >= 0.75) return isDark ? "#16a34a" : "#22c55e";
-  if (pct >= 0.5) return isDark ? "#22c55e" : "#4ade80";
-  if (pct >= 0.25) return isDark ? "#4ade80" : "#86efac";
-  if (pct > 0) return isDark ? "#86efac" : "#bbf7d0";
-  return isDark ? "#27272a" : "#e4e4e7";
+
+  // Use a cleaner color scale: light teal -> green for better visual appeal
+  if (isDark) {
+    // Dark mode: subtle to vibrant
+    if (pct === 1) return "#059669";      // emerald-600 - everyone available
+    if (pct >= 0.75) return "#10b981";    // emerald-500
+    if (pct >= 0.5) return "#34d399";     // emerald-400
+    if (pct >= 0.25) return "#6ee7b7";    // emerald-300
+    return "#a7f3d0";                      // emerald-200
+  } else {
+    // Light mode: soft pastels to rich green
+    if (pct === 1) return "#10b981";      // emerald-500 - everyone available
+    if (pct >= 0.75) return "#34d399";    // emerald-400
+    if (pct >= 0.5) return "#6ee7b7";     // emerald-300
+    if (pct >= 0.25) return "#a7f3d0";    // emerald-200
+    return "#d1fae5";                      // emerald-100
+  }
 }
 
 // Group dates by week, returning "Week 1", "Week 2", etc.
@@ -313,6 +326,7 @@ export function VirtualizedAvailabilityGrid({
   onLeaveSlot,
   timezone = "UTC",
   gmAvailability = [],
+  gmParticipantId,
   disabled = false,
   compact = false,
 }: VirtualizedAvailabilityGridProps) {
@@ -334,6 +348,12 @@ export function VirtualizedAvailabilityGrid({
       availability: convertAvailabilityToLocal(p.availability, userTimezone),
     }));
   }, [participants, userTimezone]);
+
+  // Filter out GM from participants for heatmap counting (GM availability shown as stripes, not counted)
+  const heatmapParticipants = useMemo(() => {
+    if (!gmParticipantId) return displayParticipants;
+    return displayParticipants.filter(p => p.id !== gmParticipantId);
+  }, [displayParticipants, gmParticipantId]);
 
   // Convert GM availability from UTC to user's timezone for visual indication
   const displayGmAvailability = useMemo(() => {
@@ -464,12 +484,12 @@ export function VirtualizedAvailabilityGrid({
     return convertAvailabilityToUTC(slots, userTimezone);
   }, [userTimezone]);
 
-  // Build heatmap data
+  // Build heatmap data (excludes GM - their availability shown as stripes instead)
   const heatmapData = useMemo(() => {
     if (mode !== "heatmap") return new Map<string, Set<string>>();
 
     const map = new Map<string, Set<string>>();
-    for (const p of displayParticipants) {
+    for (const p of heatmapParticipants) {
       for (const slot of p.availability) {
         // Skip invalid slots where start >= end
         if (slot.startTime >= slot.endTime) continue;
@@ -477,6 +497,31 @@ export function VirtualizedAvailabilityGrid({
         let currentTime = slot.startTime;
         let iterations = 0;
         const maxIterations = 48; // Max 48 half-hour slots in a day
+
+        while (currentTime < slot.endTime && iterations < maxIterations) {
+          const key = `${slot.date}-${currentTime}`;
+          if (!map.has(key)) map.set(key, new Set());
+          map.get(key)!.add(p.id);
+          currentTime = addThirtyMinutes(currentTime);
+          iterations++;
+        }
+      }
+    }
+    return map;
+  }, [mode, heatmapParticipants]);
+
+  // Build all participants data for hover tooltips (includes GM)
+  const allParticipantsData = useMemo(() => {
+    if (mode !== "heatmap") return new Map<string, Set<string>>();
+
+    const map = new Map<string, Set<string>>();
+    for (const p of displayParticipants) {
+      for (const slot of p.availability) {
+        if (slot.startTime >= slot.endTime) continue;
+
+        let currentTime = slot.startTime;
+        let iterations = 0;
+        const maxIterations = 48;
 
         while (currentTime < slot.endTime && iterations < maxIterations) {
           const key = `${slot.date}-${currentTime}`;
@@ -636,7 +681,8 @@ export function VirtualizedAvailabilityGrid({
       }
 
       const key = `${lookupDate}-${time}`;
-      const availableIds = heatmapData.get(key) || new Set();
+      // Use allParticipantsData (includes GM) for hover tooltips
+      const availableIds = allParticipantsData.get(key) || new Set();
 
       const available = participants.filter(p => availableIds.has(p.id));
       const unavailable = participants.filter(p => !availableIds.has(p.id));
@@ -662,7 +708,7 @@ export function VirtualizedAvailabilityGrid({
       pendingCellsRef.current = newPending;
       refreshGrid();
     }
-  }, [mode, calculatePendingCells, heatmapData, participants, onHoverSlot, timeSlots, refreshGrid, isOvernightWindow, displayTimeWindow.latest, dateStrings, allDates, userTimezone, disabled]);
+  }, [mode, calculatePendingCells, allParticipantsData, participants, onHoverSlot, timeSlots, refreshGrid, isOvernightWindow, displayTimeWindow.latest, dateStrings, allDates, userTimezone, disabled]);
 
   // Mouse up handler
   const handleMouseUp = useCallback(() => {
@@ -748,16 +794,16 @@ export function VirtualizedAvailabilityGrid({
     const isPendingRemove = isPending && dragModeRef.current === "deselect";
     const isGmAvailable = gmAvailableSlots.has(key);
 
-    // Determine base background color
+    // Determine base background color - cleaner emerald tones
     let bgColor: string;
     if (isPendingAdd) {
-      bgColor = isDarkMode ? "#22c55e" : "#86efac";
+      bgColor = isDarkMode ? "#34d399" : "#6ee7b7";  // emerald-400/300 - adding
     } else if (isPendingRemove) {
-      bgColor = isDarkMode ? "#ef4444" : "#fca5a5";
+      bgColor = isDarkMode ? "#f87171" : "#fecaca";  // red-400/200 - removing
     } else if (isSelected && !isPending) {
-      bgColor = isDarkMode ? "#16a34a" : "#4ade80";
+      bgColor = isDarkMode ? "#10b981" : "#34d399";  // emerald-500/400 - selected
     } else {
-      bgColor = isDarkMode ? "#18181b" : "#ffffff";
+      bgColor = isDarkMode ? "#27272a" : "#fafafa";  // zinc-800/50 - empty
     }
 
     const style: Record<string, string> = {
@@ -765,21 +811,20 @@ export function VirtualizedAvailabilityGrid({
       cursor: disabled ? "default" : "pointer",
     };
 
-    // Add diagonal purple stripes for GM available times
-    // Stripes always show when GM is available - darker on selected cells for visibility
+    // Add diagonal stripes for GM available times
     if (isGmAvailable) {
-      // Use pre-computed stripe colors to avoid string interpolation (purple-500: 168, 85, 247)
-      const stripeColor = (isSelected || isPendingAdd)
-        ? (isDarkMode ? "rgba(168,85,247,0.6)" : "rgba(168,85,247,0.5)")
-        : (isDarkMode ? "rgba(168,85,247,0.35)" : "rgba(168,85,247,0.25)");
+      const stripeColor = isDarkMode
+        ? "rgba(59,130,246,0.5)"   // blue-500
+        : "rgba(37,99,235,0.35)";  // blue-600
       style.backgroundImage = `repeating-linear-gradient(-45deg,transparent,transparent 3px,${stripeColor} 3px,${stripeColor} 6px)`;
-      style.backgroundSize = "8px 8px";
+      style.backgroundSize = "9px 9px";
     }
 
     return style;
   }, [timeSlots, isDarkMode, gmAvailableSlots, disabled]);
 
   // Heatmap cell style with GM availability indication (diagonal stripes)
+  // Note: Uses heatmapParticipants (excludes GM) for color calculation
   const getHeatmapCellStyle = useCallback((params: CellClassParams) => {
     const field = params.colDef.field;
     if (!field || field === "time" || field === "_timeDisplay") return undefined;
@@ -788,7 +833,7 @@ export function VirtualizedAvailabilityGrid({
     const count = params.value as number;
     const isGmAvailable = time && gmAvailableSlots.has(`${field}-${time}`);
 
-    const baseBgColor = getHeatmapBgColor(count, participants.length, isDarkMode);
+    const baseBgColor = getHeatmapBgColor(count, heatmapParticipants.length, isDarkMode);
 
     // Base style
     const style: Record<string, string> = {
@@ -796,21 +841,17 @@ export function VirtualizedAvailabilityGrid({
       cursor: disabled ? "default" : "pointer",
     };
 
-    // Add diagonal purple stripes for GM available times
+    // Add diagonal stripes for GM available times
     if (isGmAvailable) {
-      const stripeColor = isDarkMode ? "rgba(168, 85, 247, 0.4)" : "rgba(168, 85, 247, 0.3)";
-      style.backgroundImage = `repeating-linear-gradient(
-        -45deg,
-        transparent,
-        transparent 3px,
-        ${stripeColor} 3px,
-        ${stripeColor} 6px
-      )`;
-      style.backgroundSize = "8px 8px";
+      const stripeColor = isDarkMode
+        ? "rgba(59,130,246,0.5)"   // blue-500
+        : "rgba(37,99,235,0.35)";  // blue-600
+      style.backgroundImage = `repeating-linear-gradient(-45deg,transparent,transparent 3px,${stripeColor} 3px,${stripeColor} 6px)`;
+      style.backgroundSize = "9px 9px";
     }
 
     return style;
-  }, [participants.length, isDarkMode, timeSlots, gmAvailableSlots, disabled]);
+  }, [heatmapParticipants.length, isDarkMode, timeSlots, gmAvailableSlots, disabled]);
 
   // Cell sizes - more compact by default
   const cellWidth = compact ? 28 : 36;
@@ -908,16 +949,16 @@ export function VirtualizedAvailabilityGrid({
   const rowHeight = compact ? 16 : 20;
   const headerHeight = compact ? 20 : 26;
 
-  // AG Grid theme
+  // AG Grid theme - clean, no alternating row colors
   const gridTheme = useMemo(() => {
     return themeQuartz.withParams({
       backgroundColor: isDarkMode ? "#18181b" : "#ffffff",
       foregroundColor: isDarkMode ? "#fafafa" : "#18181b",
-      headerBackgroundColor: isDarkMode ? "#27272a" : "#fafafa",
-      headerTextColor: isDarkMode ? "#a1a1aa" : "#71717a",
-      borderColor: isDarkMode ? "#3f3f46" : "#e4e4e7",
-      rowBorder: isDarkMode ? "#27272a" : "#f4f4f5",
-      oddRowBackgroundColor: isDarkMode ? "#18181b" : "#ffffff",
+      headerBackgroundColor: isDarkMode ? "#1f1f23" : "#f8fafc",
+      headerTextColor: isDarkMode ? "#a1a1aa" : "#64748b",
+      borderColor: isDarkMode ? "#27272a" : "#e2e8f0",
+      rowBorder: isDarkMode ? "transparent" : "transparent",  // No row borders - cleaner look
+      oddRowBackgroundColor: isDarkMode ? "#18181b" : "#ffffff",  // Same as bg - no striping
       headerFontSize: compact ? 9 : 11,
       fontSize: compact ? 9 : 11,
       rowHeight,
@@ -976,7 +1017,7 @@ export function VirtualizedAvailabilityGrid({
     .virtualized-availability-grid .ag-pinned-left-cols-container .ag-cell {
       border-right: none !important;
     }
-    .virtualized-availability-grid .ag-row:nth-child(even) .ag-cell:not(.time-cell) {
+    .virtualized-availability-grid .hour-end-row .ag-cell:not(.time-cell) {
       border-bottom-color: ${isDarkMode ? "#3f3f46" : "#e4e4e7"} !important;
     }
     .virtualized-availability-grid .ag-body-horizontal-scroll {
@@ -1043,6 +1084,7 @@ export function VirtualizedAvailabilityGrid({
           animateRows={false}
           suppressScrollOnNewData={true}
           getRowId={(params) => params.data.time}
+          getRowClass={(params) => params.data?.time?.endsWith(":30") ? "hour-end-row" : ""}
           suppressDragLeaveHidesColumns={true}
           enableCellTextSelection={false}
         />
@@ -1054,17 +1096,17 @@ export function VirtualizedAvailabilityGrid({
             {gmAvailability.length > 0 && (
               <div className="flex items-center gap-1.5">
                 <div
-                  className="h-2.5 w-2.5 rounded"
+                  className="h-2.5 w-2.5 rounded bg-zinc-300 dark:bg-zinc-600"
                   style={{
-                    backgroundImage: "repeating-linear-gradient(-45deg, transparent, transparent 2px, rgba(59, 130, 246, 0.3) 2px, rgba(59, 130, 246, 0.3) 4px)",
-                    backgroundSize: "6px 6px"
+                    backgroundImage: "repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(37,99,235,0.4) 3px, rgba(37,99,235,0.4) 6px)",
+                    backgroundSize: "9px 9px"
                   }}
                 />
                 <span>GM available</span>
               </div>
             )}
             <div className="flex items-center gap-1.5">
-              <div className="h-2.5 w-2.5 rounded bg-green-400 dark:bg-green-600" />
+              <div className="h-2.5 w-2.5 rounded bg-emerald-400 dark:bg-emerald-600" />
               <span>Your availability</span>
             </div>
             {isSaving && (
@@ -1088,16 +1130,16 @@ export function VirtualizedAvailabilityGrid({
           <div className="flex items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400">
             <div className="flex items-center gap-1.5">
               <div
-                className="h-3 w-3 rounded bg-green-400 dark:bg-green-600"
+                className="h-3 w-3 rounded bg-zinc-300 dark:bg-zinc-600"
                 style={{
-                  backgroundImage: "repeating-linear-gradient(-45deg, transparent, transparent 2px, rgba(59, 130, 246, 0.3) 2px, rgba(59, 130, 246, 0.3) 4px)",
-                  backgroundSize: "6px 6px"
+                  backgroundImage: "repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(37,99,235,0.4) 3px, rgba(37,99,235,0.4) 6px)",
+                  backgroundSize: "9px 9px"
                 }}
               />
               <span>GM available</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="h-3 w-3 rounded bg-green-400 dark:bg-green-600" />
+              <div className="h-3 w-3 rounded bg-emerald-400 dark:bg-emerald-600" />
               <span>Available</span>
             </div>
             <div className="flex items-center gap-1.5">
