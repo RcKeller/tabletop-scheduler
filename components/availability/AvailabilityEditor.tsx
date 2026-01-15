@@ -3,20 +3,31 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 
 // Hook to detect mobile devices
+// Uses pointer: coarse media query which is more reliable than maxTouchPoints
+// (maxTouchPoints can be > 0 on laptops with touchscreens even when using mouse)
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     const checkMobile = () => {
-      // Check for touch device and small screen
-      const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      // Use media query to detect coarse pointer (touch/finger vs mouse)
+      // This correctly identifies touch-primary devices vs laptops with touchscreens
+      const hasCoarsePointer = window.matchMedia('(pointer: coarse)').matches;
       const isSmallScreen = window.innerWidth < 768;
-      setIsMobile(hasTouch && isSmallScreen);
+      setIsMobile(hasCoarsePointer && isSmallScreen);
     };
 
     checkMobile();
     window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+
+    // Also listen to pointer media query changes (for device mode switches)
+    const pointerQuery = window.matchMedia('(pointer: coarse)');
+    pointerQuery.addEventListener('change', checkMobile);
+
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+      pointerQuery.removeEventListener('change', checkMobile);
+    };
   }, []);
 
   return isMobile;
