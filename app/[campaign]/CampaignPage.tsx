@@ -835,6 +835,7 @@ function dateTimeToAbsoluteMinutes(date: string, time: string, fromTz: string): 
 
 // Calculate session coverage for all participants given a session start time and duration
 // sessionStart and sessionDate are in userTimezone, participant availability is in UTC
+// "Partially available" means available at the START but has to leave early
 function calculateSessionCoverage(
   sessionStart: string,
   sessionDate: string,
@@ -873,12 +874,19 @@ function calculateSessionCoverage(
       continue;
     }
 
-    // Calculate coverage within the session window
-    let coveredMinutes = 0;
-    let earliestCoveredAbsolute = sessionEndAbsolute;
-    let latestCoveredAbsolute = sessionStartAbsolute;
+    // Check if participant is available at the session START (first slot)
+    const isAvailableAtStart = availSlots.some(avail =>
+      avail.startAbsolute <= sessionStartAbsolute && avail.endAbsolute >= sessionStartAbsolute + 30
+    );
 
-    // Check each 30-minute slot in the session
+    if (!isAvailableAtStart) {
+      // Not available at start = unavailable for this slot
+      unavailable.push({ id: participant.id, name: participant.name });
+      continue;
+    }
+
+    // Available at start - count consecutive coverage from the start
+    let consecutiveMinutes = 0;
     for (let slotStartAbs = sessionStartAbsolute; slotStartAbs < sessionEndAbsolute; slotStartAbs += 30) {
       const slotEndAbs = slotStartAbs + 30;
 
@@ -888,27 +896,23 @@ function calculateSessionCoverage(
       );
 
       if (isCovered) {
-        coveredMinutes += 30;
-        if (slotStartAbs < earliestCoveredAbsolute) earliestCoveredAbsolute = slotStartAbs;
-        if (slotEndAbs > latestCoveredAbsolute) latestCoveredAbsolute = slotEndAbs;
+        consecutiveMinutes += 30;
+      } else {
+        // Gap in coverage - stop counting
+        break;
       }
     }
 
-    if (coveredMinutes === 0) {
-      unavailable.push({ id: participant.id, name: participant.name });
-    } else if (coveredMinutes >= sessionLengthMinutes) {
+    if (consecutiveMinutes >= sessionLengthMinutes) {
       fullyAvailable.push({ id: participant.id, name: participant.name });
     } else {
-      // Partially available - calculate their available window relative to session start
-      const offsetFromSessionStart = earliestCoveredAbsolute - sessionStartAbsolute;
-      const coverageDuration = latestCoveredAbsolute - earliestCoveredAbsolute;
+      // Partially available - available at start but has to leave early
       partiallyAvailable.push({
         id: participant.id,
         name: participant.name,
-        // Convert back to display time relative to session start
-        availableFrom: addMinutes(sessionStart, offsetFromSessionStart),
-        availableTo: addMinutes(sessionStart, offsetFromSessionStart + coverageDuration),
-        coverageMinutes: coveredMinutes,
+        availableFrom: sessionStart,
+        availableTo: addMinutes(sessionStart, consecutiveMinutes),
+        coverageMinutes: consecutiveMinutes,
       });
     }
   }
