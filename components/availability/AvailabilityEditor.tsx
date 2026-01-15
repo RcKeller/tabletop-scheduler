@@ -102,6 +102,77 @@ interface PatternEntry {
   isAvailable: boolean;
 }
 
+// Helper to build a set of slot keys from TimeSlot array
+function buildSlotKeySet(slots: TimeSlot[]): Set<string> {
+  const set = new Set<string>();
+  for (const slot of slots) {
+    // Skip invalid slots
+    if (slot.startTime >= slot.endTime && slot.endTime !== "24:00") continue;
+
+    let currentTime = slot.startTime;
+    let iterations = 0;
+    const maxIterations = 48;
+    const endTime = slot.endTime === "24:00" ? "24:00" : slot.endTime;
+
+    while (currentTime < endTime && iterations < maxIterations) {
+      set.add(`${slot.date}-${currentTime}`);
+      // Increment by 30 minutes
+      const [h, m] = currentTime.split(":").map(Number);
+      const nextMinute = m + 30;
+      if (nextMinute >= 60) {
+        currentTime = `${(h + 1).toString().padStart(2, "0")}:00`;
+      } else {
+        currentTime = `${h.toString().padStart(2, "0")}:30`;
+      }
+      iterations++;
+    }
+  }
+  return set;
+}
+
+// Convert a set of slot keys back to TimeSlot array (merging adjacent slots)
+function slotKeysToTimeSlots(keys: Set<string>): TimeSlot[] {
+  if (keys.size === 0) return [];
+
+  const sortedKeys = Array.from(keys).sort();
+  const slotsMap = new Map<string, { start: string; end: string }[]>();
+
+  for (const key of sortedKeys) {
+    const parts = key.split("-");
+    const date = `${parts[0]}-${parts[1]}-${parts[2]}`;
+    const time = parts[3];
+
+    const dateSlots = slotsMap.get(date) || [];
+    // Calculate end time (add 30 minutes)
+    const [h, m] = time.split(":").map(Number);
+    const nextMinute = m + 30;
+    let endTime: string;
+    if (nextMinute >= 60) {
+      const newH = h + 1;
+      endTime = newH >= 24 ? "24:00" : `${newH.toString().padStart(2, "0")}:00`;
+    } else {
+      endTime = `${h.toString().padStart(2, "0")}:30`;
+    }
+
+    // Try to merge with last range
+    const lastRange = dateSlots[dateSlots.length - 1];
+    if (lastRange && lastRange.end === time) {
+      lastRange.end = endTime;
+    } else {
+      dateSlots.push({ start: time, end: endTime });
+    }
+    slotsMap.set(date, dateSlots);
+  }
+
+  const result: TimeSlot[] = [];
+  for (const [date, ranges] of slotsMap) {
+    for (const range of ranges) {
+      result.push({ date, startTime: range.start, endTime: range.end });
+    }
+  }
+  return result;
+}
+
 // Convert AvailabilityRule[] to TimeSlot[] for the grid
 // NOTE: Rules are stored in UTC. When displaying in a local timezone, we need
 // to compute a wider UTC range to capture times that appear on different days.
@@ -164,11 +235,13 @@ function rulesToTimeSlots(
 
 // Convert TimeSlot[] to CreateAvailabilityRuleInput[] (as override rules)
 // If alreadyUTC is true, slots are already in UTC and should not be converted
+// ruleType can be "available_override" (default) or "blocked_override"
 function timeSlotsToRules(
   slots: TimeSlot[],
   participantId: string,
   timezone: string,
-  alreadyUTC: boolean = false
+  alreadyUTC: boolean = false,
+  ruleType: "available_override" | "blocked_override" = "available_override"
 ): CreateAvailabilityRuleInput[] {
   const rules: CreateAvailabilityRuleInput[] = [];
 
@@ -177,7 +250,7 @@ function timeSlotsToRules(
       // Slots are already in UTC (e.g., from grid save) - use directly
       rules.push({
         participantId,
-        ruleType: "available_override",
+        ruleType,
         dayOfWeek: null,
         specificDate: slot.date,
         startTime: slot.startTime,
@@ -190,7 +263,7 @@ function timeSlotsToRules(
       // Slots are in local timezone - convert to UTC
       const prepared = prepareRuleForStorage(
         {
-          ruleType: "available_override",
+          ruleType,
           specificDate: slot.date,
           startTime: slot.startTime,
           endTime: slot.endTime,
@@ -200,7 +273,7 @@ function timeSlotsToRules(
 
       rules.push({
         participantId,
-        ruleType: "available_override",
+        ruleType,
         dayOfWeek: null,
         specificDate: prepared.specificDate,
         startTime: prepared.startTime,
@@ -501,6 +574,7 @@ export function AvailabilityEditor({
 
   // Handle grid save - optimistic, skip refetch to avoid flashing
   // Uses ref to update override slots without triggering timeSlots recalc (grid already has correct state)
+  // IMPORTANT: When user deselects slots that came from patterns, we create blocked_override rules
   const handleGridSave = useCallback(
     async (slots: TimeSlot[]) => {
       // Store in ref only - don't trigger state update since grid manages its own display state
@@ -513,11 +587,47 @@ export function AvailabilityEditor({
       // (patterns are stored in the timezone referenced by patternTimezoneRef)
       const patternRules = patternEntriesToRules(patternEntriesRef.current, participantId, patternTimezoneRef.current);
 
-      // Slots from grid are already in UTC - pass alreadyUTC=true to avoid double-conversion
-      const overrideRules = timeSlotsToRules(slots, participantId, timezone, true);
+      // Compute what patterns would generate (as slot keys) to determine blocked slots
+      // Convert patterns to AvailabilityRule format for computation
+      const patternRulesAsAvail: AvailabilityRule[] = patternRules.map((r, i) => ({
+        id: `pattern-${i}`,
+        participantId: r.participantId,
+        ruleType: r.ruleType,
+        dayOfWeek: r.dayOfWeek,
+        specificDate: r.specificDate,
+        startTime: r.startTime,
+        endTime: r.endTime,
+        originalTimezone: r.originalTimezone,
+        originalDayOfWeek: r.originalDayOfWeek,
+        crossesMidnight: r.crossesMidnight,
+        reason: null,
+        source: r.source || "manual",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+      const patternGeneratedSlots = rulesToTimeSlots(patternRulesAsAvail, dateRange);
+      const patternSlotKeys = buildSlotKeySet(patternGeneratedSlots);
+
+      // Build key set from user-selected slots
+      const selectedSlotKeys = buildSlotKeySet(slots);
+
+      // Find slots that are in patterns but NOT selected (need blocked_override)
+      const blockedSlotKeys = new Set<string>();
+      for (const key of patternSlotKeys) {
+        if (!selectedSlotKeys.has(key)) {
+          blockedSlotKeys.add(key);
+        }
+      }
+
+      // Convert back to TimeSlot arrays
+      const blockedSlots = slotKeysToTimeSlots(blockedSlotKeys);
+
+      // Create rules: available_override for selected, blocked_override for deselected pattern slots
+      const availableOverrideRules = timeSlotsToRules(slots, participantId, timezone, true, "available_override");
+      const blockedOverrideRules = timeSlotsToRules(blockedSlots, participantId, timezone, true, "blocked_override");
 
       // Combine all rules
-      const allRules = [...patternRules, ...overrideRules];
+      const allRules = [...patternRules, ...availableOverrideRules, ...blockedOverrideRules];
 
       try {
         // Pass skipRefetch=true to avoid re-rendering the grid
@@ -531,7 +641,7 @@ export function AvailabilityEditor({
         // Silently handle errors - user can retry
       }
     },
-    [participantId, timezone, replaceRules, onSaveComplete]
+    [participantId, timezone, replaceRules, onSaveComplete, dateRange]
   );
 
   // Debounced save for pattern changes - must be defined before handlers that use it

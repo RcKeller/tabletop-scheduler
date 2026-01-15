@@ -226,7 +226,7 @@ describe('REGRESSION: Grid event handler guards', () => {
   });
 
   it('handleCellMouseDown guard blocks interaction when mode=heatmap', () => {
-    const mode = "heatmap";
+    const mode = "heatmap" as string;
     const disabled = false;
 
     const shouldBlock = mode !== "edit" || disabled;
