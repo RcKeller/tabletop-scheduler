@@ -799,8 +799,13 @@ export function CampaignPage({ event }: CampaignPageProps) {
 }
 
 function formatTime(time: string): string {
+  // Defensive: handle malformed input
+  if (!time || typeof time !== "string" || !time.includes(":")) {
+    return "12:00 AM";
+  }
   const [hourStr, minute] = time.split(":");
-  const hour = parseInt(hourStr);
+  const hour = parseInt(hourStr, 10);
+  if (isNaN(hour)) return "12:00 AM";
   if (hour === 0) return `12:${minute} AM`;
   if (hour < 12) return `${hour}:${minute} AM`;
   if (hour === 12) return `12:${minute} PM`;
@@ -808,8 +813,19 @@ function formatTime(time: string): string {
 }
 
 function addMinutes(time: string, minutes: number): string {
+  // Defensive: handle malformed input
+  if (!time || typeof time !== "string" || !time.includes(":")) {
+    return "00:00";
+  }
   const [hourStr, minuteStr] = time.split(":");
-  let totalMinutes = parseInt(hourStr) * 60 + parseInt(minuteStr) + minutes;
+  const h = parseInt(hourStr, 10);
+  const m = parseInt(minuteStr, 10);
+  // Handle NaN from parseInt
+  if (isNaN(h) || isNaN(m)) {
+    return "00:00";
+  }
+  let totalMinutes = h * 60 + m + minutes;
+  if (totalMinutes < 0) totalMinutes += 24 * 60;
   if (totalMinutes >= 24 * 60) totalMinutes -= 24 * 60;
   const hour = Math.floor(totalMinutes / 60);
   const minute = totalMinutes % 60;
@@ -817,19 +833,33 @@ function addMinutes(time: string, minutes: number): string {
 }
 
 function timeToMinutes(time: string): number {
+  // Defensive: handle malformed input
+  if (!time || typeof time !== "string" || !time.includes(":")) {
+    return 0;
+  }
   const [hours, minutes] = time.split(":").map(Number);
+  if (isNaN(hours) || isNaN(minutes)) {
+    return 0;
+  }
   return hours * 60 + minutes;
 }
 
 // Convert a date+time from one timezone to UTC, returning absolute minutes since epoch
 function dateTimeToAbsoluteMinutes(date: string, time: string, fromTz: string): number {
+  // Defensive: handle malformed input
+  if (!date || !time || typeof date !== "string" || typeof time !== "string") {
+    return 0;
+  }
   if (fromTz === "UTC") {
     const d = new Date(`${date}T${time}:00Z`);
+    if (isNaN(d.getTime())) return 0;
     return d.getTime() / (60 * 1000);
   }
   // Parse as a local time in the given timezone and convert to UTC milliseconds
   const dateTime = parse(`${date} ${time}`, "yyyy-MM-dd HH:mm", new Date());
+  if (isNaN(dateTime.getTime())) return 0;
   const utcDate = fromZonedTime(dateTime, fromTz);
+  if (isNaN(utcDate.getTime())) return 0;
   return utcDate.getTime() / (60 * 1000);
 }
 
